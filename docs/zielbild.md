@@ -277,6 +277,52 @@ wirtschaftliche Parameter.
 
 ---
 
+# Ergänzung: Visualisierung in realer Umgebung
+
+Festgelegt am 11.09.2026, nach Stufe 4. Präzisiert Abschnitt 17.
+
+Das Endprodukt besteht **nicht** aus einem farbigen Baukörper auf weissem
+Hintergrund. Die Visualisierung bezieht die reale Umgebung des Grundstücks ein.
+
+**1 · Kataster** — Grundstücksgrenze, Parzellen, bestehende Gebäude, Strassen,
+Baulinien, relevante Restriktionen.
+
+**2 · Luftbild** — reales Luftbild als Hintergrund, Grundstück darübergelegt,
+bestehender Gebäudebestand, Umgebung sichtbar.
+
+**3 · 3D** — Gelände/Topografie soweit verfügbar, bestehende Gebäude,
+Nachbargebäude soweit Daten verfügbar, Strassen und Umgebung, Gebäudehöhen
+soweit verfügbar, der berechnete mögliche Baukörper, die Szenarien.
+
+**Alle Szenarien in derselben räumlichen Umgebung:** Bestand → tatsächlicher
+Bestand · Anbau → Bestand plus möglicher Anbau exakt im berechneten zulässigen
+Bereich · Aufstockung → Bestand plus zusätzliches berechnetes Volumen ·
+Ersatzneubau → Bestand entfernt, berechneter neuer Baukörper ·
+Bestand + Neubau → bestehendes Gebäude plus zusätzlicher Baukörper.
+
+**Die 3D-Geometrie darf nicht frei erfunden sein.** Sie entsteht aus den
+tatsächlich berechneten Grundstücksgrenzen, Baubereichen, Abständen,
+Geschossen, Gebäudehöhen, Gesamthöhen und Szenarien. Fehlen Gebäudehöhe oder
+andere Daten: **nicht raten** — transparente Darstellung bzw. entsprechender
+Unsicherheitsstatus.
+
+**Später zusätzlich:** Höhen-/Schnittansicht, Bestand gegen Potenzial,
+Nachbargebäude, Gelände, Sonnensimulation, Beschattung, Sonnenstand,
+Szenarien per Klick umschalten.
+
+**Benutzerführung:** `[ Kataster ] [ Luftbild ] [ 3D ]`, und bei 3D
+`[ Bestand ] [ Anbau ] [ Aufstockung ] [ Ersatzneubau ] [ Bestand + Neubau ]`.
+
+Das Ziel ist eine visuell hochwertige, moderne Immobilienentwicklungsansicht —
+**kein weisser GIS-Hintergrund mit isoliertem Würfel.**
+
+Ausdrücklich **nicht jetzt** zu bauen: keine grosse neue
+Visualisierungsarchitektur, keine Aufblähung der laufenden Stufe. Die
+bestehende 3D-Grundlage bleibt so, dass reale Umgebung, Nachbargebäude,
+Terrain, Luftbild und Sonnensimulation später sauber darauf aufsetzen.
+
+---
+
 ## Was daraus für den laufenden Bau folgt
 
 Nichts davon wird vorgezogen. Die freigegebene Stufenfolge bleibt. Aber bei
@@ -291,3 +337,8 @@ gerade in Richtung dieses Endprodukts?* Konkret schon jetzt beachtet:
   Strassenabstand keinen Ersatzwert bekommt, sondern die Bandbreite behält.
 * **Abschnitt 28** ist der Grund, warum jede Kantenzuordnung ein eigenes
   Quellenobjekt erzeugt.
+* **Die Visualisierungs-Ergänzung** ist der Grund, warum die 3D-Szene in einem
+  lokalen Koordinatenrahmen am Parzellenschwerpunkt rechnet und jeder Körper
+  über dieselbe Funktion entsteht — siehe
+  [stufe4_szenarien.md](stufe4_szenarien.md), Abschnitt „Was die Grundlage
+  trägt".

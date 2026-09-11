@@ -170,6 +170,47 @@ Jedes Szenario ist über `to_dict()` eigenständig serialisierbar — die
 Voraussetzung dafür, dass Markt, BKP und Wirtschaftlichkeit später je Szenario
 getrennt gerechnet und gespeichert werden.
 
+## Was die Grundlage trägt (Stand nach Stufe 4)
+
+Das Zielbild für die Visualisierung ist in
+[zielbild.md](zielbild.md) festgehalten: Kataster, Luftbild und 3D in realer
+Umgebung, mit Terrain, Nachbargebäuden, Strassen und später Sonnenstand —
+**kein weisser Hintergrund mit isoliertem Würfel.** Nichts davon wurde in
+Stufe 4 vorgezogen. Diese Bestandsaufnahme hält fest, was die heutige
+Grundlage schon trägt und was jedes weitere Stück brauchen wird, damit später
+nichts umgebaut werden muss.
+
+**Schon vorhanden (2D):** die Karte kennt bereits drei Hintergründe —
+Pixelkarte, **Luftbild** (`ch.swisstopo.swissimage`) und Graukarte — sowie die
+Overlays Katasterplan und GWR-Gebäude. Darüber liegen Parzelle, Zonen,
+Baubereich, Restriktionen, Bestand und Szenario als eigene, einzeln
+schaltbare Ebenen. Die geforderte Bedienung `[ Kataster ] [ Luftbild ]` ist in
+2D damit im Wesentlichen da; was fehlt, ist die Zusammenführung zu einer
+einzigen Umschaltleiste zusammen mit `[ 3D ]`.
+
+**Schon vorhanden (3D):** die Szene rechnet in einem **lokalen
+Koordinatenrahmen am Parzellenschwerpunkt** (`mx`/`my` in Metern, LV95). Das
+ist die Voraussetzung dafür, dass Nachbargebäude, Terrain und ein Luftbild
+später ohne Umrechnung in dieselbe Szene kommen. Jeder Körper entsteht über
+**eine** Funktion (`koerper(ring, mx, my, hoehe, farbe, deckkraft)`), die ein
+Polygon extrudiert — Nachbargebäude sind damit weitere Aufrufe derselben
+Funktion, kein neuer Code-Pfad. Fehlt eine Höhe, wird flach gezeichnet und die
+Legende sagt es ausdrücklich.
+
+**Was jedes weitere Stück brauchen wird — geprüft, keine Blocker:**
+
+| Erweiterung | Was nötig ist | Blockiert die heutige Struktur das? |
+|---|---|---|
+| Luftbild als Boden | texturierte Ebene knapp unter y=0 (sonst Z-Fighting mit der Parzellenfläche) | nein |
+| Terrain | Höhenversatz je Körper über `gruppe.position.y` | nein, ohne Signaturänderung |
+| Nachbargebäude | Grundrisse der Nachbarparzellen holen — eine Datenfrage, kein Architekturproblem | nein |
+| Strassen | vorhandene TLM3D-Achsen als Linien in dieselbe Szene | nein |
+| Sonnensimulation | das `DirectionalLight` aus `bereitMachen()` nach aussen führen und an Datum/Zeit koppeln | nein |
+| Schnittansicht | Clipping-Ebene auf dem Renderer | nein |
+
+Aus diesem Grund wurde in Stufe 4 **nichts** davon vorgebaut: es gibt keine
+Struktur, die später im Weg stünde, und ungenutzte Machinerie wäre Ballast.
+
 ## Offene Punkte
 
 * **Baulinien** werden als Konflikt gemeldet, aber nicht vom Baubereich
@@ -180,6 +221,8 @@ getrennt gerechnet und gespeichert werden.
   **kein** Abstand abgezogen; die ausgewiesene Fläche ist dann eine Obergrenze.
 * **Die Statik** einer Aufstockung ist nicht geprüft und wird als solche
   benannt.
-* **Terrain und Nachbargebäude** fehlen in der 3D-Ansicht noch.
+* **Terrain, Nachbargebäude, Strassen, Luftbild und Sonnenstand** fehlen in der
+  3D-Ansicht noch — siehe „Was die Grundlage trägt" oben. Die aktuelle Szene
+  ist bewusst die technische Grundlage dafür, nicht das Endergebnis.
 * **Wo genau** der Baukörper im Baubereich steht, ist eine Entwurfsfrage und
   wird nicht vorweggenommen — der Baubereich zeigt die mögliche Lage.
