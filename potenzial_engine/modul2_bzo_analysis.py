@@ -60,6 +60,10 @@ from typing import Any, Optional
 
 import requests
 
+# Gemeinsame Abrufmechanik (Wiederholung, Browser-User-Agent als Zweitversuch).
+# Modul 1 importiert Modul 2 nicht -- kein Zyklus.
+from .modul1_geodata import _get_mit_wiederholung
+
 DEFAULT_BACKEND = "gemini"
 GEMINI_MODEL = "gemini-3.6-flash"  # gemini-2.5-flash ist fuer neue Nutzer nicht mehr verfuegbar (live per API-Fehler bestaetigt, 2026-08-26)
 CLAUDE_MODEL = "claude-opus-5"
@@ -80,8 +84,14 @@ class Modul2Error(Exception):
 def download_pdf(url: str, timeout: int = DEFAULT_TIMEOUT) -> bytes:
     """Laedt ein BZO-/Reglements-PDF von einer URL (z.B. aus Modul 1s
     'rechtsvorschriften') und validiert Content-Type sowie Groesse.
+
+    Nutzt dieselbe Wiederholungslogik wie Modul 1: Gemeinde-Websites weisen
+    unbekannte User-Agents teils ab (live beobachtet: Berlingen TG, HTTP 403
+    -- ein ganzer Analyselauf scheiterte daran, obwohl das Dokument
+    oeffentlich ist). Beim zweiten Versuch wird ein Browser-User-Agent
+    verwendet.
     """
-    resp = requests.get(url, timeout=timeout)
+    resp = _get_mit_wiederholung(url, timeout=timeout)
     resp.raise_for_status()
 
     content_type = resp.headers.get("Content-Type", "")
@@ -637,6 +647,14 @@ def analyze_bzo_from_urls(
             pdf_documents.append(download_pdf(url))
         except Modul2Error as exc:
             skipped.append({"url": url, "grund": str(exc)})
+        except requests.exceptions.RequestException as exc:
+            # Netz-/HTTP-Fehler beim einzelnen Dokument -- z.B. eine
+            # Gemeinde-Website, die den Abruf sperrt (live beobachtet:
+            # Berlingen TG, HTTP 403 auch mit Browser-User-Agent). Frueher
+            # riss das die gesamte Analyse mit, obwohl der Docstring oben
+            # bereits das Ueberspringen vorsah: raise_for_status() wirft
+            # HTTPError, nicht Modul2Error.
+            skipped.append({"url": url, "grund": f"{type(exc).__name__}: {exc}"})
 
     if not pdf_documents:
         raise Modul2Error(

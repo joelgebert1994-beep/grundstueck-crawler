@@ -53,6 +53,7 @@ from typing import Any, Optional
 
 import math
 import urllib.parse
+import xml.etree.ElementTree as ElementTree
 
 import requests
 from pydantic import BaseModel
@@ -94,11 +95,29 @@ OEREB_CANTON_SERVICES: dict[str, str] = {
     # ueber Websuche (vorherige Recherche 2026-08-26 hatte dies noch nicht
     # gefunden -- Endpunkt war entweder neu oder schlicht nicht auffindbar).
     "SG": "https://oereb.geo.sg.ch/ktsg/wsgi/oereb/extract/{fmt}/?EGRID={egrid}",
-    # SO: der aus cadastre.ch abgeleitete Pfad "geo.so.ch/api/oereb/extract/..."
-    # antwortet Stand 2026-08-26 mit HTTP 415 (nginx-Ebene) -- vermutlich hat
-    # sich der Endpunkt seit der urspruenglichen Recherche geaendert. Vor
-    # erneuter Nutzung neu verifizieren statt blind zu reaktivieren.
-    # "SO": "https://geo.so.ch/api/oereb/extract/{fmt}/?EGRID={egrid}",
+    # BE: live verifiziert 2026-09-11 mit echtem EGRID (CH856146853576,
+    # Guemligen) -- 200 mit gueltigem openoereb-Schema, "Amt fuer
+    # Geoinformation" als PLRCadastreAuthority, 7 Restriktionen inkl. 3x
+    # ch.Nutzungsplanung, 32 Rechtsvorschriften. Die amtliche LandRegistryArea
+    # (4886 m2) deckte sich mit der unabhaengig aus der Katastergeometrie
+    # berechneten Flaeche (4884 m2) -- unabhaengige Bestaetigung.
+    # Warum die Recherche vom 26.08. das verfehlte: der Pfad hat KEIN
+    # "/oereb/"-Segment, die Basis ist direkt "/extract/{fmt}/".
+    "BE": "https://www.oereb.apps.be.ch/extract/{fmt}/?EGRID={egrid}",
+    # SO: live verifiziert 2026-09-11. Der HTTP 415 vom 26.08. war kein
+    # geaenderter Endpunkt, sondern die Formatwahl: Solothurn liefert
+    # AUSSCHLIESSLICH XML, JSON quittiert es mit 415. Mit dem Beispiel-EGRID
+    # der Kantonsdoku (CH857632820629): 151 KB, 12 Restriktionen, 66
+    # Rechtsvorschriften, darunter Zonenreglement und Baureglement.
+    "SO": "https://geo.so.ch/api/oereb/extract/{fmt}/?EGRID={egrid}",
+}
+
+# Kantone, deren Webservice KEIN JSON liefert. Der Auszug ist derselbe
+# (openoereb, schemas.geo.admin.ch/V_D/OeREB/2.0) -- nur die Serialisierung
+# unterscheidet sich, deshalb wird XML nach dem Abruf in dieselbe Struktur
+# ueberfuehrt und von denselben Extraktoren ausgewertet.
+OEREB_CANTON_FORMAT: dict[str, str] = {
+    "SO": "xml",
 }
 
 # Recherchiert, aber KEIN funktionierender Endpunkt gefunden (Stand 2026-09-03)
@@ -115,8 +134,51 @@ OEREB_CANTON_SERVICES: dict[str, str] = {
 DEFAULT_TIMEOUT = 20
 USER_AGENT = "gebimo-immo-potenzial-engine/1.0 (+internal tool)"
 
+# Manche Gemeinde-Websites weisen unbekannte User-Agents ab (live beobachtet:
+# Berlingen TG, HTTP 403 beim Abruf des Baureglements). Der Browser-UA wird
+# NUR als zweiter Versuch verwendet -- der ehrliche Werkzeug-UA bleibt der
+# Normalfall.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
 session = requests.Session()
 session.headers.update({"User-Agent": USER_AGENT})
+
+
+def _get_mit_wiederholung(
+    url: str, timeout: int = DEFAULT_TIMEOUT, versuche: int = 3, **kwargs
+) -> requests.Response:
+    """GET mit Wiederholung bei voruebergehenden Stoerungen.
+
+    Zwei real beobachtete Faelle (Stand 11.09.2026) haben diese Funktion
+    ausgeloest:
+      * api3.geo.admin.ch brach einmalig mit ReadTimeout ab -- ein
+        Wiederholungsversuch haette gereicht
+      * eine Gemeinde-Website (Berlingen TG) antwortete dem Werkzeug-UA mit
+        HTTP 403; mit Browser-UA laesst sie das oeffentliche Dokument zu
+
+    Nicht wiederholt werden echte Ablehnungen (404, 410) -- dort waere jeder
+    weitere Versuch sinnlos.
+    """
+    letzter_fehler: Optional[Exception] = None
+    for versuch in range(versuche):
+        kopfzeilen = dict(kwargs.pop("headers", {}) or {})
+        if versuch > 0:
+            kopfzeilen["User-Agent"] = BROWSER_USER_AGENT
+        try:
+            resp = session.get(url, timeout=timeout, headers=kopfzeilen or None, **kwargs)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            letzter_fehler = exc
+            time.sleep(1.5 * (versuch + 1))
+            continue
+        if resp.status_code in (403, 429, 500, 502, 503, 504) and versuch < versuche - 1:
+            letzter_fehler = requests.exceptions.HTTPError(f"HTTP {resp.status_code}", response=resp)
+            time.sleep(1.5 * (versuch + 1))
+            continue
+        return resp
+    raise letzter_fehler if letzter_fehler else requests.exceptions.RequestException(url)
 
 
 class Modul1Error(Exception):
@@ -124,7 +186,14 @@ class Modul1Error(Exception):
 
 
 def _get(url: str, params: dict[str, Any], timeout: int = DEFAULT_TIMEOUT) -> Any:
-    resp = session.get(url, params=params, timeout=timeout)
+    """Zentrale GET-Abfrage aller Bundes-Geodienste.
+
+    Laeuft ueber _get_mit_wiederholung(), weil api3.geo.admin.ch gelegentlich
+    mit ReadTimeout abbricht (live beobachtet 11.09.2026 -- ein ganzer
+    Analyselauf scheiterte daran, obwohl ein Wiederholungsversuch genuegt
+    haette).
+    """
+    resp = _get_mit_wiederholung(url, timeout=timeout, params=params)
     resp.raise_for_status()
     return resp.json()
 
@@ -765,6 +834,61 @@ def _extract_official_zone_labels(extract: dict[str, Any]) -> list[dict[str, Any
     return zones
 
 
+# Felder, die in der JSON-Serialisierung IMMER eine Liste sind. Im XML sehen
+# sie bei nur einem Vorkommen wie ein Einzelobjekt aus -- ohne diese Liste
+# wuerde ein Extraktor bei genau einer Restriktion ins Leere greifen.
+_OEREB_XML_LISTENFELDER = frozenset({
+    "RestrictionOnLandownership", "LegalProvisions", "Document", "Reference",
+    "ConcernedTheme", "NotConcernedTheme", "ThemeWithoutData", "Geometry",
+    "Map", "LegendAtWeb", "OtherLegend",
+})
+
+# XML kennt keine Zahlen, nur Text. Diese Felder werden numerisch gebraucht
+# (u.a. sortiert _extract_official_zone_labels nach PartInPercent).
+_OEREB_XML_ZAHLENFELDER = frozenset({"PartInPercent", "LandRegistryArea", "Area", "Length"})
+
+
+def _oereb_xml_zu_dict(element) -> Any:
+    """Ueberfuehrt einen openoereb-XML-Knoten in dieselbe Struktur, die der
+    Bund auch als JSON ausliefert.
+
+    Drei Anpassungen sind noetig, weil XML das Modell anders abbildet:
+      * Namespaces abstreifen (ns3:Extract -> Extract)
+      * MultilingualText entpacken: {"LocalisedText": {...}} -> [{...}]
+      * Listenfelder erzwingen, auch bei nur einem Vorkommen
+    """
+    kinder = list(element)
+    if not kinder:
+        text = (element.text or "").strip()
+        if not text:
+            return None
+        name = element.tag.split("}")[-1]
+        if name in _OEREB_XML_ZAHLENFELDER:
+            try:
+                return float(text) if "." in text else int(text)
+            except ValueError:
+                return text
+        return text
+
+    ergebnis: dict[str, Any] = {}
+    for kind in kinder:
+        name = kind.tag.split("}")[-1]
+        wert = _oereb_xml_zu_dict(kind)
+        if isinstance(wert, dict) and set(wert) == {"LocalisedText"}:
+            inner = wert["LocalisedText"]
+            wert = inner if isinstance(inner, list) else [inner]
+        if name in ergebnis:
+            if not isinstance(ergebnis[name], list):
+                ergebnis[name] = [ergebnis[name]]
+            ergebnis[name].append(wert)
+        else:
+            ergebnis[name] = wert
+    for feld in _OEREB_XML_LISTENFELDER & set(ergebnis):
+        if not isinstance(ergebnis[feld], list):
+            ergebnis[feld] = [ergebnis[feld]]
+    return ergebnis
+
+
 def get_oereb_data(egrid: str, kanton: Optional[str]) -> dict[str, Any]:
     """Holt den OEREB-Extrakt fuer ein EGRID vom kantonalen Webservice und
     extrahiert darin enthaltene Dokument-/PDF-Links (u.a. kommunale
@@ -790,11 +914,18 @@ def get_oereb_data(egrid: str, kanton: Optional[str]) -> dict[str, Any]:
             ),
         }
 
-    url = template.format(base="", fmt="json", egrid=egrid)
+    fmt = OEREB_CANTON_FORMAT.get(kanton_key, "json")
+    url = template.format(base="", fmt=fmt, egrid=egrid)
     try:
-        resp = session.get(url, timeout=30)
+        resp = _get_mit_wiederholung(url, timeout=30)
         resp.raise_for_status()
-        data = resp.json()
+        if fmt == "xml":
+            wurzel = ElementTree.fromstring(resp.content)
+            data = {wurzel.tag.split("}")[-1]: _oereb_xml_zu_dict(wurzel)}
+        else:
+            data = resp.json()
+    except ElementTree.ParseError as exc:
+        return {"found": False, "reason": f"OEREB-Antwort ({kanton_key}) ist kein gueltiges XML: {exc}", "url": url}
     except requests.exceptions.HTTPError as exc:
         return {"found": False, "reason": f"OEREB-Webservice ({kanton_key}) antwortete mit Fehler: {exc}", "url": url}
     except requests.exceptions.RequestException as exc:
