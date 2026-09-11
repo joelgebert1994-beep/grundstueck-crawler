@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grundstueck-Crawler</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ink: #12202a;
+  --ink-2: #3d525c;
+  --ink-3: #6d828c;
+  --paper: #e9ebe8;
+  --panel: #ffffff;
+  --panel-2: #f5f7f6;
+  --line: #d5dbd8;
+  --line-2: #e6eae8;
+  --accent: #0d5c68;
+  --accent-2: #0a454e;
+  --accent-soft: #dceceb;
+  --parzelle: #b3324a;
+  --zone: #2a7f8f;
+  --baubereich: #1f7a4d;
+  --restrikt: #b4661a;
+  --ok: #2f6f47; --ok-soft: #e2eee7;
+  --warn: #8f6415; --warn-soft: #f4ead6;
+  --stop: #9c3327; --stop-soft: #f4e2df;
+  --shadow: 0 2px 4px rgba(15,32,42,.06), 0 8px 28px rgba(15,32,42,.10);
+  --shadow-s: 0 1px 2px rgba(15,32,42,.08);
+  --r: 10px;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e8eeec; --ink-2: #a8bcc0; --ink-3: #7d9299;
+    --paper: #0d1519; --panel: #16222a; --panel-2: #1c2b33;
+    --line: #2b3d46; --line-2: #22323a;
+    --accent: #4fb3c1; --accent-2: #7fd0da; --accent-soft: #13343c;
+    --parzelle: #ef7d92; --zone: #63bccb;
+    --baubereich: #5cc98c; --restrikt: #e0a05a;
+    --ok: #6cc38e; --ok-soft: #163022;
+    --warn: #dcae5c; --warn-soft: #32270f;
+    --stop: #e88a7c; --stop-soft: #3a1d19;
+    --shadow: 0 2px 4px rgba(0,0,0,.30), 0 8px 28px rgba(0,0,0,.40);
+    --shadow-s: 0 1px 2px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #e8eeec; --ink-2: #a8bcc0; --ink-3: #7d9299;
+  --paper: #0d1519; --panel: #16222a; --panel-2: #1c2b33;
+  --line: #2b3d46; --line-2: #22323a;
+  --accent: #4fb3c1; --accent-2: #7fd0da; --accent-soft: #13343c;
+  --parzelle: #ef7d92; --zone: #63bccb;
+  --baubereich: #5cc98c; --restrikt: #e0a05a;
+  --ok: #6cc38e; --ok-soft: #163022; --warn: #dcae5c; --warn-soft: #32270f;
+  --stop: #e88a7c; --stop-soft: #3a1d19;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: "Archivo", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink); background: var(--paper);
+  overflow: hidden; font-size: 14px; line-height: 1.5;
+}
+h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
+a { color: var(--accent); }
+img { max-width: 100%; }
+
+/* ---------- Grundraster: Karte links, Dossier rechts ---------- */
+.app { display: flex; height: 100vh; width: 100vw; }
+.mapwrap { position: relative; flex: 1 1 auto; min-width: 0; }
+#map { position: absolute; inset: 0; background: var(--panel-2); }
+.leaflet-control-attribution { font-size: 10px; }
+.dossier {
+  flex: 0 0 470px; width: 470px; height: 100vh; overflow-y: auto;
+  background: var(--panel); border-left: 1px solid var(--line);
+  box-shadow: -6px 0 24px rgba(15,32,42,.07);
+}
+@media (max-width: 1100px) { .dossier { flex-basis: 400px; width: 400px; } }
+@media (max-width: 860px) {
+  body { overflow: auto; }
+  .app { flex-direction: column; height: auto; }
+  .mapwrap { flex: none; height: 55vh; }
+  .dossier { flex: none; width: 100%; height: auto; border-left: none; border-top: 1px solid var(--line); }
+}
+
+/* ---------- Suche ---------- */
+.searchcard {
+  position: absolute; top: 14px; left: 14px; right: 14px; z-index: 600;
+  max-width: 520px; background: var(--panel); border-radius: var(--r);
+  box-shadow: var(--shadow); padding: 12px; border: 1px solid var(--line-2);
+}
+.brandline { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.brandline .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+.brandline h1 { font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.brandline .sub { font-size: 11px; color: var(--ink-3); margin-left: auto; font-family: var(--mono); }
+.searchrow { display: flex; gap: 8px; }
+.searchrow input {
+  flex: 1; min-width: 0; font: inherit; color: var(--ink); padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+}
+.searchrow input:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--panel); }
+.btn {
+  font: inherit; font-weight: 600; cursor: pointer; padding: 10px 16px;
+  border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.suggest {
+  position: absolute; left: 12px; right: 12px; top: calc(100% - 4px); z-index: 700;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: var(--shadow); max-height: 260px; overflow-y: auto; display: none;
+}
+.suggest.on { display: block; }
+.suggest button {
+  display: block; width: 100%; text-align: left; font: inherit; color: var(--ink);
+  padding: 9px 12px; background: none; border: none; border-bottom: 1px solid var(--line-2); cursor: pointer;
+}
+.suggest button:last-child { border-bottom: none; }
+.suggest button:hover { background: var(--accent-soft); }
+
+/* ---------- Layer-Steuerung ---------- */
+.layercard {
+  position: absolute; left: 14px; bottom: 22px; z-index: 600; width: 236px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.layercard > summary {
+  list-style: none; cursor: pointer; padding: 10px 12px; font-weight: 700; font-size: 11px;
+  letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; gap: 8px;
+}
+.layercard > summary::-webkit-details-marker { display: none; }
+.layercard > summary::after { content: "\25B8"; margin-left: auto; color: var(--ink-3); }
+.layercard[open] > summary::after { content: "\25BE"; }
+.layerbody { padding: 4px 12px 12px; border-top: 1px solid var(--line-2); }
+.layergroup { margin-top: 10px; }
+.layergroup h4 { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+.layeropt { display: flex; align-items: center; gap: 7px; padding: 4px 0; font-size: 13px; cursor: pointer; }
+.layeropt input { accent-color: var(--accent); cursor: pointer; flex: none; }
+.layeropt .swatch { width: 12px; height: 12px; border-radius: 3px; border: 2px solid; flex: none; }
+.layeropt.off { color: var(--ink-3); cursor: default; }
+.layeropt .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+
+.maphint {
+  position: absolute; right: 14px; bottom: 22px; z-index: 600; max-width: 268px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r);
+  box-shadow: var(--shadow-s); padding: 9px 12px; font-size: 12px; color: var(--ink-2);
+}
+.maphint b { color: var(--ink); }
+
+/* ---------- Dossier ---------- */
+.dossier-inner { padding-bottom: 60px; }
+.empty { padding: 44px 24px; color: var(--ink-2); }
+.empty h2 { font-size: 17px; margin-bottom: 10px; color: var(--ink); }
+.empty ol { margin: 14px 0 0; padding-left: 18px; }
+.empty li { margin-bottom: 7px; }
+
+.dosshead { padding: 18px 20px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+.dosshead .eyebrow { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+.dosshead h2 { font-size: 19px; margin: 4px 0 10px; line-height: 1.25; }
+.headgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.headgrid > div { background: var(--panel); padding: 8px 10px; }
+.headgrid dt { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.headgrid dd { margin: 0; font-family: var(--mono); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; word-break: break-word; }
+
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; }
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.stop { background: var(--stop-soft); color: var(--stop); }
+.badge.mute { background: var(--panel-2); color: var(--ink-3); border: 1px solid var(--line-2); }
+
+.navbar {
+  position: sticky; top: 0; z-index: 20; background: var(--panel);
+  border-bottom: 1px solid var(--line); padding: 8px 12px;
+  display: flex; gap: 4px; overflow-x: auto;
+}
+.navbar button {
+  font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap;
+  padding: 5px 10px; border-radius: 6px; border: 1px solid transparent;
+  background: none; color: var(--ink-3); cursor: pointer;
+}
+.navbar button:hover { background: var(--panel-2); color: var(--ink); }
+.navbar button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+section.sec { border-bottom: 1px solid var(--line); padding: 18px 20px 20px; scroll-margin-top: 44px; }
+section.sec.flash { animation: flash 1.1s ease-out; }
+@keyframes flash { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { section.sec.flash { animation: none; } }
+.sechead { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+.sechead .num { font-family: var(--mono); font-size: 11px; color: var(--ink-3); font-weight: 600; }
+.sechead h3 { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.sechead .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.subhead { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); margin: 16px 0 8px; font-weight: 700; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.tile { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 9px 11px; }
+.tile .lbl { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+.tile .val { font-family: var(--mono); font-size: 17px; font-weight: 600; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.tile .val.na { font-size: 12px; font-weight: 500; color: var(--ink-3); font-family: "Archivo", sans-serif; }
+.tile .unit { font-size: 11px; color: var(--ink-3); font-weight: 500; }
+.tile.hl { background: var(--accent-soft); border-color: var(--accent); }
+
+.maplink {
+  display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 11px; font-weight: 600;
+  color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 6px;
+  padding: 3px 8px; cursor: pointer;
+}
+.maplink:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+.kv { display: grid; grid-template-columns: minmax(120px, 44%) 1fr; gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.kv > * { background: var(--panel); padding: 7px 10px; font-size: 13px; }
+.kv .k { color: var(--ink-2); }
+.kv .v { font-family: var(--mono); font-variant-numeric: tabular-nums; word-break: break-word; }
+.kv .v.na { font-family: "Archivo", sans-serif; color: var(--ink-3); font-size: 12px; }
+
+.card { border: 1px solid var(--line); border-radius: 9px; padding: 12px; margin-bottom: 10px; background: var(--panel); }
+.card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.card .cardhead { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.card .cardhead h4 { font-size: 13.5px; font-weight: 700; }
+.card .cardhead .badge { margin-left: auto; flex: none; }
+.card p { margin: 6px 0; color: var(--ink-2); font-size: 13px; }
+.bigval { font-family: var(--mono); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bigval .unit { font-size: 12px; color: var(--ink-3); }
+.bigval.na { font-family: "Archivo", sans-serif; font-size: 13px; font-weight: 500; color: var(--ink-3); }
+
+details.more { margin-top: 10px; border-top: 1px solid var(--line-2); padding-top: 8px; }
+details.more > summary {
+  cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--accent); list-style: none;
+  display: flex; align-items: center; gap: 5px;
+}
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: "+"; font-family: var(--mono); font-weight: 700; }
+details.more[open] > summary::before { content: "\2212"; }
+details.more > div { padding-top: 10px; }
+
+.zitat { border-left: 3px solid var(--line); padding: 4px 0 4px 10px; margin: 7px 0; font-size: 12.5px; color: var(--ink-2); font-style: italic; }
+.artikel { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.note { background: var(--panel-2); border: 1px solid var(--line-2); border-left: 3px solid var(--ink-3); border-radius: 6px; padding: 9px 11px; font-size: 12.5px; color: var(--ink-2); margin: 8px 0; }
+.note.warn { border-left-color: var(--warn); background: var(--warn-soft); color: var(--warn); border-color: var(--line-2); }
+.note.stop { border-left-color: var(--stop); background: var(--stop-soft); color: var(--stop); border-color: var(--line-2); }
+.note.ok { border-left-color: var(--ok); background: var(--ok-soft); color: var(--ok); border-color: var(--line-2); }
+ul.plain { margin: 6px 0; padding-left: 17px; font-size: 12.5px; color: var(--ink-2); }
+ul.plain li { margin-bottom: 4px; }
+
+table.src { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.src th { text-align: left; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 5px 6px; border-bottom: 1px solid var(--line); }
+table.src td { padding: 6px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+.scroller { overflow-x: auto; }
+
+.loadwrap { padding: 40px 24px; }
+.loadwrap h2 { font-size: 15px; margin-bottom: 6px; }
+.bar { height: 5px; background: var(--line-2); border-radius: 3px; overflow: hidden; margin: 14px 0 8px; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 4%; transition: width .5s ease; }
+.loadstep { font-size: 12.5px; color: var(--ink-2); font-family: var(--mono); }
+.loadpct { float: right; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+
+.priceform { display: flex; flex-direction: column; gap: 9px; margin: 10px 0; }
+.priceform .modus { display: flex; gap: 6px; }
+.priceform .modus label { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+.priceform .modus label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.priceform input[type="number"] { font: inherit; font-family: var(--mono); padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); color: var(--ink); }
+.leaflet-popup-content { font-family: "Archivo", sans-serif; font-size: 12.5px; margin: 10px 12px; }
+.leaflet-popup-content b { display: block; margin-bottom: 3px; }
+.leaflet-popup-content .m { font-family: var(--mono); font-size: 11.5px; color: #3d525c; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="mapwrap">
+    <div id="map"></div>
+
+    <div class="searchcard">
+      <div class="brandline">
+        <span class="dot"></span>
+        <h1>Grundst&uuml;ck-Crawler</h1>
+        <span class="sub" id="kantonhint"></span>
+      </div>
+      <div class="searchrow">
+        <input id="adresse" type="text" placeholder="Adresse eingeben, z.B. Hauptstrasse 78, 9400 Rorschach" autocomplete="off">
+        <button class="btn" id="go-btn" disabled>Grundst&uuml;ck analysieren</button>
+      </div>
+      <div class="suggest" id="suggest"></div>
+    </div>
+
+    <details class="layercard" id="layercard" open>
+      <summary>Layer</summary>
+      <div class="layerbody">
+        <div class="layergroup">
+          <h4>Basiskarte</h4>
+          <label class="layeropt"><input type="radio" name="base" value="karte" checked> Landeskarte</label>
+          <label class="layeropt"><input type="radio" name="base" value="luftbild"> Luftbild</label>
+          <label class="layeropt"><input type="radio" name="base" value="grau"> Grau (neutral)</label>
+        </div>
+        <div class="layergroup">
+          <h4>Amtliche Overlays</h4>
+          <label class="layeropt"><input type="checkbox" id="lay-kataster"> Katasterplan</label>
+          <label class="layeropt"><input type="checkbox" id="lay-gebaeude"> Geb&auml;ude (GWR)</label>
+        </div>
+        <div class="layergroup">
+          <h4>Analyse-Ergebnisse</h4>
+          <label class="layeropt off" id="opt-parzelle"><input type="checkbox" id="lay-parzelle" checked disabled><span class="swatch" style="border-color:#b3324a;background:rgba(179,50,74,.18)"></span>Parzelle<span class="cnt" id="cnt-parzelle">&ndash;</span></label>
+          <label class="layeropt off" id="opt-zonen"><input type="checkbox" id="lay-zonen" checked disabled><span class="swatch" style="border-color:#2a7f8f;background:rgba(42,127,143,.18)"></span>Zonen<span class="cnt" id="cnt-zonen">&ndash;</span></label>
+          <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;background:rgba(31,122,77,.25)"></span>Baubereich G1<span class="cnt" id="cnt-baubereich">&ndash;</span></label>
+          <label class="layeropt off" id="opt-restrikt"><input type="checkbox" id="lay-restrikt" checked disabled><span class="swatch" style="border-color:#b4661a;background:rgba(180,102,26,.22)"></span>Restriktionen<span class="cnt" id="cnt-restrikt">&ndash;</span></label>
+        </div>
+      </div>
+    </details>
+
+    <div class="maphint" id="maphint">Adresse suchen &mdash; danach sind <b>Parzelle</b>, <b>Zonen</b> und <b>Baubereich</b> auf der Karte anklickbar.</div>
+  </div>
+
+  <aside class="dossier" id="dossier">
+    <div class="dossier-inner" id="dossier-inner">
+      <div class="empty">
+        <h2>Grundst&uuml;cksdossier</h2>
+        <p>Amtliche Grundst&uuml;cks-, Standort- und Baurechtsanalyse aus offiziellen Schweizer Geodiensten.</p>
+        <ol>
+          <li>Adresse oben links eingeben und aus der Liste w&auml;hlen.</li>
+          <li><b>Grundst&uuml;ck analysieren</b> starten &mdash; dauert 1&ndash;3 Minuten.</li>
+          <li>Ergebnisse hier lesen und auf der Karte anklicken.</li>
+        </ol>
+        <p style="margin-top:16px;font-size:12.5px;color:var(--ink-3)">Die Wirtschaftlichkeitsrechnung ist optional und steht ganz am Ende &mdash; die baurechtliche Analyse funktioniert vollst&auml;ndig ohne Verkaufspreis.</p>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+/* =====================================================================
+   Koordinaten: die Engine liefert alle Geometrien in LV95 (EPSG:2056).
+   Umrechnung nach WGS84 mit den offiziellen Naeherungsformeln von swisstopo
+   (Genauigkeit ~1 m, fuer die Kartendarstellung ausreichend). Reine
+   Darstellungsumrechnung -- die Fachlogik rechnet unveraendert in LV95.
+   ===================================================================== */
+function lv95ToWgs84(e, n) {
+  var yp = (e - 2600000) / 1000000;
+  var xp = (n - 1200000) / 1000000;
+  var lam = 2.6779094 + 4.728982 * yp + 0.791484 * yp * xp + 0.1306 * yp * xp * xp - 0.0436 * yp * yp * yp;
+  var phi = 16.9023892 + 3.238272 * xp - 0.270978 * yp * yp - 0.002528 * xp * xp
+          - 0.0447 * yp * yp * xp - 0.0140 * xp * xp * xp;
+  return [phi * 100 / 36, lam * 100 / 36];
+}
+function wgs84ToLv95(lat, lon) {
+  var p = (lat * 3600 - 169028.66) / 10000;
+  var l = (lon * 3600 - 26782.5) / 10000;
+  var e = 2600072.37 + 211455.93 * l - 10938.51 * l * p - 0.36 * l * p * p - 44.54 * l * l * l;
+  var n = 1200147.07 + 308807.95 * p + 3745.25 * l * l + 76.63 * p * p - 194.56 * l * l * p + 119.79 * p * p * p;
+  return [e, n];
+}
+function ringToLatLngs(ring) {
+  if (!Array.isArray(ring)) return [];
+  return ring.filter(function (p) { return Array.isArray(p) && p.length >= 2; })
+             .map(function (p) { return lv95ToWgs84(p[0], p[1]); });
+}
+function tiefeVon(x) { var n = 0; while (Array.isArray(x) && x.length) { n++; x = x[0]; } return n; }
+/* Geometrien kommen als einzelner Ring [[x,y],...] ODER als Liste von Ringen. */
+function toRings(geom) {
+  if (!Array.isArray(geom) || !geom.length) return [];
+  var t = tiefeVon(geom);
+  if (t >= 3) {
+    return geom.map(ringToLatLngs).filter(function (r) { return r.length >= 3; });
+  }
+  var r = ringToLatLngs(geom);
+  return r.length >= 3 ? [r] : [];
+}
+
+/* ===================== Karte ===================== */
+/* Kachelformat je Layer -- live gegen wmts.geo.admin.ch geprueft:
+   die swisstopo-Rasterkarten liefern ausschliesslich jpeg (png -> HTTP 400),
+   die Overlays mit Transparenz ausschliesslich png. */
+var WMTS_FORMAT = {
+  "ch.swisstopo.pixelkarte-farbe": "jpeg",
+  "ch.swisstopo.pixelkarte-grau": "jpeg",
+  "ch.swisstopo.swissimage": "jpeg",
+  "ch.kantone.cadastralwebmap-farbe": "png",
+  "ch.bfs.gebaeude_wohnungs_register": "png"
+};
+function wmts(l) {
+  return "https://wmts.geo.admin.ch/1.0.0/" + l + "/default/current/3857/{z}/{x}/{y}." + (WMTS_FORMAT[l] || "png");
+}
+var ATTR = '&copy; <a href="https://www.swisstopo.admin.ch">swisstopo</a>';
+var BASES = {
+  karte: L.tileLayer(wmts("ch.swisstopo.pixelkarte-farbe"), { maxZoom: 21, maxNativeZoom: 19, attribution: ATTR }),
+  luftbild: L.tileLayer(wmts("ch.swisstopo.swissimage"), { maxZoom: 21, maxNativeZoom: 19, attribution: ATTR }),
+  grau: L.tileLayer(wmts("ch.swisstopo.pixelkarte-grau"), { maxZoom: 21, maxNativeZoom: 19, attribution: ATTR })
+};
+var OVERLAYS = {
+  kataster: L.tileLayer(wmts("ch.kantone.cadastralwebmap-farbe"), { maxZoom: 21, maxNativeZoom: 19, opacity: .85 }),
+  gebaeude: L.tileLayer(wmts("ch.bfs.gebaeude_wohnungs_register"), { maxZoom: 21, maxNativeZoom: 19, opacity: .9 })
+};
+
+var map = L.map("map", { center: [46.95, 8.1], zoom: 8, fadeAnimation: false });
+BASES.karte.addTo(map);
+var aktiveBase = "karte";
+
+var gruppen = {
+  zonen: L.layerGroup().addTo(map),
+  restrikt: L.layerGroup().addTo(map),
+  parzelle: L.layerGroup().addTo(map),
+  baubereich: L.layerGroup().addTo(map)
+};
+var adressMarker = null, pickMarker = null;
+
+var STIL = {
+  parzelle:  { color: "#b3324a", weight: 3,   fillColor: "#b3324a", fillOpacity: .07 },
+  zone:      { color: "#2a7f8f", weight: 1.5, fillColor: "#2a7f8f", fillOpacity: .13 },
+  zoneUeber: { color: "#6a4c93", weight: 2,   fillColor: "#6a4c93", fillOpacity: .15, dashArray: "5,4" },
+  baubereich:{ color: "#1f7a4d", weight: 2,   fillColor: "#1f7a4d", fillOpacity: .30 },
+  restrikt:  { color: "#b4661a", weight: 2,   fillColor: "#b4661a", fillOpacity: .22, dashArray: "6,3" }
+};
+var selektiert = null;
+function selektiere(layer, sectionId) {
+  if (selektiert && selektiert !== layer && selektiert.setStyle && selektiert._basisStil) {
+    selektiert.setStyle(selektiert._basisStil);
+  }
+  selektiert = layer;
+  if (layer && layer.setStyle) {
+    layer.setStyle({
+      weight: (layer._basisStil.weight || 2) + 2.5,
+      fillOpacity: Math.min(.55, (layer._basisStil.fillOpacity || .2) + .18)
+    });
+    if (layer.bringToFront) layer.bringToFront();
+  }
+  if (sectionId) springeZu(sectionId);
+}
+function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId) {
+  var layers = [];
+  toRings(geom).forEach(function (ring) {
+    var poly = L.polygon(ring, stil);
+    poly._basisStil = stil;
+    if (popupHtml) poly.bindPopup(popupHtml);
+    poly.on("click", function () { selektiere(poly, sectionId); });
+    poly.addTo(gruppe);
+    layers.push(poly);
+  });
+  return layers;
+}
+function zeichneLinien(gruppe, geom, stil, popupHtml, sectionId) {
+  var koords = tiefeVon(geom) >= 3 ? ringToLatLngs(geom[0]) : ringToLatLngs(geom);
+  if (koords.length < 2) return [];
+  var line = L.polyline(koords, stil);
+  line._basisStil = stil;
+  if (popupHtml) line.bindPopup(popupHtml);
+  line.on("click", function () { selektiere(line, sectionId); });
+  line.addTo(gruppe);
+  return [line];
+}
+
+/* Layer-Schalter */
+Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), function (r) {
+  r.addEventListener("change", function () {
+    map.removeLayer(BASES[aktiveBase]);
+    aktiveBase = r.value;
+    BASES[aktiveBase].addTo(map);
+    Object.keys(OVERLAYS).forEach(function (k) { if (map.hasLayer(OVERLAYS[k])) OVERLAYS[k].bringToFront(); });
+  });
+});
+[["lay-kataster", OVERLAYS.kataster], ["lay-gebaeude", OVERLAYS.gebaeude]].forEach(function (paar) {
+  document.getElementById(paar[0]).addEventListener("change", function (ev) {
+    if (ev.target.checked) paar[1].addTo(map); else map.removeLayer(paar[1]);
+  });
+});
+["parzelle", "zonen", "baubereich", "restrikt"].forEach(function (name) {
+  document.getElementById("lay-" + name).addEventListener("change", function (ev) {
+    if (ev.target.checked) gruppen[name].addTo(map); else map.removeLayer(gruppen[name]);
+  });
+});
+function setLayerVerfuegbar(name, anzahl) {
+  document.getElementById("lay-" + name).disabled = anzahl === 0;
+  document.getElementById("opt-" + name).classList.toggle("off", anzahl === 0);
+  document.getElementById("cnt-" + name).textContent = anzahl === 0 ? "–" : anzahl;
+}
+
+/* Klick auf freie Kartenflaeche: amtliche Direktabfrage (Parzelle + GWR).
+   Nutzt dieselben swisstopo-Layer wie Modul 1 -- keine neue Datenquelle. */
+map.on("click", function (ev) {
+  if (!ergebnisAktuell) return;
+  if (pickMarker) map.removeLayer(pickMarker);
+  pickMarker = L.circleMarker(ev.latlng, { radius: 6, color: "#0d5c68", weight: 2, fillColor: "#fff", fillOpacity: 1 })
+    .addTo(map).bindPopup("<b>Abfrage läuft …</b>").openPopup();
+  var lv = wgs84ToLv95(ev.latlng.lat, ev.latlng.lng);
+  fetch("/api/pick?e=" + lv[0].toFixed(1) + "&n=" + lv[1].toFixed(1))
+    .then(function (x) { return x.json(); })
+    .then(function (r) {
+      if (!r.ok) { pickMarker.setPopupContent("<b>Keine Daten an dieser Stelle.</b>"); return; }
+      var pz = r.parzelle || {}, gw = r.gwr || {}, zeilen = [];
+      if (pz.found) {
+        zeilen.push('<span class="m">Parzelle ' + esc(pz.parzellennummer) + " · " +
+          (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "Fläche unbekannt") + "</span>");
+        if (pz.egrid) zeilen.push('<span class="m">' + esc(pz.egrid) + "</span>");
+      } else {
+        zeilen.push('<span class="m">Keine Parzelle gefunden.</span>');
+      }
+      if (gw.found) {
+        var g = [];
+        if (gw.baujahr) g.push("Baujahr " + gw.baujahr);
+        if (gw.anzahl_geschosse) g.push(gw.anzahl_geschosse + " Gesch.");
+        if (gw.gebaeudevolumen_m3) g.push(fmt(gw.gebaeudevolumen_m3) + " m³");
+        zeilen.push('<span class="m">Gebäude: ' + (g.length ? esc(g.join(" · ")) : "GWR ohne Kennwerte") + "</span>");
+      }
+      pickMarker.setPopupContent("<b>Direktabfrage</b>" + zeilen.join("<br>"));
+    })
+    .catch(function () { pickMarker.setPopupContent("<b>Abfrage fehlgeschlagen.</b>"); });
+});
+
+/* ===================== Adresssuche ===================== */
+var GEOADMIN_SEARCH = "https://api3.geo.admin.ch/rest/services/api/SearchServer";
+var inputEl = document.getElementById("adresse");
+var suggestEl = document.getElementById("suggest");
+var goBtn = document.getElementById("go-btn");
+var gewaehlteAdresse = null, sucheTimer = null;
+
+inputEl.addEventListener("input", function () {
+  gewaehlteAdresse = null;
+  goBtn.disabled = true;
+  clearTimeout(sucheTimer);
+  var q = inputEl.value.trim();
+  if (q.length < 3) { suggestEl.classList.remove("on"); return; }
+  sucheTimer = setTimeout(function () { sucheAdresse(q); }, 250);
+});
+function sucheAdresse(q) {
+  var url = GEOADMIN_SEARCH + "?searchText=" + encodeURIComponent(q) + "&type=locations&origins=address&limit=6&sr=2056";
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    var treffer = (data.results || []).map(function (r) { return r.attrs; });
+    if (!treffer.length) { suggestEl.classList.remove("on"); return; }
+    suggestEl.innerHTML = "";
+    treffer.forEach(function (a) {
+      var label = (a.label || "").replace(/<[^>]*>/g, "");
+      var b = document.createElement("button");
+      b.textContent = label;
+      b.addEventListener("click", function () {
+        inputEl.value = label;
+        gewaehlteAdresse = label;
+        goBtn.disabled = false;
+        suggestEl.classList.remove("on");
+        var ll = lv95ToWgs84(a.y, a.x);
+        map.setView(ll, 18);
+        if (adressMarker) map.removeLayer(adressMarker);
+        adressMarker = L.circleMarker(ll, { radius: 7, color: "#0d5c68", weight: 3, fillColor: "#fff", fillOpacity: 1 }).addTo(map);
+      });
+      suggestEl.appendChild(b);
+    });
+    suggestEl.classList.add("on");
+  }).catch(function () { suggestEl.classList.remove("on"); });
+}
+document.addEventListener("click", function (ev) {
+  if (!suggestEl.contains(ev.target) && ev.target !== inputEl) suggestEl.classList.remove("on");
+});
+inputEl.addEventListener("keydown", function (ev) {
+  if (ev.key === "Enter" && gewaehlteAdresse) goBtn.click();
+});
+
+/* ===================== Analyse ===================== */
+var ergebnisAktuell = null, aktuelleJobId = null;
+var inner = document.getElementById("dossier-inner");
+
+goBtn.addEventListener("click", function () {
+  if (!gewaehlteAdresse) return;
+  goBtn.disabled = true;
+  goBtn.textContent = "Analyse läuft …";
+  ergebnisAktuell = null;
+  Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
+  ["parzelle", "zonen", "baubereich", "restrikt"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
+  renderLoading();
+  fetch("/api/analyze", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adresse: gewaehlteAdresse })
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    if (!data.ok) { renderFehler(data.fehler || "Unbekannter Fehler."); return; }
+    aktuelleJobId = data.job_id;
+    return pollStatus(data.job_id);
+  })
+  .catch(function () { renderFehler("Verbindung zum Analyse-Server fehlgeschlagen. Läuft das Backend samt Tunnel?"); })
+  .then(function () {
+    goBtn.disabled = false;
+    goBtn.textContent = "Grundstück analysieren";
+  });
+});
+
+var LADESCHRITTE = [
+  [0,  "Adresse geocodieren (geo.admin.ch)"],
+  [8,  "Parzelle und Katastergeometrie abrufen"],
+  [16, "Gebäudedaten (GWR) abrufen"],
+  [24, "Topografie, Radon und Umgebung abfragen"],
+  [34, "ÖREB-Kataster des Kantons abfragen"],
+  [45, "Nutzungszonen klassifizieren (geodienste.ch)"],
+  [55, "Restriktionsgeometrien abrufen"],
+  [62, "Bau- und Nutzungsordnung auswerten (dauert am längsten)"],
+  [88, "Zonenzuordnung, G1-Baubereich und SIA 416 berechnen"]
+];
+var ladeStart = 0, ladeTimer = null;
+function renderLoading() {
+  ladeStart = Date.now();
+  inner.innerHTML = '<div class="loadwrap"><h2>Analyse läuft</h2>' +
+    '<p style="color:var(--ink-2);font-size:13px">' + esc(gewaehlteAdresse) + "</p>" +
+    '<div class="bar"><i id="ladebalken"></i></div>' +
+    '<div><span class="loadpct" id="ladepct">4 %</span><span class="loadstep" id="ladestep">Adresse geocodieren</span></div>' +
+    '<p style="margin-top:18px;font-size:12.5px;color:var(--ink-3)">Die Auswertung der Bau- und Nutzungsordnung dauert typischerweise 1&ndash;3 Minuten. Der Fortschritt ist zeitbasiert geschätzt, nicht vom Server gemeldet.</p></div>';
+  clearInterval(ladeTimer);
+  ladeTimer = setInterval(function () {
+    var s = (Date.now() - ladeStart) / 1000;
+    var pct = Math.min(95, Math.round(4 + s * 0.62));
+    var bal = document.getElementById("ladebalken");
+    if (!bal) return;
+    bal.style.width = pct + "%";
+    document.getElementById("ladepct").textContent = pct + " %";
+    var txt = LADESCHRITTE[0][1];
+    LADESCHRITTE.forEach(function (x) { if (pct >= x[0]) txt = x[1]; });
+    document.getElementById("ladestep").textContent = txt;
+  }, 700);
+}
+function stopLoading() { clearInterval(ladeTimer); ladeTimer = null; }
+
+function pollStatus(jobId) {
+  var versuch = 0;
+  return new Promise(function (resolve) {
+    function tick() {
+      if (versuch++ > 120) { stopLoading(); renderFehler("Zeitüberschreitung — die Analyse hat zu lange gedauert."); resolve(); return; }
+      fetch("/api/status/" + jobId).then(function (r) { return r.json(); }).then(function (data) {
+        if (!data.ok) { stopLoading(); renderFehler(data.fehler || "Job nicht gefunden."); resolve(); return; }
+        if (data.status === "error") { stopLoading(); renderFehler(data.fehler); resolve(); return; }
+        if (data.status === "done") {
+          stopLoading();
+          var bal = document.getElementById("ladebalken");
+          if (bal) bal.style.width = "100%";
+          ergebnisAktuell = data.ergebnis;
+          zeichneErgebnisAufKarte(data.ergebnis);
+          renderDossier(data.ergebnis);
+          resolve();
+          return;
+        }
+        setTimeout(tick, 3000);
+      }).catch(function () { setTimeout(tick, 3000); });
+    }
+    setTimeout(tick, 3000);
+  });
+}
+function renderFehler(msg) {
+  stopLoading();
+  inner.innerHTML = '<div class="empty"><h2>Analyse nicht möglich</h2><div class="note stop">' + esc(msg) + "</div>" +
+    '<p style="font-size:12.5px;color:var(--ink-3);margin-top:14px">Die Engine gibt bewusst keinen Wert aus, wenn die amtliche Grundlage fehlt — das ist ein Ergebnis, keine Oberflächenstörung.</p></div>';
+}
+
+/* ===================== Karte befuellen ===================== */
+var SZENARIO_G1_LABEL = {
+  alle_kanten_klein: "kleiner Grenzabstand an allen Kanten",
+  alle_kanten_gross: "grosser Grenzabstand an allen Kanten"
+};
+function zeichneErgebnisAufKarte(erg) {
+  Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
+  var m1 = erg.modul1_geodaten || {};
+  var bounds = null;
+  function merke(l) { var b = l.getBounds ? l.getBounds() : null; if (b) bounds = bounds ? bounds.extend(b) : b; }
+
+  var pz = m1.kataster || {};
+  var anzP = 0;
+  if (pz.parzellengeometrie) {
+    var popupP = "<b>Parzelle " + esc(pz.parzellennummer) + "</b><span class=\"m\">" +
+      (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m² (amtlich)" : "Fläche unbekannt") +
+      (pz.egrid ? "<br>" + esc(pz.egrid) : "") + "</span>";
+    var ls = zeichnePolygone(gruppen.parzelle, pz.parzellengeometrie, STIL.parzelle, popupP, "sec-grundstueck");
+    anzP = ls.length;
+    ls.forEach(merke);
+  }
+  setLayerVerfuegbar("parzelle", anzP);
+
+  var nk = m1.nutzungsklassifikation || {};
+  var anzZ = 0;
+  alsListe(nk.festlegungen).forEach(function (f) {
+    if (!f.geometrie_koordinaten) return;
+    var ueberlagernd = (f.ebene || "") !== "grundnutzung";
+    var popupZ = "<b>" + esc(f.typ_kommunal_bezeichnung || f.typ_kantonal_bezeichnung || "Zone") + "</b><span class=\"m\">" +
+      esc(f.ebene) + " · " + esc(f.hauptnutzung_bezeichnung) + "<br>" +
+      esc(f.typ_kantonal_bezeichnung) + "<br>Rechtsstatus: " + esc(f.rechtsstatus) + " · Quelle: " + esc(f.quelle) + "</span>";
+    anzZ += zeichnePolygone(gruppen.zonen, f.geometrie_koordinaten,
+      ueberlagernd ? STIL.zoneUeber : STIL.zone, popupZ, "sec-baurecht").length;
+  });
+  setLayerVerfuegbar("zonen", anzZ);
+
+  /* Baubereich: echtes G1-Rechenergebnis, kein Symbolbild */
+  var anzB = 0;
+  var g1 = erg.g1_ergebnis;
+  if (g1) {
+    var einzel = g1.szenarien ? Object.keys(g1.szenarien).map(function (k) { return [k, g1.szenarien[k]]; })
+                              : (g1.ergebnis ? [["", g1.ergebnis]] : []);
+    einzel.forEach(function (paar) {
+      var name = paar[0], e = paar[1];
+      if (!e || !e.baubereich_koordinaten) return;
+      var popupB = "<b>Baubereich G1" + (name ? " — " + esc(SZENARIO_G1_LABEL[name] || name) : "") + "</b><span class=\"m\">" +
+        "Baubereich " + fmt(e.baubereich_m2, 1) + " m²<br>" +
+        "Fussabdruck " + fmt(e.fussabdruck_m2, 1) + " m² (" + esc(e.fussabdruck_limitiert_durch) + ")<br>" +
+        "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²</span>";
+      anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten, STIL.baubereich, popupB, "sec-potenzial").length;
+    });
+  }
+  setLayerVerfuegbar("baubereich", anzB);
+
+  var rg = m1.restriktionsgeometrie || {};
+  var anzR = 0;
+  alsListe(rg.gewaesserraum_flaechen).forEach(function (gr) {
+    var p = "<b>Gewässerraum</b><span class=\"m\">" + esc(gr.gewaessername || "ohne Namensangabe") +
+      "<br>Quelle: Kanton " + esc(gr.kanton) + "</span>";
+    anzR += zeichnePolygone(gruppen.restrikt, gr.koordinaten, STIL.restrikt, p, "sec-restriktionen").length;
+  });
+  alsListe(rg.baulinien_gefunden).forEach(function (bl) {
+    var p = "<b>Baulinie</b><span class=\"m\">" + esc(bl.art || bl.typ || "Baulinie") + "<br>Quelle: Kanton " + esc(bl.kanton) + "</span>";
+    anzR += zeichneLinien(gruppen.restrikt, bl.koordinaten || bl.geometrie_koordinaten, STIL.restrikt, p, "sec-restriktionen").length;
+  });
+  alsListe(rg.restriktionsflaechen_fuer_g1).forEach(function (rf) {
+    var p = "<b>Restriktionsfläche (in G1 abgezogen)</b><span class=\"m\">" + esc(rf.typ || rf.quelle || "Restriktion") + "</span>";
+    anzR += zeichnePolygone(gruppen.restrikt, rf.koordinaten || rf, STIL.restrikt, p, "sec-restriktionen").length;
+  });
+  setLayerVerfuegbar("restrikt", anzR);
+
+  if (bounds) map.fitBounds(bounds, { padding: [70, 70], maxZoom: 19 });
+  document.getElementById("maphint").innerHTML =
+    "<b>Karte ist aktiv:</b> Parzelle, Zonen, Baubereich und Restriktionen sind anklickbar. Klick auf freie Fläche = amtliche Direktabfrage.";
+  var kanton = (m1.oereb || {}).kanton;
+  if (kanton) document.getElementById("kantonhint").textContent = "Kanton " + kanton;
+}
+
+/* ===================== Dossier ===================== */
+var SEKTIONEN = [
+  ["sec-grundstueck", "Grundstück"],
+  ["sec-standort", "Standort"],
+  ["sec-baurecht", "Baurecht"],
+  ["sec-restriktionen", "Restriktionen"],
+  ["sec-potenzial", "Potenzial"],
+  ["sec-entwicklung", "Entwicklung"],
+  ["sec-quellen", "Quellen"],
+  ["sec-wirtschaft", "Wirtschaftlichkeit"]
+];
+function esc(v) {
+  if (v === null || v === undefined || v === "") return "–";
+  return String(v).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+function leer(v) { return v === null || v === undefined || v === "" || (typeof v === "number" && isNaN(v)); }
+/* Listenfelder aus der Engine defensiv normalisieren: die Reglements-
+   Auswertung liefert je nach Gemeinde mal eine Liste, mal einen einzelnen
+   String (real beobachtet bei sonderregelungen.voraussetzungen -- Buchs AG
+   Liste, Rorschach String). Ohne diese Normalisierung bricht .map()/.filter()
+   und das ganze Dossier rendert nicht mehr. */
+function alsListe(v) {
+  if (Array.isArray(v)) return v.filter(function (x) { return !leer(x); });
+  if (leer(v)) return [];
+  return [v];
+}
+function fmt(n, dez) {
+  if (leer(n) || isNaN(Number(n))) return "–";
+  return Number(n).toLocaleString("de-CH", { minimumFractionDigits: dez || 0, maximumFractionDigits: dez || 0 });
+}
+function tile(lbl, val, unit, hl) {
+  var ist = leer(val) || val === "–";
+  return '<div class="tile' + (hl ? " hl" : "") + '"><div class="lbl">' + esc(lbl) + "</div>" +
+    '<div class="val' + (ist ? " na" : "") + '">' + (ist ? "nicht bestimmbar" : esc(val)) +
+    (!ist && unit ? ' <span class="unit">' + esc(unit) + "</span>" : "") + "</div></div>";
+}
+function kvRows(paare) {
+  return '<div class="kv">' + paare.map(function (p) {
+    var k = p[0], v = p[1], na = p[2];
+    return '<div class="k">' + esc(k) + '</div><div class="v' + (leer(v) ? " na" : "") + '">' +
+      (leer(v) ? esc(na || "nicht verfügbar") : esc(v)) + "</div>";
+  }).join("") + "</div>";
+}
+function springeZu(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
+}
+function mapBtn(gruppeName, label) {
+  return '<button class="maplink" data-zoom="' + gruppeName + '">▣ ' + esc(label) + "</button>";
+}
+
+function renderDossier(erg) {
+  var m1 = erg.modul1_geodaten || {};
+  var zz = erg.zonen_zuordnung || {};
+  inner.innerHTML =
+    headHtml(erg, m1, zz) +
+    '<nav class="navbar" id="navbar">' + SEKTIONEN.map(function (s) {
+      return '<button data-sec="' + s[0] + '">' + s[1] + "</button>";
+    }).join("") + "</nav>" +
+    secGrundstueck(m1) + secStandort(m1) + secBaurecht(erg, m1, zz) +
+    secRestriktionen(m1) + secPotenzial(erg) + secEntwicklung(erg) +
+    secQuellen(erg) + secWirtschaft(erg);
+  verdrahteDossier();
+}
+
+function statusBadge(zz) {
+  if (zz.status === "sondernutzungsplan_massgebend") return '<span class="badge stop">Sondernutzungsplan massgebend</span>';
+  if (zz.status === "mehrere_gleich_gute_kandidaten") return '<span class="badge warn">Zone mehrdeutig</span>';
+  if (zz.status === "gefunden") return '<span class="badge ok">Zone eindeutig zugeordnet</span>';
+  return '<span class="badge warn">Zone nicht zugeordnet</span>';
+}
+function headHtml(erg, m1, zz) {
+  var pz = m1.kataster || {};
+  var nk = m1.nutzungsklassifikation || {};
+  var basis = nk.basiszone || {};
+  var amtl = ((m1.oereb || {}).amtliche_zonenbezeichnungen || [])[0] || {};
+  return '<div class="dosshead"><div class="eyebrow">Grundstücksdossier</div>' +
+    "<h2>" + esc(erg.adresse) + "</h2>" +
+    '<div style="margin-bottom:10px">' + statusBadge(zz) + "</div>" +
+    '<div class="headgrid">' +
+      "<div><dt>Parzelle</dt><dd>" + esc(pz.parzellennummer) + "</dd></div>" +
+      "<div><dt>Fläche</dt><dd>" + (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "–") + "</dd></div>" +
+      '<div><dt>EGRID</dt><dd style="font-size:11.5px">' + esc(pz.egrid) + "</dd></div>" +
+      '<div><dt>Gemeinde</dt><dd style="font-family:Archivo,sans-serif">' + esc((m1.gemeinde || {}).gemeinde) + "</dd></div>" +
+      '<div style="grid-column:1/-1"><dt>Grundnutzungszone (amtlich)</dt><dd style="font-family:Archivo,sans-serif;font-weight:600">' +
+        esc(basis.typ_kommunal_bezeichnung || amtl.bezeichnung) + "</dd></div>" +
+    "</div></div>";
+}
+
+/* --- 01 Grundstueck & Bestand --- */
+function secGrundstueck(m1) {
+  var pz = m1.kataster || {}, gw = m1.gwr || {}, gm = m1.gemeinde || {}, gc = m1.geocoding || {};
+  var bestand = gw.found
+    ? '<div class="tiles">' +
+        tile("Baujahr", gw.baujahr) +
+        tile("Geschosse", gw.anzahl_geschosse) +
+        tile("Volumen", leer(gw.gebaeudevolumen_m3) ? null : fmt(gw.gebaeudevolumen_m3), "m³") +
+        tile("Grundfläche", leer(gw.grundflaeche_m2) ? null : fmt(gw.grundflaeche_m2), "m²") +
+      "</div>" +
+      kvRows([
+        ["EGID", gw.egid],
+        ["Gebäudekategorie", gw.gebaeudekategorie_gkat],
+        ["Gebäudeklasse", gw.gebaeudeklasse_gklas],
+        ["Energiebezugsfläche", leer(gw.energiebezugsflaeche_m2) ? null : fmt(gw.energiebezugsflaeche_m2) + " m²"]
+      ]) +
+      '<div class="note">Die Energiebezugsfläche stammt aus dem GWR und ist eine SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>'
+    : '<div class="note warn">Kein Gebäude im GWR an dieser Adresse gefunden — das Grundstück ist entweder unbebaut oder das Gebäude ist nicht am Adresspunkt registriert.</div>';
+
+  return '<section class="sec" id="sec-grundstueck">' +
+    '<div class="sechead"><span class="num">01</span><h3>Grundstück &amp; Bestand</h3><span class="right">' + mapBtn("parzelle", "Auf Karte") + "</span></div>" +
+    '<div class="tiles">' +
+      tile("Parzellenfläche", leer(pz.flaeche_m2) ? null : fmt(pz.flaeche_m2, 1), "m²", true) +
+      tile("Parzelle", pz.parzellennummer) +
+    "</div>" +
+    kvRows([
+      ["EGRID", pz.egrid],
+      ["Flächenherkunft", pz.flaeche_quelle === "geometrie_berechnet" ? "aus amtlicher Katastergeometrie berechnet" : pz.flaeche_quelle],
+      ["Gemeinde / BFS-Nr.", gm.gemeinde ? gm.gemeinde + " (" + (gm.bfs_nummer || "–") + ")" : null],
+      ["Kanton", gm.kanton],
+      ["Koordinaten LV95", leer(gc.lv95_e) ? null : fmt(gc.lv95_e, 1) + " / " + fmt(gc.lv95_n, 1)],
+      ["Amtlich gefundene Adresse", gc.matched_label],
+      ["Parzellenauswahl", pz.parzellenauswahl === "punkt_in_parzelle"
+        ? "Adresspunkt liegt in dieser Parzelle (geprüft)"
+        : pz.parzellenauswahl]
+    ]) +
+    (pz.parzellenauswahl && pz.parzellenauswahl !== "punkt_in_parzelle"
+      ? '<div class="note warn">Keine der gefundenen Parzellen enthält den Adresspunkt eindeutig (z.B. Punkt auf einer Parzellengrenze). EGRID und Parzellennummer stammen deshalb aus dem ersten Treffer und sind zu prüfen — der EGRID steuert die gesamte ÖREB-Abfrage.</div>'
+      : "") +
+    '<h4 class="subhead">Gebäudebestand (GWR)</h4>' + bestand +
+  "</section>";
+}
+
+/* --- 02 Standort --- */
+function secStandort(m1) {
+  var t = m1.topographie || {}, u = m1.umgebung || {}, r = m1.radon || {}, oereb = m1.oereb || {};
+  function dist(e) {
+    if (!e || leer(e.distanz_m)) return null;
+    return fmt(e.distanz_m) + " m" + (e.name ? " · " + e.name : "");
+  }
+  var UMWELT = {
+    laermempfindlichkeitsstufen: "Lärmempfindlichkeitsstufe",
+    belastete_standorte: "Belastete Standorte",
+    grundwasserschutz: "Grundwasserschutz",
+    naturgefahren: "Naturgefahren"
+  };
+  var umweltZeilen = [];
+  Object.keys(oereb.umweltrisiken || {}).forEach(function (k) {
+    var v = oereb.umweltrisiken[k];
+    if (!v || typeof v !== "object") return;
+    var txt;
+    if (v.betroffen === false) txt = "keine Festlegung an diesem Standort";
+    else if (alsListe(v.eintraege).length) {
+      txt = alsListe(v.eintraege).map(function (x) {
+        return (x && typeof x === "object") ? (x.bezeichnung || x.typ || JSON.stringify(x)) : x;
+      }).join(" · ");
+    } else txt = v.hinweis || "vorhanden";
+    umweltZeilen.push([UMWELT[k] || k, txt]);
+  });
+
+  return '<section class="sec" id="sec-standort">' +
+    '<div class="sechead"><span class="num">02</span><h3>Standort</h3></div>' +
+    '<div class="tiles">' +
+      tile("Höhe", leer(t.hoehe_m) ? null : fmt(t.hoehe_m, 1), "m ü. M.") +
+      tile("Hangneigung", leer(t.slope_deg) ? null : fmt(t.slope_deg, 1), "°") +
+      tile("Ausrichtung", t.aspect) +
+      tile("Radon", leer(r.wahrscheinlichkeit_prozent) ? null : fmt(r.wahrscheinlichkeit_prozent, 1), "%") +
+    "</div>" +
+    kvRows([
+      ["ÖV-Haltestelle", dist(u.oev_naechste_haltestelle)],
+      ["Schule", dist(u.schule_naechste)],
+      ["Spital", dist(u.spital_naechstes)],
+      ["Einkauf", dist(u.supermarkt_naechster)],
+      ["Radon-Konfidenz", r.konfidenz],
+      ["Topografie-Quelle", t.quelle]
+    ]) +
+    (umweltZeilen.length ? '<h4 class="subhead">Umweltthemen (ÖREB)</h4>' + kvRows(umweltZeilen) : "") +
+    (u.fehler ? '<div class="note warn">Umgebungsabfrage teilweise fehlgeschlagen: ' + esc(u.fehler) + "</div>" : "") +
+  "</section>";
+}
+
+/* --- 03 Baurecht --- */
+var KENNZAHLEN = [
+  ["ausnuetzungsziffer_az", "Ausnützungsziffer (AZ)", ""],
+  ["anrechenbare_geschossflaechenziffer_abgf", "Anrechenbare Geschossflächenziffer (aBGF)", ""],
+  ["baumassenziffer_bmz", "Baumassenziffer (BMZ)", "m³/m²"],
+  ["ueberbauungsziffer_uz", "Überbauungsziffer (ÜZ)", ""],
+  ["vollgeschosse_max", "Max. Vollgeschosse", ""],
+  ["gebaeudehoehe_m", "Gebäudehöhe", "m"],
+  ["gesamthoehe_m", "Gesamthöhe / First", "m"],
+  ["grenzabstand_klein_m", "Grenzabstand klein", "m"],
+  ["grenzabstand_gross_m", "Grenzabstand gross", "m"]
+];
+function kennzahlBlock(label, kz, einheit) {
+  var hatWert = !leer(kz.wert);
+  var conf = kz.confidence || "–";
+  var badge = conf === "hoch" ? "ok" : (conf === "nicht_bestimmbar" ? "mute" : "warn");
+  var bed = alsListe(kz.bedingungen);
+  return '<div class="card"><div class="cardhead"><h4>' + esc(label) + '</h4><span class="badge ' + badge + '">' + esc(conf) + "</span></div>" +
+    '<div class="bigval' + (hatWert ? "" : " na") + '">' +
+      (hatWert ? esc(kz.wert) + (einheit ? ' <span class="unit">' + esc(einheit) + "</span>" : "") : "nicht bestimmbar") + "</div>" +
+    (kz.unklarheit ? '<div class="note warn" style="margin-top:8px">' + esc(kz.unklarheit) + "</div>" : "") +
+    ((kz.artikel_referenz || kz.zitat || bed.length)
+      ? '<details class="more"><summary>Rechtsgrundlage &amp; Bedingungen</summary><div>' +
+        (kz.artikel_referenz ? '<div class="artikel">' + esc(kz.artikel_referenz) + (kz.quelle_dokument ? " · " + esc(kz.quelle_dokument) : "") + "</div>" : "") +
+        (kz.zitat ? '<div class="zitat">„' + esc(kz.zitat) + "“</div>" : "") +
+        (bed.length ? '<ul class="plain">' + bed.map(function (b) {
+          return "<li>" + esc(typeof b === "string" ? b : (b.bedingung || JSON.stringify(b))) + "</li>";
+        }).join("") + "</ul>" : "") +
+        "</div></details>"
+      : "") +
+  "</div>";
+}
+function zoneKennzahlen(zone) {
+  if (!zone) return "";
+  return KENNZAHLEN.map(function (k) {
+    var kz = zone[k[0]];
+    if (kz === null || kz === undefined) return "";
+    if (typeof kz !== "object") {
+      return '<div class="card"><div class="cardhead"><h4>' + esc(k[1]) + '</h4></div><div class="bigval">' +
+        esc(kz) + (k[2] ? ' <span class="unit">' + esc(k[2]) + "</span>" : "") + "</div></div>";
+    }
+    return kennzahlBlock(k[1], kz, k[2]);
+  }).join("");
+}
+function secBaurecht(erg, m1, zz) {
+  var nk = m1.nutzungsklassifikation || {}, m2 = erg.modul2_bzo_analyse || {}, oereb = m1.oereb || {};
+  var basis = nk.basiszone || {};
+  var zonenTeil;
+
+  if (zz.status === "sondernutzungsplan_massgebend") {
+    zonenTeil = '<div class="note stop"><b>Sondernutzungsplan geht der Grundnutzung vor.</b><br>' + esc(zz.hinweis) + "</div>" +
+      alsListe(zz.sondernutzungsplaene).map(function (s) {
+        return '<div class="card"><div class="cardhead"><h4>' + esc(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung) +
+          '</h4><span class="badge stop">rechtskräftig</span></div>' +
+          kvRows([["Ebene", s.ebene], ["Kantonaler Typ", s.typ_kantonal_bezeichnung], ["Rechtsstatus", s.rechtsstatus], ["Quelle", s.quelle]]) + "</div>";
+      }).join("") +
+      '<div class="note">Deshalb werden bewusst keine BZO-Kennzahlen als geltend dargestellt: die massgebenden Masse stehen im Sondernutzungsplan, nicht in der Regelbauweise.</div>';
+  } else if (zz.status === "mehrere_gleich_gute_kandidaten") {
+    zonenTeil = '<div class="note warn"><b>Zonenzuordnung mehrdeutig.</b> Mehrere BZO-Zonen passen gleich gut zur amtlichen Bezeichnung „' +
+      esc(zz.amtliche_zonenbezeichnung) + '“. Es wird bewusst keine davon als sicher dargestellt.</div>' +
+      alsListe(zz.kandidaten).map(function (k) {
+        return '<div class="card"><div class="cardhead"><h4>' + esc(k.zonenbezeichnung) + "</h4></div>" + zoneKennzahlen(k) + "</div>";
+      }).join("");
+  } else if (zz.status === "gefunden") {
+    zonenTeil = '<div class="card sel"><div class="cardhead"><h4>' + esc(zz.zone.zonenbezeichnung) +
+      '</h4><span class="badge ok">zugeordnet</span></div>' +
+      kvRows([
+        ["Amtliche Bezeichnung", zz.amtliche_zonenbezeichnung],
+        ["Übereinstimmung", leer(zz.aehnlichkeit) ? null : Math.round(zz.aehnlichkeit * 100) + " %"],
+        ["Herkunft der Basiszone", zz.basiszone_quelle]
+      ]) + "</div>" +
+      '<h4 class="subhead">Kennzahlen der geltenden Zone</h4>' + zoneKennzahlen(zz.zone);
+  } else {
+    zonenTeil = '<div class="note warn">Keine BZO-Zone konnte der amtlichen Zonenbezeichnung zugeordnet werden' +
+      (zz.amtliche_zonenbezeichnung ? " („" + esc(zz.amtliche_zonenbezeichnung) + "“)" : "") + ".</div>";
+  }
+
+  var sonder = alsListe(m2.sonderregelungen).map(function (s) {
+    var vor = alsListe(s.voraussetzungen);
+    var zonen = alsListe(s.gilt_fuer_zonen);
+    return '<div class="card"><div class="cardhead"><h4>' + esc(s.titel) + '</h4><span class="badge mute">' + esc(s.typ) + "</span></div>" +
+      "<p>" + esc(s.beschreibung) + "</p>" +
+      (s.bonus_effekt ? '<div class="note ok"><b>Effekt:</b> ' + esc(s.bonus_effekt) + "</div>" : "") +
+      '<details class="more"><summary>Voraussetzungen &amp; Rechtsgrundlage</summary><div>' +
+        (vor.length
+          ? '<ul class="plain">' + vor.map(function (v) { return "<li>" + esc(v) + "</li>"; }).join("") + "</ul>"
+          : "<p>Keine Voraussetzungen angegeben.</p>") +
+        (zonen.length ? '<div class="artikel">Gilt für: ' + esc(zonen.join(", ")) + "</div>" : "") +
+        (s.artikel_referenz ? '<div class="artikel">' + esc(s.artikel_referenz) + "</div>" : "") +
+        (s.zitat ? '<div class="zitat">„' + esc(s.zitat) + "“</div>" : "") +
+      "</div></details></div>";
+  }).join("");
+
+  var rv = alsListe(oereb.rechtsvorschriften);
+  var rvBzo = rv.filter(function (p) { return p && p.ist_wahrscheinlich_bzo_reglement; });
+  var zonenListe = alsListe(m2.erkannte_zonen);
+  var pruefhinweise = alsListe(m2.unklarheiten_und_pruefhinweise);
+
+  return '<section class="sec" id="sec-baurecht">' +
+    '<div class="sechead"><span class="num">03</span><h3>Baurecht</h3><span class="right">' + mapBtn("zonen", "Zonen auf Karte") + "</span></div>" +
+    kvRows([
+      ["Grundnutzung (amtlich)", basis.typ_kommunal_bezeichnung],
+      ["Kantonaler Zonentyp", basis.typ_kantonal_bezeichnung ? basis.typ_kantonal_bezeichnung + " (" + (basis.typ_kantonal_code || "–") + ")" : null],
+      ["Hauptnutzung", basis.hauptnutzung_bezeichnung],
+      ["Rechtsstatus", basis.rechtsstatus],
+      ["Bestimmtheit", nk.basiszone_status],
+      ["Klassifikationsquelle", nk.quelle],
+      ["Ausgewertetes Reglement", m2.dokument_titel],
+      ["Stand", m2.stand_datum]
+    ]) +
+    (nk.basiszone_status && nk.basiszone_status !== "eindeutig"
+      ? '<div class="note warn">Die Grundnutzungszone ist laut Klassifikation <b>' + esc(nk.basiszone_status) +
+        "</b> — die Kennzahlen unten stehen entsprechend unter Vorbehalt.</div>" : "") +
+    '<h4 class="subhead">Zonenzuordnung</h4>' + zonenTeil +
+    (sonder ? '<h4 class="subhead">Sonderregelungen &amp; Boni</h4>' + sonder : "") +
+    (zonenListe.length
+      ? '<details class="more"><summary>Alle ' + zonenListe.length + ' im Reglement erkannten Zonen</summary><div>' +
+        zonenListe.map(function (z) {
+          return '<div class="card"><div class="cardhead"><h4>' + esc(z.zonenbezeichnung) + "</h4></div>" + zoneKennzahlen(z) + "</div>";
+        }).join("") + "</div></details>" : "") +
+    (pruefhinweise.length
+      ? '<details class="more"><summary>Prüfhinweise der Reglementsauswertung (' + pruefhinweise.length + ')</summary><div><ul class="plain">' +
+        pruefhinweise.map(function (h) { return "<li>" + esc(h) + "</li>"; }).join("") + "</ul></div></details>" : "") +
+    (rv.length
+      ? '<details class="more"><summary>Rechtsvorschriften aus dem ÖREB-Kataster (' + rv.length + ", davon " + rvBzo.length + ' bauordnungsrelevant)</summary><div><ul class="plain">' +
+        rv.map(function (p) {
+          return "<li>" + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.titel) + "</a>" : esc(p.titel)) +
+            (p.ist_wahrscheinlich_bzo_reglement ? ' <span class="badge ok">BZO</span>' : "") +
+            (p.rechtsebene ? ' <span class="artikel">' + esc(p.rechtsebene) + "</span>" : "") + "</li>";
+        }).join("") + "</ul></div></details>" : "") +
+  "</section>";
+}
+
+/* --- 04 Restriktionen --- */
+function secRestriktionen(m1) {
+  var rg = m1.restriktionsgeometrie || {};
+  var hinweise = alsListe(rg.hinweise);
+  var anzGw = alsListe(rg.gewaesserraum_flaechen).length;
+  var anzBl = alsListe(rg.baulinien_gefunden).length;
+  var anzRf = alsListe(rg.restriktionsflaechen_fuer_g1).length;
+  var keine = !rg.gefunden || (anzGw + anzBl + anzRf === 0 && !alsListe(rg.waldgrenzen_gefunden).length);
+
+  return '<section class="sec" id="sec-restriktionen">' +
+    '<div class="sechead"><span class="num">04</span><h3>Restriktionen</h3><span class="right">' + mapBtn("restrikt", "Auf Karte") + "</span></div>" +
+    '<div class="tiles">' +
+      tile("Gewässerraum", anzGw ? anzGw + " Fläche(n)" : "keine") +
+      tile("Baulinien", anzBl ? anzBl : "keine") +
+      tile("Waldabstand", leer(rg.waldabstand_m_verwendet) ? null : fmt(rg.waldabstand_m_verwendet, 1), "m") +
+    "</div>" +
+    kvRows([
+      ["Nächste Waldgrenze", leer(rg.waldgrenze_min_abstand_m) ? null : fmt(rg.waldgrenze_min_abstand_m, 1) + " m", "keine im Umkreis gefunden"],
+      ["In G1 abgezogene Flächen", anzRf ? anzRf : "keine"]
+    ]) +
+    (keine ? '<div class="note ok">An dieser Parzelle wurden keine restriktionsrelevanten Geometrien (Gewässerraum, Baulinien, Waldabstand) gefunden — der Baubereich wird deshalb allein durch die Grenzabstände begrenzt.</div>' : "") +
+    (hinweise.length ? '<div class="note warn"><ul class="plain" style="margin:0">' +
+      hinweise.map(function (h) { return "<li>" + esc(h) + "</li>"; }).join("") + "</ul></div>" : "") +
+    '<div class="note">Restriktionen werden geometrisch abgefragt und in der G1-Berechnung direkt von der bebaubaren Fläche abgezogen — sie sind damit rechenwirksam, nicht nur informativ.</div>' +
+  "</section>";
+}
+
+/* --- 05 Potenzial (G1 + SIA 416) --- */
+function g1Tabelle(e) {
+  return kvRows([
+    ["Baubereich", leer(e.baubereich_m2) ? null : fmt(e.baubereich_m2, 1) + " m²"],
+    ["davon vor Restriktionsabzug", leer(e.baubereich_vor_restriktion_m2) ? null : fmt(e.baubereich_vor_restriktion_m2, 1) + " m²"],
+    ["Anrechenbare Landfläche", leer(e.anrechenbare_landflaeche_m2) ? null : fmt(e.anrechenbare_landflaeche_m2, 1) + " m²"],
+    ["Fussabdruck", leer(e.fussabdruck_m2) ? null : fmt(e.fussabdruck_m2, 1) + " m²"],
+    ["…limitiert durch", e.fussabdruck_limitiert_durch],
+    ["Geschosszahl", e.geschosszahl],
+    ["…limitiert durch", e.geschosszahl_limitiert_durch],
+    ["Geschossfläche", leer(e.geschossflaeche_m2) ? null : fmt(e.geschossflaeche_m2, 1) + " m²"],
+    ["…limitiert durch", e.geschossflaeche_limitiert_durch]
+  ]) +
+  (function () {
+    var hw = alsListe(e.hinweise);
+    return hw.length ? '<details class="more"><summary>Berechnungshinweise (' + hw.length + ')</summary><div><ul class="plain">' +
+      hw.map(function (h) { return "<li>" + esc(h) + "</li>"; }).join("") + "</ul></div></details>" : "";
+  })();
+}
+var SIA_LABEL = {
+  geschossflaeche_gf: "Geschossfläche GF",
+  nutzflaeche_nf: "Nutzfläche NF",
+  hauptnutzflaeche_hnf: "Hauptnutzfläche HNF",
+  nebennutzflaeche_nnf: "Nebennutzfläche NNF",
+  uebrige_flaechen_vf_ff_kf: "Übrige Flächen (VF/FF/KF)"
+};
+function siaTabelle(w) {
+  var zeilen = Object.keys(SIA_LABEL).map(function (k) {
+    var f = w[k];
+    if (!f) return "";
+    var best = f.status === "bestimmt";
+    return '<div class="k">' + esc(SIA_LABEL[k]) + '</div><div class="v' + (best ? "" : " na") + '">' +
+      (best ? fmt(f.wert, 1) + " m²" : "nicht bestimmbar") + "</div>";
+  }).join("");
+  var unklar = [];
+  Object.keys(w).forEach(function (k) {
+    if (w[k] && w[k].unklarheit && unklar.indexOf(w[k].unklarheit) === -1) unklar.push(w[k].unklarheit);
+  });
+  return '<div class="kv">' + zeilen + "</div>" +
+    (unklar.length ? '<details class="more"><summary>Warum NF/HNF/NNF nicht bestimmbar sind</summary><div><ul class="plain">' +
+      unklar.map(function (u) { return "<li>" + esc(u) + "</li>"; }).join("") + "</ul>" +
+      '<p style="font-size:12.5px;color:var(--ink-3)">Diese Werte hängen vom Grundriss ab. Sie werden erst ausgewiesen, wenn belastbare Referenzprojekte hinterlegt sind — nicht über eine geschätzte Quote.</p></div></details>' : "");
+}
+function secPotenzial(erg) {
+  var g1 = erg.g1_ergebnis, sia = erg.sia416_ergebnis, zz = erg.zonen_zuordnung || {};
+  if (!g1) {
+    var grund = erg.g1_fehler ? erg.g1_fehler
+      : (zz.status === "sondernutzungsplan_massgebend"
+        ? "Die massgebenden Masse stehen im Sondernutzungsplan, nicht in der Regelbauweise — eine G1-Berechnung wäre scheingenau."
+        : "Ohne eindeutig zugeordnete Zone fehlen die Kennzahlen (Grenzabstände, Höhe, Ausnützung), die G1 benötigt.");
+    return '<section class="sec" id="sec-potenzial">' +
+      '<div class="sechead"><span class="num">05</span><h3>Potenzial</h3></div>' +
+      '<div class="note warn"><b>Keine Potenzialberechnung möglich.</b><br>' + esc(grund) + "</div></section>";
+  }
+  var bandbreite = g1.modus === "bandbreite_grenzabstand_kante_nicht_differenziert";
+  var einzel = bandbreite
+    ? Object.keys(g1.szenarien || {}).map(function (k) { return [k, g1.szenarien[k]]; })
+    : [["", g1.ergebnis || {}]];
+
+  return '<section class="sec" id="sec-potenzial">' +
+    '<div class="sechead"><span class="num">05</span><h3>Potenzial — G1 &amp; SIA 416</h3><span class="right">' + mapBtn("baubereich", "Baubereich") + "</span></div>" +
+    (bandbreite ? '<div class="note warn"><b>Ergebnis als Bandbreite.</b> ' +
+      esc(g1.hinweis || "Das Reglement differenziert die Grenzabstände nach Kante; welche Kante welchen Abstand hat, ist ohne Parzellenbeurteilung nicht bestimmbar. Deshalb werden beide Randfälle gerechnet.") + "</div>" : "") +
+    einzel.map(function (paar) {
+      var name = paar[0], e = paar[1];
+      var siaW = bandbreite ? (sia || {})[name] : sia;
+      return '<div class="card"><div class="cardhead"><h4>' + (name ? esc(SZENARIO_G1_LABEL[name] || name) : "Baubereich") + "</h4></div>" +
+        '<div class="tiles">' +
+          tile("Baubereich", leer(e.baubereich_m2) ? null : fmt(e.baubereich_m2), "m²") +
+          tile("Fussabdruck", leer(e.fussabdruck_m2) ? null : fmt(e.fussabdruck_m2), "m²") +
+          tile("Geschossfläche", leer(e.geschossflaeche_m2) ? null : fmt(e.geschossflaeche_m2), "m²", true) +
+          tile("Geschosse", e.geschosszahl) +
+        "</div>" +
+        '<details class="more"><summary>Rechenweg &amp; limitierende Grössen</summary><div>' + g1Tabelle(e) + "</div></details>" +
+        (siaW ? '<h4 class="subhead">SIA 416</h4>' + siaTabelle(siaW) : "") +
+      "</div>";
+    }).join("") +
+    (function () {
+      var kh = alsListe(g1.kennzahl_hinweise);
+      return kh.length ? '<details class="more"><summary>Hinweise zu den verwendeten Kennzahlen (' + kh.length +
+        ')</summary><div><ul class="plain">' + kh.map(function (h) { return "<li>" + esc(h) + "</li>"; }).join("") +
+        "</ul></div></details>" : "";
+    })() +
+  "</section>";
+}
+
+/* --- 06 Entwicklung --- */
+var SZ_LABEL = {
+  bestand: "Bestand erhalten",
+  anbau_erweiterung: "Anbau / Erweiterung",
+  aufstockung_dachausbau: "Aufstockung / Dachausbau",
+  ersatzneubau: "Ersatzneubau",
+  kombination_bestand_neubau: "Bestand + neuer Baukörper"
+};
+function secEntwicklung(erg) {
+  return '<section class="sec" id="sec-entwicklung">' +
+    '<div class="sechead"><span class="num">06</span><h3>Entwicklungsszenarien</h3><span class="right"><span class="badge mute">Struktur, noch nicht gerechnet</span></span></div>' +
+    '<div class="note">Die fünf Szenarien sind fachlich definiert und dokumentiert, die Berechnungslogik existiert aber noch nicht. Es werden bewusst keine simulierten Ergebnisse angezeigt.</div>' +
+    alsListe(erg.entwicklungsszenarien).map(function (s) {
+      var flaechen = alsListe(s.benoetigte_flaechendaten);
+      var eingaben = alsListe(s.benoetigte_zusatzeingaben);
+      return '<div class="card"><div class="cardhead"><h4>' + esc(SZ_LABEL[s.szenario] || s.szenario) +
+        '</h4><span class="badge warn">nicht berechnet</span></div>' +
+        "<p>" + esc(s.beschreibung) + "</p>" +
+        '<details class="more"><summary>Was dafür noch fehlt</summary><div>' +
+          (flaechen.length ? '<h4 class="subhead" style="margin-top:0">Benötigte Flächendaten</h4><ul class="plain">' +
+            flaechen.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
+          (eingaben.length ? '<h4 class="subhead">Benötigte Zusatzeingaben</h4><ul class="plain">' +
+            eingaben.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
+          (s.heute_bereits_abgedeckt_durch ? '<div class="note" style="margin-top:8px"><b>Heute bereits abgedeckt durch:</b> ' +
+            esc(s.heute_bereits_abgedeckt_durch) + "</div>" : "") +
+        "</div></details></div>";
+    }).join("") +
+  "</section>";
+}
+
+/* --- 07 Quellen --- */
+var QTYP = { amtliche_quelle: "amtlich", llm_extraktion: "Reglement", modellannahme: "Annahme", geometrie_berechnung: "berechnet" };
+function secQuellen(erg) {
+  var q = alsListe(erg.quellen);
+  function wertTxt(w) {
+    if (w === null || w === undefined) return "–";
+    if (typeof w === "object") return Object.keys(w).map(function (k) { return k + ": " + w[k]; }).join(", ");
+    var s = String(w);
+    return s.length > 90 ? s.slice(0, 90) + "…" : s;
+  }
+  return '<section class="sec" id="sec-quellen">' +
+    '<div class="sechead"><span class="num">07</span><h3>Quellen &amp; Nachweis</h3><span class="right"><span class="badge mute">' + q.length + " Nachweise</span></span></div>" +
+    '<div class="note">Jeder amtliche Wert oben ist auf Endpunkt und Layer rückverfolgbar. Werte ohne amtliche Quelle werden nicht ausgegeben.</div>' +
+    '<div class="scroller"><table class="src"><thead><tr><th>Feld</th><th>Wert</th><th>Quelle</th></tr></thead><tbody>' +
+    q.map(function (x) {
+      return '<tr><td class="f">' + esc(x.feld) + "</td><td>" + esc(wertTxt(x.wert)) + "</td><td>" +
+        (x.quelle_url ? '<a href="' + esc(x.quelle_url) + '" target="_blank" rel="noopener">' + esc(x.quelle_bezeichnung) + "</a>" : esc(x.quelle_bezeichnung)) +
+        '<div class="artikel">' + esc(QTYP[x.quelle_typ] || x.quelle_typ) + (x.abgerufen_am ? " · " + esc(x.abgerufen_am) : "") + "</div></td></tr>";
+    }).join("") + "</tbody></table></div></section>";
+}
+
+/* --- 08 Wirtschaftlichkeit --- */
+function finanzHtml(m3) {
+  if (!m3) return "";
+  if (m3.status === "sondernutzungsplan_massgebend") return '<div class="note stop">' + esc(m3.hinweis) + "</div>";
+  var sz = m3.szenarien || {};
+  var namen = Object.keys(sz);
+  if (!namen.length) return '<div class="note warn">Es wurden keine Finanzszenarien geliefert.</div>';
+  return namen.map(function (name) {
+    var s = sz[name], rw = s.residualwert || {};
+    var val = rw.residualwert_max_landkaufpreis_chf;
+    var rest = Object.keys(rw).filter(function (k) { return k !== "residualwert_max_landkaufpreis_chf"; })
+      .map(function (k) { return [k.replace(/_/g, " "), typeof rw[k] === "number" ? fmt(rw[k]) : rw[k]]; });
+    return '<div class="card"><div class="cardhead"><h4>' + esc(name.replace(/_/g, " ")) + "</h4></div>" +
+      '<div class="tiles">' + tile("Residualwert (max. Landkaufpreis)", leer(val) ? null : fmt(val), "CHF", true) + "</div>" +
+      (rest.length ? '<details class="more"><summary>Alle Positionen</summary><div>' + kvRows(rest) + "</div></details>" : "") +
+      "</div>";
+  }).join("");
+}
+function secWirtschaft(erg) {
+  var blockiert = (erg.zonen_zuordnung || {}).status !== "gefunden";
+  return '<section class="sec" id="sec-wirtschaft">' +
+    '<div class="sechead"><span class="num">08</span><h3>Wirtschaftlichkeit</h3><span class="right"><span class="badge mute">optional</span></span></div>' +
+    '<div class="note">Die vollständige Grundstücks-, Standort- und Baurechtsanalyse oben ist ohne Verkaufspreis gültig. Der Preis wird ausschliesslich hier für die Residualwertrechnung verwendet.</div>' +
+    (blockiert
+      ? '<div class="note warn">Ohne eindeutige Zonenzuordnung liefert die Finanzrechnung keinen belastbaren Residualwert — die Eingabe bleibt deshalb bewusst gesperrt.</div>'
+      : '<div class="priceform"><div class="modus">' +
+        '<label><input type="radio" name="preismodus" value="pro_m2" checked> CHF / m²</label>' +
+        '<label><input type="radio" name="preismodus" value="total"> Total CHF</label></div>' +
+        '<input type="number" id="preisfeld" placeholder="z.B. 1200" min="0" step="any">' +
+        '<button class="btn" id="preis-btn">Wirtschaftlichkeit berechnen</button>' +
+        '<div id="preis-status"></div></div>') +
+    '<div id="finanz-ergebnis">' + finanzHtml(erg.modul3_financial) + "</div>" +
+  "</section>";
+}
+
+/* ===================== Verdrahtung ===================== */
+function verdrahteDossier() {
+  Array.prototype.forEach.call(document.querySelectorAll("#navbar button"), function (b) {
+    b.addEventListener("click", function () { springeZu(b.dataset.sec); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".maplink"), function (b) {
+    b.addEventListener("click", function () {
+      var g = gruppen[b.dataset.zoom];
+      if (!g) return;
+      var layers = g.getLayers();
+      if (!layers.length) return;
+      var bounds = null;
+      layers.forEach(function (l) {
+        var bb = l.getBounds ? l.getBounds() : null;
+        if (bb) bounds = bounds ? bounds.extend(bb) : bb;
+      });
+      if (bounds) map.fitBounds(bounds, { padding: [60, 60], maxZoom: 19 });
+      layers.forEach(function (l) { if (l.setStyle && l._basisStil) l.setStyle({ weight: l._basisStil.weight + 2 }); });
+      setTimeout(function () {
+        layers.forEach(function (l) { if (l.setStyle && l._basisStil && l !== selektiert) l.setStyle(l._basisStil); });
+      }, 1400);
+    });
+  });
+
+  var preisBtn = document.getElementById("preis-btn");
+  if (preisBtn) {
+    preisBtn.addEventListener("click", function () {
+      var feld = document.getElementById("preisfeld");
+      var statusEl = document.getElementById("preis-status");
+      var wert = parseFloat(feld.value);
+      if (!wert || wert <= 0) { statusEl.innerHTML = '<div class="note warn">Bitte einen Preis grösser als 0 eingeben.</div>'; return; }
+      var modus = document.querySelector('input[name="preismodus"]:checked').value;
+      preisBtn.disabled = true;
+      preisBtn.textContent = "Berechne …";
+      statusEl.innerHTML = "";
+      var body = { job_id: aktuelleJobId };
+      if (modus === "pro_m2") body.verkaufspreis = wert; else body.verkaufspreis_total = wert;
+      fetch("/api/wirtschaftlichkeit", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      })
+      .then(function (x) { return x.json(); })
+      .then(function (r) {
+        if (!r.ok) { statusEl.innerHTML = '<div class="note stop">' + esc(r.fehler) + "</div>"; return; }
+        if (ergebnisAktuell) ergebnisAktuell.modul3_financial = r.modul3_financial;
+        statusEl.innerHTML = '<div class="note ok">Gerechnet mit ' + fmt(r.verwendeter_preis_chf_pro_m2, 2) + " CHF/m² Parzellenfläche.</div>";
+        document.getElementById("finanz-ergebnis").innerHTML = finanzHtml(r.modul3_financial);
+      })
+      .catch(function () { statusEl.innerHTML = '<div class="note stop">Verbindung zum Analyse-Server fehlgeschlagen.</div>'; })
+      .then(function () {
+        preisBtn.disabled = false;
+        preisBtn.textContent = "Wirtschaftlichkeit berechnen";
+      });
+    });
+  }
+
+  if (window.IntersectionObserver) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        Array.prototype.forEach.call(document.querySelectorAll("#navbar button"), function (b) {
+          b.classList.toggle("active", b.dataset.sec === en.target.id);
+        });
+      });
+    }, { root: document.getElementById("dossier"), rootMargin: "-40px 0px -75% 0px" });
+    SEKTIONEN.forEach(function (s) {
+      var el = document.getElementById(s[0]);
+      if (el) obs.observe(el);
+    });
+  }
+}
+</script>
+</body>
+</html>

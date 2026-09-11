@@ -1,0 +1,24 @@
+# Python-Artefakte
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Cloudflare/Wrangler: lokaler Cache inkl. Account-ID -- nie versionieren
+.wrangler/
+
+# Laufzeit-Logs (Tunnel-Log wird mehrere hundert KB gross)
+*.log
+tunnel.log
+
+# Zwischengespeicherte WFS/WMS-Capabilities (je ~220 KB, jederzeit neu abrufbar,
+# reine Entwicklungsartefakte aus der Dienst-Recherche)
+caps_wfs.xml
+caps_wms.xml
+
+# Zugangsdaten -- NIEMALS committen. Der GEMINI_API_KEY kommt ausschliesslich
+# aus der Umgebungsvariable, nicht aus einer Datei im Repo.
+.env
+*.key
+token_cache.bin
