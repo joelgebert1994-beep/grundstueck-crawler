@@ -232,6 +232,69 @@ def erwartet_falsch(treffer: list, richtig: dict) -> object:
     return erster.get("number")
 
 
+def test_kantenklassifikation_buchs_live() -> None:
+    """Live-Verifikation der Kantenklassifikation (Stufe 2) an Parzelle 1145.
+
+    Dieselbe Parzelle wie test_parzellenauswahl_am_punkt -- eine dicht bebaute
+    Lage mit zwei Strassenseiten. Geprueft wird nicht eine bestimmte
+    Kantenzahl (die Katastergeometrie darf sich aendern), sondern dass die
+    Zuordnung an echten Daten ueberhaupt greift und begruendet ist.
+    """
+    print("=== Kantenklassifikation live (Buchs AG, Parzelle 1145) ===")
+    from potenzial_engine.kantenklassifikation import (
+        ART_NACHBARPARZELLE, ART_STRASSE, klassifiziere_kanten,
+    )
+    from potenzial_engine.modul1_geodata import get_parcel_data, get_parcel_geometry_ring
+
+    e, n = 2647661.0, 1248717.25
+    ring = get_parcel_geometry_ring(e, n)
+    pruefe(bool(ring), "Parzellengeometrie vorhanden")
+    if not ring:
+        return
+
+    egrid = get_parcel_data(e, n).get("egrid")
+    r = klassifiziere_kanten(ring, e, n, eigenes_egrid=egrid)
+
+    relevante = [k for k in r["kanten"] if k["relevant"]]
+    statistik = r["statistik"]
+    pruefe(len(relevante) >= 3, f"mindestens 3 massgebende Kanten ({len(relevante)})")
+    pruefe(
+        statistik[ART_STRASSE] >= 1,
+        f"mindestens eine Strassenkante erkannt ({statistik[ART_STRASSE]})",
+    )
+    pruefe(
+        statistik[ART_NACHBARPARZELLE] >= 1,
+        f"mindestens eine Nachbarkante erkannt ({statistik[ART_NACHBARPARZELLE]})",
+    )
+    pruefe(
+        statistik["strassenparzellen_im_umfeld"] >= 1,
+        f"Strassenparzellen im Umfeld enttarnt ({statistik['strassenparzellen_im_umfeld']})",
+    )
+    pruefe(
+        statistik["unbestimmt"] == 0,
+        f"keine massgebende Kante bleibt unbestimmt ({statistik['unbestimmt']})",
+    )
+    pruefe(r["vollstaendig"] is True, "Klassifikation ist vollstaendig")
+    pruefe(all(k.get("begruendung") for k in relevante), "jede Kante traegt eine Begruendung")
+    pruefe(
+        all(k.get("aussenpunkt_lv95") for k in relevante),
+        "jede Kante weist den geprueften Aussenpunkt aus (nachrechenbar)",
+    )
+    nachbarn = [k for k in relevante if k["art"] == ART_NACHBARPARZELLE]
+    pruefe(
+        all(k.get("nachbar_egrid") or k.get("nachbar_nummer") for k in nachbarn),
+        "jede Nachbarkante nennt die konkrete Nachbarparzelle",
+    )
+    strassen = [k for k in relevante if k["art"] == ART_STRASSE]
+    pruefe(
+        any(k.get("strassenname") for k in strassen),
+        f"mindestens eine Strassenkante nennt den Strassennamen "
+        f"({[k.get('strassenname') for k in strassen]})",
+    )
+    for k in relevante:
+        print(f"      Kante {k['nr']:2d}  {k['laenge_m']:6.1f} m  {k['art']}")
+
+
 def main() -> None:
     test_baden()
     test_zuerich()
@@ -239,6 +302,7 @@ def main() -> None:
     test_rorschach_sg()
     test_zonenzuordnung_ohne_verkaufspreis()
     test_parzellenauswahl_am_punkt()
+    test_kantenklassifikation_buchs_live()
 
     print("=" * 60)
     if FEHLER:

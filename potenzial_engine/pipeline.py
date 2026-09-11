@@ -30,6 +30,7 @@ from typing import Any, Optional
 
 from .entwicklungsszenarien import SZENARIO_ANFORDERUNGEN
 from .g1_verdrahtung import G1VerdrahtungError, berechne_g1_fuer_fall
+from .kantenklassifikation import quellen_fuer_kanten
 from .modul1_geodata import Modul1Error, run_modul1
 from .modul2_bzo_analysis import analyze_from_oereb_result
 from .modul3_financial import ermittle_zonenzuordnung, run_from_modul_results
@@ -191,8 +192,16 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
     g1_ergebnis = None
     g1_fehler = None
     if zonen_zuordnung.get("status") == "gefunden":
+        # Kantenklassifikation nur weiterreichen, wenn sie tatsaechlich Kanten
+        # beschreibt -- ein Fehlschlag (Netz, entartete Geometrie) fuehrt zur
+        # bisherigen Bandbreite zurueck, nicht zu einem Abbruch.
+        klassifikation = modul1_result.get("kantenklassifikation") or {}
+        if not klassifikation.get("kanten"):
+            klassifikation = None
         try:
-            g1_ergebnis = berechne_g1_fuer_fall(modul1_result, zonen_zuordnung["zone"])
+            g1_ergebnis = berechne_g1_fuer_fall(
+                modul1_result, zonen_zuordnung["zone"], kantenklassifikation=klassifikation
+            )
         except G1VerdrahtungError as exc:
             g1_fehler = str(exc)
 
@@ -202,6 +211,9 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
     # Endpunkt/Layer/URL -- vor dem Trimmen berechnet (unabhaengig davon, ob
     # raw_attributes/raw_extract fuer die Anzeige weggeschnitten werden).
     quellen = [asdict(q) for q in quellen_aus_modul1_ergebnis(modul1_result)]
+    kanten_klassifikation = modul1_result.get("kantenklassifikation") or {}
+    if kanten_klassifikation.get("kanten"):
+        quellen += [asdict(q) for q in quellen_fuer_kanten(kanten_klassifikation)]
 
     ergebnis = {
         "adresse": adresse,

@@ -5,14 +5,23 @@ Modul 2 Zonenkennzahlen). Enthaelt KEINE eigene Berechnungslogik -- reine
 Datenaufbereitung/Uebergabe, damit baubereich.py netzwerkfrei bleiben kann
 und modul3_financial.py (SIA-416/BKP/Residualwert) unveraendert bleibt.
 
+Kantenzuordnung (Stufe 2, kantenklassifikation.py):
+  - `kantenklassifikation` liefert je Kante "strasse"/"nachbarparzelle"/
+    "unbestimmt" mit geometrischem Nachweis. Daraus wird pro Kante der
+    passende Abstand gesetzt: Strassenkante -> strassenabstand_m,
+    Nachbarkante -> grenzabstand_gross_m (der striktere der beiden Werte,
+    weil ohne Fassadenorientierung nicht entscheidbar ist, welche Seite
+    "klein" sein darf -- die Bandbreite bleibt als Kontrolle daneben stehen).
+  - Fehlt der Strassenabstand oder ist eine Kante "unbestimmt", wird KEIN
+    Ersatzwert eingesetzt. Dann bleibt es bei der Bandbreite, und die
+    betroffenen Kanten werden einzeln als nicht bestimmbar ausgewiesen.
+    Der Strassenabstand wird NIE aus grenzabstand_klein_m/gross_m abgeleitet
+    -- klein/gross unterscheidet schmale und breite Gebaeudeseite gegenueber
+    NACHBARN, nicht Strasse gegen Nachbar.
+  - Ein expliziter Kanten-Override bleibt moeglich
+    (kanten_abstaende_override), fuer manuell bekannte Zuordnungen.
+
 Bewusst NICHT Teil dieses Schritts (siehe Vorgabe):
-  - Automatische Erkennung, welche Parzellenkante Strasse/Nachbar/Rueckseite
-    ist -- Modul 2 liefert nur EINEN Wert je "klein"/"gross", nicht pro
-    einzelner Kante. Ohne echte Kantenklassifikation wird deshalb eine
-    Bandbreite berechnet (alle Kanten klein vs. alle Kanten gross), siehe
-    _grenzabstand_bandbreite_pro_kante(). Ein expliziter Kanten-Override ist
-    moeglich (kanten_abstaende_override), fuer Faelle, in denen die
-    Kantenzuordnung manuell bekannt ist.
   - Automatische Ableitung des Mehrlaengenzuschlags aus Modul 2s
     Sonderregelungen (Freitext, keine strukturierten Schwelle/Zuschlag-Werte)
     -- bleibt bewusst deaktiviert (None), bis eine strukturierte Quelle
@@ -25,6 +34,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from .baubereich import berechne_potenzial
+from .kantenklassifikation import ART_NACHBARPARZELLE, ART_STRASSE
 
 
 class G1VerdrahtungError(Exception):
@@ -102,11 +112,159 @@ def _grenzabstand_bandbreite_pro_kante(zone: dict[str, Any], anzahl_kanten: int)
     return szenarien
 
 
+def _kantenabstaende_aus_klassifikation(
+    zone: dict[str, Any],
+    klassifikation: dict[str, Any],
+    anzahl_kanten: int,
+    baulinien_gefunden: int = 0,
+) -> tuple[Optional[list[float]], list[dict[str, Any]], list[str]]:
+    """Ordnet jeder Kante den Abstand zu, der fuer ihre Art tatsaechlich gilt.
+
+    Liefert (abstaende, kantenprotokoll, offene_punkte). `abstaende` ist None,
+    sobald auch nur eine massgebende Kante keinen belastbaren Wert bekommt --
+    dann wird NICHT gerechnet, statt eine Zahl zu erzeugen, die es nicht gibt.
+    Das Kantenprotokoll entsteht in jedem Fall und weist jede Kante einzeln
+    aus, auch die offenen.
+
+    Zuordnung:
+      strasse         -> strassenabstand_m (eigenstaendiger Wert aus Modul 2;
+                         NIE aus grenzabstand_klein/gross abgeleitet)
+      nachbarparzelle -> grenzabstand_gross_m, ersatzweise klein, falls gross
+                         fehlt. Gross ist der striktere der beiden: welche
+                         Seite als "klein" gelten darf, haengt an der
+                         Fassadenorientierung des noch nicht entworfenen
+                         Gebaeudes und ist hier nicht entscheidbar.
+      unbestimmt      -> kein Wert
+    """
+    strassenabstand_kz = zone.get("strassenabstand_m")
+    strassenabstand = _kennzahl_wert(strassenabstand_kz)
+    # Vorbehalte am Strassenabstand betreffen JEDE Strassenkante -- z.B. staffelt
+    # der Kanton Aargau nach Strassenklasse (§ 111 BauG: Kantonsstrasse 6 m,
+    # Gemeindestrasse 4 m). Welche Klasse die konkrete Strasse hat, wird noch
+    # nicht ausgewertet (die Objektart der Achse liegt in der Klassifikation
+    # bereit). Der Wert bleibt stehen, der Vorbehalt wird sichtbar.
+    strassen_vorbehalte: list[str] = []
+    if isinstance(strassenabstand_kz, dict) and strassenabstand is not None:
+        confidence = strassenabstand_kz.get("confidence")
+        if confidence and confidence != "hoch":
+            strassen_vorbehalte.append(f"Strassenabstand mit Confidence '{confidence}' extrahiert")
+        if strassenabstand_kz.get("unklarheit"):
+            strassen_vorbehalte.append(str(strassenabstand_kz["unklarheit"]))
+        for b in strassenabstand_kz.get("bedingungen") or []:
+            strassen_vorbehalte.append(
+                f"Alternativwert {b.get('wert_unter_bedingung')} unter Bedingung "
+                f"'{b.get('bedingung_text')}' -- nicht automatisch angewendet"
+            )
+    grenz_gross = _kennzahl_wert(zone.get("grenzabstand_gross_m"))
+    grenz_klein = _kennzahl_wert(zone.get("grenzabstand_klein_m"))
+    nachbarabstand = grenz_gross if grenz_gross is not None else grenz_klein
+    nachbar_feld = "grenzabstand_gross_m" if grenz_gross is not None else "grenzabstand_klein_m"
+
+    kanten = klassifikation.get("kanten") or []
+    if len(kanten) != anzahl_kanten:
+        raise G1VerdrahtungError(
+            f"Kantenklassifikation beschreibt {len(kanten)} Kanten, die Parzellengeometrie "
+            f"hat {anzahl_kanten} -- Zuordnung nicht moeglich."
+        )
+
+    abstaende: list[float] = []
+    protokoll: list[dict[str, Any]] = []
+    offene: list[str] = []
+    vollstaendig = True
+
+    for kante in kanten:
+        eintrag = {
+            "nr": kante.get("nr"),
+            "laenge_m": kante.get("laenge_m"),
+            "art": kante.get("art"),
+            "begruendung": kante.get("begruendung"),
+            "nachbar_egrid": kante.get("nachbar_egrid"),
+            "nachbar_nummer": kante.get("nachbar_nummer"),
+            "strassenname": kante.get("strassenname"),
+            "strassen_objektart": kante.get("strassen_objektart"),
+            "abstand_m": None,
+            "abstand_feld": None,
+            "unsicherheit": None,
+        }
+
+        if not kante.get("relevant"):
+            # Kurze Kante: praegt den Baubereich nicht. Sie braucht trotzdem
+            # einen Wert fuer die Mitre-Konstruktion -- der Nachbarabstand ist
+            # dort die zurueckhaltende Wahl.
+            eintrag["abstand_m"] = nachbarabstand
+            eintrag["abstand_feld"] = nachbar_feld if nachbarabstand is not None else None
+            eintrag["unsicherheit"] = (
+                "Kante unter der Relevanzschwelle -- nicht klassifiziert, "
+                "rechnerisch mit dem Nachbarabstand belegt."
+            )
+            if nachbarabstand is None:
+                vollstaendig = False
+            else:
+                abstaende.append(float(nachbarabstand))
+            protokoll.append(eintrag)
+            continue
+
+        if kante.get("art") == ART_STRASSE:
+            if strassenabstand is None:
+                eintrag["unsicherheit"] = (
+                    "Strassenkante, aber Modul 2 hat keinen eigenstaendigen Strassenabstand "
+                    "gefunden. Kein Ersatzwert eingesetzt -- der Grenzabstand gegenueber "
+                    "Nachbarn gilt hier rechtlich nicht."
+                )
+                offene.append(f"Kante {kante.get('nr')}: Strassenabstand nicht bestimmbar")
+                vollstaendig = False
+            else:
+                eintrag["abstand_m"] = float(strassenabstand)
+                eintrag["abstand_feld"] = "strassenabstand_m"
+                vorbehalte = list(strassen_vorbehalte)
+                if baulinien_gefunden:
+                    # Eine Baulinie tritt an die Stelle des Abstandsmasses und
+                    # kann strenger sein. Welche Baulinie welcher Kante
+                    # zugeordnet ist, wird hier noch nicht bestimmt -- der
+                    # Wert bleibt stehen, der Vorbehalt wird sichtbar gemacht,
+                    # statt ein zu grosses Ergebnis unkommentiert auszugeben.
+                    vorbehalte.append(
+                        f"{baulinien_gefunden} Baulinie(n) auf der Parzelle gefunden. Eine Baulinie "
+                        "tritt an die Stelle des Strassenabstands und kann strenger sein -- die "
+                        "Zuordnung Baulinie/Kante ist noch nicht automatisiert."
+                    )
+                if vorbehalte:
+                    eintrag["unsicherheit"] = " | ".join(vorbehalte)
+                if kante.get("strassen_objektart") is not None:
+                    eintrag["strassen_objektart"] = kante.get("strassen_objektart")
+                abstaende.append(float(strassenabstand))
+        elif kante.get("art") == ART_NACHBARPARZELLE:
+            if nachbarabstand is None:
+                eintrag["unsicherheit"] = "Nachbarkante, aber kein Grenzabstand in den Zonendaten."
+                offene.append(f"Kante {kante.get('nr')}: Grenzabstand nicht bestimmbar")
+                vollstaendig = False
+            else:
+                eintrag["abstand_m"] = float(nachbarabstand)
+                eintrag["abstand_feld"] = nachbar_feld
+                if nachbar_feld == "grenzabstand_klein_m":
+                    eintrag["unsicherheit"] = (
+                        "grenzabstand_gross_m fehlt -- ersatzweise der kleine Grenzabstand, "
+                        "damit das Ergebnis eher zu gross als zu klein ausfaellt."
+                    )
+                abstaende.append(float(nachbarabstand))
+        else:
+            eintrag["unsicherheit"] = (
+                "Kantenart nicht belastbar bestimmbar -- manuelle Pruefung erforderlich."
+            )
+            offene.append(f"Kante {kante.get('nr')}: Art unbestimmt")
+            vollstaendig = False
+
+        protokoll.append(eintrag)
+
+    return (abstaende if vollstaendig else None), protokoll, offene
+
+
 def berechne_g1_fuer_fall(
     modul1_result: dict[str, Any],
     zone: dict[str, Any],
     *,
     kanten_abstaende_override: Optional[list[float]] = None,
+    kantenklassifikation: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Fuehrt die G1-Kaskade mit REALER Parzellengeometrie/Restriktionen aus
     Modul 1 und den Zonenkennzahlen aus Modul 2 (`zone`, ein Eintrag aus
@@ -149,7 +307,7 @@ def berechne_g1_fuer_fall(
     kennzahl_felder = (
         "ausnuetzungsziffer_az", "anrechenbare_geschossflaechenziffer_abgf", "baumassenziffer_bmz",
         "ueberbauungsziffer_uz", "gesamthoehe_m", "gebaeudehoehe_m", "grenzabstand_klein_m",
-        "grenzabstand_gross_m", "vollgeschosse_max",
+        "grenzabstand_gross_m", "strassenabstand_m", "vollgeschosse_max",
     )
     kennzahl_hinweise = [
         h for feld in kennzahl_felder if (h := _kennzahl_hinweis(feld, zone.get(feld))) is not None
@@ -176,7 +334,50 @@ def berechne_g1_fuer_fall(
         ergebnis = berechne_potenzial(parzelle_ring, kanten_abstaende_override, **gemeinsame_kwargs)
         return {"modus": "manueller_kanten_override", **basis_info, "ergebnis": ergebnis.to_dict()}
 
+    # Stufe 2: echte Kantenzuordnung, sofern vorhanden. Die Bandbreite wird
+    # trotzdem immer mitberechnet und bleibt als Kontrollergebnis daneben
+    # stehen -- ein klassifiziertes Ergebnis, das ausserhalb der Bandbreite
+    # laege, waere ein Hinweis auf einen Fehler, kein Fortschritt.
+    kanten_protokoll: Optional[list[dict[str, Any]]] = None
+    kanten_abstaende: Optional[list[float]] = None
+    kanten_offene: list[str] = []
+    if kantenklassifikation is not None:
+        kanten_abstaende, kanten_protokoll, kanten_offene = _kantenabstaende_aus_klassifikation(
+            zone,
+            kantenklassifikation,
+            anzahl_kanten,
+            baulinien_gefunden=len(restriktionen.get("baulinien_gefunden") or []),
+        )
+        basis_info["kantenprotokoll"] = kanten_protokoll
+        basis_info["kantenklassifikation_statistik"] = kantenklassifikation.get("statistik")
+        basis_info["kantenklassifikation_hinweise"] = kantenklassifikation.get("hinweise", [])
+
     bandbreite_szenarien = _grenzabstand_bandbreite_pro_kante(zone, anzahl_kanten)
+
+    if kanten_abstaende is not None:
+        ergebnis = berechne_potenzial(parzelle_ring, kanten_abstaende, **gemeinsame_kwargs)
+        kontrolle = {
+            name: berechne_potenzial(parzelle_ring, kanten, **gemeinsame_kwargs).to_dict()
+            for name, kanten in bandbreite_szenarien.items()
+        }
+        return {
+            "modus": "kantenklassifikation",
+            **basis_info,
+            "hinweis": (
+                "Jede massgebende Kante wurde geometrisch zugeordnet (Strassenachse durch das "
+                "Polygon hinter der Kante = Strassenparzelle) und mit dem fuer ihre Art "
+                "geltenden Abstand gerechnet. Die frueheren Bandbreiten-Szenarien stehen "
+                "unter 'kontrolle_bandbreite' weiterhin daneben."
+            ),
+            "ergebnis": ergebnis.to_dict(),
+            "kontrolle_bandbreite": kontrolle,
+        }
+
+    if kantenklassifikation is not None and not bandbreite_szenarien:
+        raise G1VerdrahtungError(
+            "Kantenklassifikation liegt vor, aber weder ein kantenweise belastbarer Abstand "
+            f"noch ein Grenzabstand fuer die Bandbreite. Offen: {kanten_offene or 'keine Zonenwerte'}."
+        )
     if not bandbreite_szenarien:
         raise G1VerdrahtungError(
             f"Zone {zone.get('zonenbezeichnung')!r} hat weder grenzabstand_klein_m noch "
@@ -185,6 +386,9 @@ def berechne_g1_fuer_fall(
 
     ergebnisse = {name: berechne_potenzial(parzelle_ring, kanten, **gemeinsame_kwargs).to_dict()
                   for name, kanten in bandbreite_szenarien.items()}
+
+    if kanten_offene:
+        basis_info["kantenzuordnung_offen"] = kanten_offene
 
     if len(ergebnisse) == 1:
         return {"modus": "einheitlicher_grenzabstand", **basis_info, "ergebnis": next(iter(ergebnisse.values()))}

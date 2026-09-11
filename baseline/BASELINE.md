@@ -29,6 +29,11 @@ Vollstaendiges Protokoll: [`testlauf_2026-09-11.txt`](testlauf_2026-09-11.txt)
 
 **6/6 Suiten, 311 einzelne OK-Zusicherungen, alle Exitcodes 0.**
 
+Seither hinzugekommen: `test_abrufmechanik.py` (Stufe 1) und
+`test_kantenklassifikation.py` (Stufe 2), beide vollstaendig offline.
+`python -m tests.alle` fuehrt alle Suiten der Engine aus und ist seit Stufe 1
+die verbindliche Liste; `--offline` laesst die beiden Netz-Suiten weg.
+
 Zwei Suiten brauchen Netzzugang (`test_klassifikation`, teilweise `test_quellen`);
 keine braucht einen `GEMINI_API_KEY`. Wo eine Zonenzuordnung noetig ist, arbeitet
 die Testsuite mit einem synthetischen Modul-2-Ergebnis statt eines LLM-Calls.
@@ -63,6 +68,32 @@ Modul 3:   None (kein Verkaufspreis uebergeben)
 
 Diese G1-Werte wurden am 04.09. und am 11.09. unabhaengig voneinander auf zwei
 Nachkommastellen identisch reproduziert — die Geometriekaskade ist stabil.
+
+### Aenderung durch Stufe 2 (11.09.2026, Kantenklassifikation)
+
+Buchs AG rechnet seither im Modus `kantenklassifikation`: die fuenf
+massgebenden Kanten werden einzeln zugeordnet (2x Strasse, 3x Nachbarparzelle)
+und mit dem jeweils geltenden Abstand gerechnet — Strassenabstand 4.00 m
+(§ 111 Abs. 1 lit. a BauG AG), Grenzabstand gross 6.00 m (§ 18 BNO Buchs).
+
+```
+G1-Modus:  kantenklassifikation
+  Baubereich 117.1 m2
+  kontrolle_bandbreite.alle_kanten_klein:  Baubereich 206.76 m2
+  kontrolle_bandbreite.alle_kanten_gross:  Baubereich  57.23 m2
+```
+
+**Die Bandbreite selbst bleibt unveraendert** (206.76 / 57.23 m2) und steht jetzt
+unter `kontrolle_bandbreite`. Sie ist die Regressionsgroesse: aendert sie sich,
+hat sich die Geometriekaskade veraendert. Das klassifizierte Ergebnis muss
+zwischen den beiden Raendern liegen.
+
+Der Strassenabstand traegt in Buchs bewusst einen Vorbehalt an jeder
+Strassenkante: § 111 BauG AG staffelt nach Strassenklasse (Kantonsstrasse 6 m,
+Gemeindestrasse 4 m), und welche Klasse die konkrete Strasse hat, wird noch
+nicht ausgewertet. Die Objektart der Strassenachse liegt in der Klassifikation
+bereit (`strassen_objektart`) — das ist der Anknuepfungspunkt fuer den
+naechsten Schritt.
 
 ### Was sich zwischen Laeufen legitim aendern darf
 

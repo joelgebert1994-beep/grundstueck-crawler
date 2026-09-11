@@ -1203,6 +1203,33 @@ def run_modul1(address: str) -> dict[str, Any]:
             "reason": "Keine Parzellengeometrie verfuegbar (siehe kataster.found) -- Restriktionsabfrage uebersprungen.",
         }
 
+    # G2 -- welche Kante grenzt an Strasse, welche an einen Nachbarn. Erst
+    # damit kann G1 kantenspezifisch statt als Bandbreite rechnen. Ein Fehler
+    # hier darf die Analyse nicht stoppen: die Bandbreite bleibt als
+    # Rueckfallebene bestehen, der Grund wird festgehalten statt verschluckt.
+    if parzellengeometrie:
+        # Lokaler Import: kantenklassifikation.py liest seinerseits aus diesem
+        # Modul (_identify, LAYER_CADASTRE_GEOM) -- ein Modulzyklus auf
+        # Dateiebene waere sonst unvermeidlich.
+        from .kantenklassifikation import KantenklassifikationError, klassifiziere_kanten
+
+        try:
+            result["kantenklassifikation"] = klassifiziere_kanten(
+                parzellengeometrie, e, n, eigenes_egrid=egrid
+            )
+        except (KantenklassifikationError, requests.exceptions.RequestException) as exc:
+            result["kantenklassifikation"] = {
+                "gefunden": False,
+                "reason": f"{type(exc).__name__}: {exc}",
+                "kanten": [],
+            }
+    else:
+        result["kantenklassifikation"] = {
+            "gefunden": False,
+            "reason": "Keine Parzellengeometrie verfuegbar -- Kantenklassifikation uebersprungen.",
+            "kanten": [],
+        }
+
     result["_meta"] = {
         "duration_seconds": round(time.time() - started, 2),
         "modul": "Modul 1 - Geo-Data & Registry Ingestion",

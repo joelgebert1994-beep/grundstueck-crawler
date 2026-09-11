@@ -924,7 +924,8 @@ var KENNZAHLEN = [
   ["gebaeudehoehe_m", "Gebäudehöhe", "m"],
   ["gesamthoehe_m", "Gesamthöhe / First", "m"],
   ["grenzabstand_klein_m", "Grenzabstand klein", "m"],
-  ["grenzabstand_gross_m", "Grenzabstand gross", "m"]
+  ["grenzabstand_gross_m", "Grenzabstand gross", "m"],
+  ["strassenabstand_m", "Strassenabstand", "m"]
 ];
 function kennzahlBlock(label, kz, einheit) {
   var hatWert = !leer(kz.wert);
@@ -957,6 +958,78 @@ function zoneKennzahlen(zone) {
     }
     return kennzahlBlock(k[1], kz, k[2]);
   }).join("");
+}
+var KANTEN_ART_TEXT = {
+  strasse: ["Strasse", "ok"],
+  nachbarparzelle: ["Nachbarparzelle", "ok"],
+  unbestimmt: ["nicht bestimmbar", "warn"],
+  nicht_relevant: ["unter 3 m", "mute"]
+};
+function kantenprotokoll(erg, m1) {
+  var kl = m1.kantenklassifikation || {};
+  var g1 = erg.g1_ergebnis || {};
+  // Das Protokoll aus G1 kennt zusaetzlich den je Kante angewendeten Abstand.
+  // Liegt es nicht vor (G1 uebersprungen), wird die reine Klassifikation
+  // gezeigt -- besser als gar nichts, und ehrlich beschriftet.
+  var zeilen = alsListe(g1.kantenprotokoll);
+  var ausG1 = zeilen.length > 0;
+  if (!ausG1) zeilen = alsListe(kl.kanten);
+  if (!zeilen.length) {
+    if (kl.reason) return '<h4 class="subhead">Kantenprotokoll</h4><div class="note warn">Kantenklassifikation nicht verfügbar: ' + esc(kl.reason) + "</div>";
+    return "";
+  }
+
+  var st = kl.statistik || {};
+  var offen = alsListe(g1.kantenzuordnung_offen);
+  var hinweise = alsListe(kl.hinweise);
+
+  var kopf = kvRows([
+    ["Massgebende Kanten", leer(st.kanten_relevant) ? null : st.kanten_relevant + " von " + st.kanten_gesamt],
+    ["davon an Strasse", leer(st.strasse) ? null : String(st.strasse)],
+    ["davon an Nachbarparzelle", leer(st.nachbarparzelle) ? null : String(st.nachbarparzelle)],
+    ["davon nicht bestimmbar", leer(st.unbestimmt) ? null : String(st.unbestimmt)],
+    ["Strassenparzellen im Umfeld", leer(st.strassenparzellen_im_umfeld) ? null : String(st.strassenparzellen_im_umfeld)]
+  ]);
+
+  // Eine reale Katasterparzelle hat leicht 45 Stuetzpunkte, davon 40 unter der
+  // Relevanzschwelle. Die massgebenden Kanten stehen deshalb in der Tabelle,
+  // die uebrigen dahinter -- weggelassen wird keine.
+  var zeileHtml = function (k) {
+    var art = KANTEN_ART_TEXT[k.art] || [k.art || "–", "mute"];
+    var beleg = k.strassenname ? esc(k.strassenname) + (leer(k.strassen_objektart) ? "" : '<div class="f">Objektart ' + esc(k.strassen_objektart) + "</div>")
+      : (k.nachbar_nummer ? "Parzelle " + esc(k.nachbar_nummer) + (k.nachbar_egrid ? " · " + esc(k.nachbar_egrid) : "")
+      : (k.nachbar_egrid ? esc(k.nachbar_egrid) : "&ndash;"));
+    var abstand = leer(k.abstand_m)
+      ? '<span class="na">' + (ausG1 ? "nicht bestimmbar" : "&ndash;") + "</span>"
+      : esc(k.abstand_m) + " m" + (k.abstand_feld ? '<div class="f">' + esc(k.abstand_feld) + "</div>" : "");
+    return "<tr><td>" + esc(k.nr) + "</td>" +
+      "<td>" + (leer(k.laenge_m) ? "&ndash;" : esc(k.laenge_m) + " m") + "</td>" +
+      '<td><span class="badge ' + art[1] + '">' + esc(art[0]) + "</span></td>" +
+      "<td>" + abstand + "</td>" +
+      '<td class="f">' + beleg + "</td>" +
+      "<td>" + esc(k.begruendung || "") +
+        (k.unsicherheit ? '<div class="note warn" style="margin-top:6px">' + esc(k.unsicherheit) + "</div>" : "") +
+      "</td></tr>";
+  };
+  var massgebend = zeilen.filter(function (k) { return k.art !== "nicht_relevant"; });
+  var uebrige = zeilen.filter(function (k) { return k.art === "nicht_relevant"; });
+  var rows = massgebend.map(zeileHtml).join("");
+
+  return '<h4 class="subhead">Kantenprotokoll</h4>' +
+    '<div class="note">Jede Kante wird geometrisch zugeordnet: liegt hinter der Kante ein Katasterpolygon, durch das eine Strassenachse verläuft, ist es eine Strassenparzelle. Quelle: ' +
+      esc(alsListe(kl.quellen_layer).join(", ")) + (kl.abgerufen_am ? " · abgerufen " + esc(kl.abgerufen_am) : "") + "</div>" +
+    kopf +
+    (offen.length ? '<div class="note warn"><b>Nicht kantenweise gerechnet.</b> Offen: ' + esc(offen.join(" · ")) +
+      ". Es wurde bewusst kein Ersatzwert eingesetzt; stattdessen gilt die Bandbreite aus Abschnitt 05.</div>" : "") +
+    hinweise.map(function (h) { return '<div class="note warn">' + esc(h) + "</div>"; }).join("") +
+    '<div class="scroller"><table class="src"><thead><tr><th>Kante</th><th>Länge</th><th>Grenzt an</th><th>Abstand</th><th>Beleg</th><th>Begründung</th></tr></thead><tbody>' +
+      rows + "</tbody></table></div>" +
+    (uebrige.length
+      ? '<details class="more"><summary>' + uebrige.length + ' kurze Kanten unter 3 m (nicht baubereichsprägend)</summary>' +
+        '<div class="scroller"><table class="src"><thead><tr><th>Kante</th><th>Länge</th><th>Grenzt an</th><th>Abstand</th><th>Beleg</th><th>Begründung</th></tr></thead><tbody>' +
+        uebrige.map(zeileHtml).join("") + "</tbody></table></div></details>"
+      : "") +
+    (ausG1 ? "" : '<div class="note">Abstände werden erst ausgewiesen, wenn G1 rechnet (eindeutig zugeordnete Zone).</div>');
 }
 function secBaurecht(erg, m1, zz) {
   var nk = m1.nutzungsklassifikation || {}, m2 = erg.modul2_bzo_analyse || {}, oereb = m1.oereb || {};
@@ -1028,6 +1101,7 @@ function secBaurecht(erg, m1, zz) {
       ? '<div class="note warn">Die Grundnutzungszone ist laut Klassifikation <b>' + esc(nk.basiszone_status) +
         "</b> — die Kennzahlen unten stehen entsprechend unter Vorbehalt.</div>" : "") +
     '<h4 class="subhead">Zonenzuordnung</h4>' + zonenTeil +
+    kantenprotokoll(erg, m1) +
     (sonder ? '<h4 class="subhead">Sonderregelungen &amp; Boni</h4>' + sonder : "") +
     (zonenListe.length
       ? '<details class="more"><summary>Alle ' + zonenListe.length + ' im Reglement erkannten Zonen</summary><div>' +
@@ -1135,6 +1209,8 @@ function secPotenzial(erg) {
 
   return '<section class="sec" id="sec-potenzial">' +
     '<div class="sechead"><span class="num">05</span><h3>Potenzial — G1 &amp; SIA 416</h3><span class="right">' + mapBtn("baubereich", "Baubereich") + "</span></div>" +
+    (g1.modus === "kantenklassifikation" ? '<div class="note ok"><b>Kantenweise gerechnet.</b> ' +
+      esc(g1.hinweis || "") + ' <a href="#sec-baurecht" onclick="springeZu(&quot;sec-baurecht&quot;);return false">Kantenprotokoll ansehen</a></div>' : "") +
     (bandbreite ? '<div class="note warn"><b>Ergebnis als Bandbreite.</b> ' +
       esc(g1.hinweis || "Das Reglement differenziert die Grenzabstände nach Kante; welche Kante welchen Abstand hat, ist ohne Parzellenbeurteilung nicht bestimmbar. Deshalb werden beide Randfälle gerechnet.") + "</div>" : "") +
     einzel.map(function (paar) {
@@ -1151,6 +1227,23 @@ function secPotenzial(erg) {
         (siaW ? '<h4 class="subhead">SIA 416</h4>' + siaTabelle(siaW) : "") +
       "</div>";
     }).join("") +
+    (function () {
+      // Die frueheren Bandbreiten-Szenarien bleiben als Kontrolle sichtbar:
+      // das kantenweise Ergebnis muss dazwischen liegen.
+      var kb = g1.kontrolle_bandbreite;
+      if (!kb || !Object.keys(kb).length) return "";
+      var werte = Object.keys(kb).map(function (n) { return [n, kb[n]]; });
+      return '<details class="more"><summary>Kontrollbandbreite (vor der Kantenzuordnung)</summary><div>' +
+        '<div class="note">Ohne Kantenzuordnung wurden beide Randfälle gerechnet: alle Kanten mit dem kleinen bzw. mit dem grossen Grenzabstand. Das kantenweise Ergebnis oben muss dazwischen liegen.</div>' +
+        '<div class="scroller"><table class="src"><thead><tr><th>Szenario</th><th>Baubereich</th><th>Fussabdruck</th><th>Geschossfläche</th></tr></thead><tbody>' +
+        werte.map(function (pa) {
+          var n = pa[0], e = pa[1] || {};
+          return "<tr><td>" + esc(SZENARIO_G1_LABEL[n] || n) + "</td>" +
+            "<td>" + (leer(e.baubereich_m2) ? "&ndash;" : fmt(e.baubereich_m2, 1) + " m²") + "</td>" +
+            "<td>" + (leer(e.fussabdruck_m2) ? "&ndash;" : fmt(e.fussabdruck_m2, 1) + " m²") + "</td>" +
+            "<td>" + (leer(e.geschossflaeche_m2) ? "&ndash;" : fmt(e.geschossflaeche_m2, 1) + " m²") + "</td></tr>";
+        }).join("") + "</tbody></table></div></div></details>";
+    })() +
     (function () {
       var kh = alsListe(g1.kennzahl_hinweise);
       return kh.length ? '<details class="more"><summary>Hinweise zu den verwendeten Kennzahlen (' + kh.length +

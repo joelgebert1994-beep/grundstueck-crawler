@@ -195,7 +195,7 @@ _ZONE_KENNZAHL_FELDER = (
     "ausnuetzungsziffer_az", "anrechenbare_geschossflaechenziffer_abgf",
     "baumassenziffer_bmz", "ueberbauungsziffer_uz", "gesamthoehe_m",
     "gebaeudehoehe_m", "grenzabstand_klein_m", "grenzabstand_gross_m",
-    "vollgeschosse_max",
+    "strassenabstand_m", "vollgeschosse_max",
 )
 
 _ZONE_SCHEMA = {
@@ -314,6 +314,7 @@ if _GeminiBaseModel is not None:
         gebaeudehoehe_m: _KennzahlGemini
         grenzabstand_klein_m: _KennzahlGemini
         grenzabstand_gross_m: _KennzahlGemini
+        strassenabstand_m: _KennzahlGemini
         vollgeschosse_max: _KennzahlGemini
 
     class _SonderregelungGemini(_GeminiBaseModel):
@@ -347,7 +348,21 @@ SYSTEM_PROMPT = (
     "Gewerbezonen etc.) mit ihren jeweiligen Kennzahlen: Ausnuetzungsziffer "
     "AZ, anrechenbare Geschossflaechenziffer aBGF, Baumassenziffer BMZ, "
     "Ueberbauungsziffer/Grundflaechenziffer UEZ/GFZ, Gesamthoehe, "
-    "Gebaeudehoehe, kleiner und grosser Grenzabstand, max. Vollgeschosse. "
+    "Gebaeudehoehe, kleiner und grosser Grenzabstand, Strassenabstand, "
+    "max. Vollgeschosse. "
+    "WICHTIG zum Strassenabstand ('strassenabstand_m'): das ist der "
+    "Abstand gegenueber einer Strasse/einem oeffentlichen Verkehrsraum -- "
+    "eine EIGENSTAENDIGE Groesse, oft im kantonalen Strassengesetz oder "
+    "Baugesetz geregelt (z.B. 'Strassenabstand', 'Abstand von Strassen', "
+    "'Abstand zur Strassengrenze', 'Vorgarten'), nicht zwingend im "
+    "Zonenschema der Gemeinde. Kleiner und grosser Grenzabstand "
+    "unterscheiden dagegen schmale und breite Gebaeudeseite gegenueber "
+    "NACHBARgrundstuecken. Leite den Strassenabstand deshalb NIEMALS aus "
+    "dem kleinen oder grossen Grenzabstand ab und setze ihn nicht mit "
+    "ihnen gleich. Findest du keinen eigenstaendigen Strassenabstand, MUSS "
+    "'wert' null und 'confidence' 'nicht_bestimmbar' sein. Gilt statt "
+    "eines Abstandsmasses eine Baulinie, vermerke das in 'unklarheit' -- "
+    "Baulinien werden separat aus den Geodaten uebernommen. "
     "Suche zusaetzlich gezielt nach Sonderrechten und Ausnahmeregelungen: "
     "Minergie-/Energieboni, Arealueberbauungsprivilegien, Attikageschoss-"
     "Anrechenbarkeit, Hanglagen-Boni, Denkmalschutz-Ausnahmen.\n\n"
