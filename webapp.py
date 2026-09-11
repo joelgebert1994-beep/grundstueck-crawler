@@ -63,6 +63,109 @@ _JOBS_LOCK = threading.Lock()
 _JOB_TTL_SECONDS = 30 * 60
 
 
+def _zahl(wert, vorgabe=None):
+    """Liest eine Zahl aus dem Request-Body. Leere Eingabe heisst 'nicht
+    gesetzt', nicht 0 -- ein leeres Feld darf keinen Preis von null bedeuten."""
+    if wert in (None, "", "null"):
+        return vorgabe
+    try:
+        return float(wert)
+    except (TypeError, ValueError):
+        raise ValueError(f"{wert!r} ist keine Zahl.") from None
+
+
+def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
+    """Szenarien und Wirtschaftlichkeit aus den Benutzereingaben.
+
+    Erwartet im Body optional:
+      wohnungsmix  [{typ, flaeche_m2, anteil | anzahl}, ...]
+      verkauf_chf_pro_m2, verkauf_basis, miete_chf_pro_m2_jahr,
+      bodenpreis_chf_pro_m2, landpreis_total_chf, zielmarge, land_ansatz
+      bkp  {schluessel: wert}   -- ueberschreibt einzelne Kostenansaetze
+      annahmen {schluessel: wert} -- ueberschreibt Flaechen-Annahmen
+      attika_zulaessig, gebaeudeabstand_m
+    """
+    from potenzial_engine import wirtschaftlichkeit as wi
+    from potenzial_engine.flaechenmodell import WohnungstypVorgabe
+    from potenzial_engine.pipeline import (
+        berechne_szenarien as _szen,
+        berechne_wirtschaftlichkeit_je_szenario as _wirt,
+    )
+
+    mix = None
+    for eintrag in daten.get("wohnungsmix") or []:
+        anteil = _zahl(eintrag.get("anteil"))
+        anzahl = _zahl(eintrag.get("anzahl"))
+        vorgabe = WohnungstypVorgabe(
+            typ=str(eintrag.get("typ") or "Typ"),
+            flaeche_nwf_pro_einheit_m2=_zahl(eintrag.get("flaeche_m2"), 0) or 0.0,
+            anteil=anteil,
+            anzahl=int(anzahl) if anzahl is not None else None,
+        )
+        mix = (mix or []) + [vorgabe]
+
+    annahmen = {k: _zahl(v) for k, v in (daten.get("annahmen") or {}).items() if _zahl(v) is not None}
+
+    szenarien = _szen(
+        analyse,
+        benutzerwerte=annahmen or None,
+        wohnungsmix=mix,
+        wohnungsmix_begruendung=daten.get("wohnungsmix_begruendung") or "Benutzereingabe",
+        attika_zulaessig=daten.get("attika_zulaessig"),
+        gebaeudeabstand_m=_zahl(daten.get("gebaeudeabstand_m")),
+    )
+
+    def referenzen(schluessel):
+        return [
+            wi.Referenzwert(
+                quelle=str(r.get("quelle") or "?"), datum=str(r.get("datum") or "?"),
+                objekt=str(r.get("objekt") or "?"), wert=_zahl(r.get("wert"), 0) or 0.0,
+                einheit=str(r.get("einheit") or "CHF/m2"),
+                qualitaet=str(r.get("qualitaet") or "unbekannt"),
+            )
+            for r in (daten.get("referenzen") or {}).get(schluessel, [])
+        ]
+
+    markt = wi.Marktannahmen(
+        verkauf=wi.Verkaufsannahme(
+            basis=daten.get("verkauf_basis") or "nwf",
+            preis_pro_m2=wi.marktwert("verkauf", "CHF/m2",
+                                      referenzen=referenzen("verkauf"),
+                                      benutzerannahme=_zahl(daten.get("verkauf_chf_pro_m2"))),
+        ),
+        miete=wi.Mietannahme(
+            basis=daten.get("miete_basis") or "nwf",
+            miete_pro_m2_jahr=wi.marktwert("miete", "CHF/m2/Jahr",
+                                           referenzen=referenzen("miete"),
+                                           benutzerannahme=_zahl(daten.get("miete_chf_pro_m2_jahr"))),
+        ),
+        bodenpreis_chf_pro_m2=wi.marktwert("boden", "CHF/m2",
+                                           referenzen=referenzen("boden"),
+                                           benutzerannahme=_zahl(daten.get("bodenpreis_chf_pro_m2"))),
+        landpreis_total_chf=_zahl(daten.get("landpreis_total_chf")),
+        zielmarge=_zahl(daten.get("zielmarge"), 0.15),
+        land_ansatz=daten.get("land_ansatz") or wi.LAND_KAUF,
+    )
+
+    positionen = wi.standard_kostenmodell(
+        ausbaustandard=daten.get("ausbaustandard") or "rendite",
+        kostengenauigkeit=daten.get("kostengenauigkeit") or "kostenschaetzung",
+        kostenbasis=daten.get("kostenbasis") or "gf",
+    )
+    ueberschrieben = daten.get("bkp") or {}
+    if ueberschrieben:
+        positionen = [
+            p.mit_benutzerwert(_zahl(ueberschrieben[p.schluessel]))
+            if p.schluessel in ueberschrieben and _zahl(ueberschrieben[p.schluessel]) is not None
+            else p
+            for p in positionen
+        ]
+
+    wirtschaft = _wirt(analyse, markt, kostenpositionen=positionen,
+                       szenarien_ergebnis=szenarien)
+    return {"szenarien": szenarien, "wirtschaftlichkeit": wirtschaft}
+
+
 def _cleanup_alte_jobs() -> None:
     grenze = time.time() - _JOB_TTL_SECONDS
     with _JOBS_LOCK:
@@ -212,7 +315,48 @@ class Handler(BaseHTTPRequestHandler):
             }
         )
 
+    def _handle_entwicklung(self) -> None:
+        """Szenarien und Wirtschaftlichkeit neu rechnen -- ohne erneute Geo-
+        oder Gemini-Abfrage.
+
+        Das ist der Endpunkt, der die Oberflaeche dynamisch macht: der
+        Benutzer aendert Verkaufspreis, Miete, Bodenpreis, Wohnungsmix, eine
+        BKP-Position oder die Zielmarge, und bekommt in Millisekunden die
+        ganze Kette bis zum Residualwert zurueck. Die teure baurechtliche
+        Analyse bleibt unberuehrt.
+        """
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        job_id = (daten.get("job_id") or "").strip()
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            kontext = job.get("kontext") if job else None
+        if job is None or job["status"] != "done" or not kontext:
+            self._send_json(
+                {"ok": False, "fehler": "Keine abgeschlossene Analyse zu dieser job_id (evtl. abgelaufen)."},
+                status=404,
+            )
+            return
+
+        try:
+            antwort = _rechne_entwicklung(
+                Analyse(ergebnis=job["ergebnis"], kontext=kontext), daten
+            )
+        except (ValueError, TypeError, KeyError) as exc:
+            self._send_json({"ok": False, "fehler": f"Ungueltige Eingabe: {exc}"}, status=400)
+            return
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self._send_json({"ok": False, "fehler": f"Unerwarteter Fehler: {exc}"}, status=500)
+            return
+
+        self._send_json({"ok": True, **antwort})
+
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/entwicklung":
+            self._handle_entwicklung()
+            return
         if self.path == "/wirtschaftlichkeit":
             self._handle_wirtschaftlichkeit()
             return

@@ -246,6 +246,44 @@ details.more > div { padding-top: 10px; }
 ul.plain { margin: 6px 0; padding-left: 17px; font-size: 12.5px; color: var(--ink-2); }
 ul.plain li { margin-bottom: 4px; }
 
+.wspalten { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+@media (max-width: 900px) { .wspalten { grid-template-columns: 1fr; } }
+.wkarte { border: 1px solid var(--line); border-radius: 10px; padding: 14px; background: var(--bg); }
+.wkarte h4 { margin: 0 0 10px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.wgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 700px) { .wgrid { grid-template-columns: 1fr; } }
+.wfeld { display: flex; flex-direction: column; gap: 4px; }
+.wlab { font-size: 11px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.winput { display: inline-flex; align-items: center; gap: 5px; }
+.winput input, .winput select, .wmix-typ { width: 100%; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; font-size: 13px;
+  font-variant-numeric: tabular-nums; }
+.winput input:focus, .winput select:focus, .wmix-typ:focus { outline: 2px solid var(--ink-3); outline-offset: 1px; }
+.winput em { font-style: normal; font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.wref { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px;
+  padding-top: 8px; border-top: 1px solid var(--line-2); font-size: 11px; color: var(--ink-2); }
+.wref b { font-size: 11px; }
+.wspanne, .wvorschlag { color: var(--ink-3); }
+.wmix { display: flex; flex-direction: column; gap: 8px; }
+.wmixzeile { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 8px; align-items: center; }
+.wmix-weg { border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink-3);
+  cursor: pointer; font-size: 15px; line-height: 1; padding: 5px 9px; }
+.wmix-weg:hover { color: var(--ink); }
+.wmixfuss { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 11px; }
+.wok { color: #1f7a4d; } .wfehler { color: #b3324a; } .wlaeuft { color: var(--ink-3); }
+.wstatus { min-height: 18px; margin: 8px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
+.wergebnis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0; }
+.wgross { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--bg); }
+.wgross .wlabel { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-3); }
+.wgross b { display: block; margin-top: 5px; font-size: 19px; font-variant-numeric: tabular-nums; }
+.wgross .wklein { display: block; font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.whervor { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.wpos { color: #1f7a4d; } .wneg { color: #b3324a; }
+.wsumme td { font-weight: 700; border-top: 2px solid var(--line); }
+tr.wzeile { cursor: pointer; }
+tr.wzeile:hover td { background: var(--bg-2); }
+tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--ink); }
 .szwahl { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 .szbtn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line);
   border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 12px;
@@ -640,7 +678,9 @@ function renderLoading() {
 }
 function stopLoading() { clearInterval(ladeTimer); ladeTimer = null; }
 
+var jobIdAktuell = null;
 function pollStatus(jobId) {
+  jobIdAktuell = jobId;
   var versuch = 0;
   return new Promise(function (resolve) {
     function tick() {
@@ -834,6 +874,8 @@ function renderDossier(erg) {
     secQuellen(erg) + secWirtschaft(erg);
   verdrahteDossier();
   verdrahteSzenarien();
+  verdrahteWirtschaft();
+  if ((erg.zonen_zuordnung || {}).status === "gefunden") wRechne();
 }
 
 function statusBadge(zz) {
@@ -1804,39 +1846,357 @@ function secQuellen(erg) {
     }).join("") + "</tbody></table></div></section>";
 }
 
-/* --- 08 Wirtschaftlichkeit --- */
-function finanzHtml(m3) {
-  if (!m3) return "";
-  if (m3.status === "sondernutzungsplan_massgebend") return '<div class="note stop">' + esc(m3.hinweis) + "</div>";
-  var sz = m3.szenarien || {};
-  var namen = Object.keys(sz);
-  if (!namen.length) return '<div class="note warn">Es wurden keine Finanzszenarien geliefert.</div>';
-  return namen.map(function (name) {
-    var s = sz[name], rw = s.residualwert || {};
-    var val = rw.residualwert_max_landkaufpreis_chf;
-    var rest = Object.keys(rw).filter(function (k) { return k !== "residualwert_max_landkaufpreis_chf"; })
-      .map(function (k) { return [k.replace(/_/g, " "), typeof rw[k] === "number" ? fmt(rw[k]) : rw[k]]; });
-    return '<div class="card"><div class="cardhead"><h4>' + esc(name.replace(/_/g, " ")) + "</h4></div>" +
-      '<div class="tiles">' + tile("Residualwert (max. Landkaufpreis)", leer(val) ? null : fmt(val), "CHF", true) + "</div>" +
-      (rest.length ? '<details class="more"><summary>Alle Positionen</summary><div>' + kvRows(rest) + "</div></details>" : "") +
-      "</div>";
-  }).join("");
+/* --- 08 Wirtschaftlichkeit (Stufe 5) -- interaktiv ---
+   Jede Aenderung ruft /api/entwicklung und rechnet Szenarien, Flaechen,
+   Wohnungen, Kosten, Gewinn, Marge und Residualwert neu. Die baurechtliche
+   Analyse bleibt unberuehrt -- sie wird nicht wiederholt. */
+
+var HERKUNFT_KURZ = {
+  benutzerannahme: ["meine Annahme", "ok"],
+  systemannahme: ["Systemannahme", "warn"],
+  referenz: ["Marktreferenz", "mute"],
+  nicht_bestimmbar: ["nicht bestimmbar", "warn"]
+};
+
+/* Die Eingaben. Alles, was hier steht, ist editierbar und geht 1:1 an den
+   Endpunkt. Vorbelegt mit dem, was die Engine als Systemannahme vorschlaegt. */
+var wEingaben = {
+  verkauf_chf_pro_m2: null,
+  verkauf_basis: "nwf",
+  miete_chf_pro_m2_jahr: null,
+  bodenpreis_chf_pro_m2: null,
+  zielmarge: 0.15,
+  land_ansatz: "kauf",
+  ausbaustandard: "rendite",
+  kostenbasis: "gf",
+  bkp: {},
+  wohnungsmix: [
+    { typ: "2.5 Zi", flaeche_m2: 62, anteil: 0.20 },
+    { typ: "3.5 Zi", flaeche_m2: 88, anteil: 0.50 },
+    { typ: "4.5 Zi", flaeche_m2: 112, anteil: 0.30 }
+  ]
+};
+var wErgebnis = null;
+var wLaeuft = false;
+var wTimer = null;
+
+function chf(v, k) {
+  if (leer(v)) return "–";
+  if (k && Math.abs(v) >= 1000000) return (v / 1000000).toFixed(2) + " Mio.";
+  return Number(v).toLocaleString("de-CH", { maximumFractionDigits: 0 });
 }
+function proz(v) { return leer(v) ? "–" : (v * 100).toFixed(1) + " %"; }
+
+function feld(id, label, wert, einheit, schritt) {
+  return '<label class="wfeld"><span class="wlab">' + esc(label) + "</span>" +
+    '<span class="winput"><input type="number" id="' + id + '" value="' +
+    (leer(wert) ? "" : esc(wert)) + '" step="' + (schritt || "any") +
+    '" placeholder="Systemvorschlag"><em>' + esc(einheit) + "</em></span></label>";
+}
+
+function marktBlock(erg) {
+  var e = wErgebnis && wErgebnis.szenarien
+    ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
+  var preis = (e.verkauf || {}).preis;
+  var referenzZeile = function (mw, label) {
+    if (!mw) return "";
+    var badge = HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"];
+    return '<div class="wref"><b>' + esc(label) + "</b> " +
+      (mw.referenzspanne
+        ? '<span class="wspanne">Marktreferenzen ' + chf(mw.referenzspanne[0]) + "–" +
+          chf(mw.referenzspanne[1]) + " (" + mw.anzahl_referenzen + " Objekte)</span>"
+        : '<span class="wspanne">keine Referenzen hinterlegt</span>') +
+      (leer(mw.systemvorschlag) ? "" : '<span class="wvorschlag">Systemvorschlag ' + chf(mw.systemvorschlag) + "</span>") +
+      '<span class="badge ' + badge[1] + '">gerechnet: ' + chf(mw.wert) + " · " + esc(badge[0]) + "</span></div>";
+  };
+
+  return '<div class="wkarte"><h4>Markt</h4>' +
+    '<div class="wgrid">' +
+      feld("w-verkauf", "Verkaufspreis", wEingaben.verkauf_chf_pro_m2, "CHF/m²", "50") +
+      feld("w-miete", "Mietzins", wEingaben.miete_chf_pro_m2_jahr, "CHF/m²/Jahr", "5") +
+      feld("w-boden", "Bodenpreis", wEingaben.bodenpreis_chf_pro_m2, "CHF/m²", "50") +
+      '<label class="wfeld"><span class="wlab">Verkaufsbasis</span><span class="winput">' +
+        '<select id="w-basis">' +
+        ["nwf", "hnf", "nf", "belegt"].map(function (b) {
+          return '<option value="' + b + '"' + (wEingaben.verkauf_basis === b ? " selected" : "") + ">" +
+            ({ nwf: "Wohnfläche NWF", hnf: "Hauptnutzfläche HNF", nf: "Nutzfläche NF",
+               belegt: "belegte Wohnfläche" })[b] + "</option>";
+        }).join("") + "</select></span></label>" +
+      '<label class="wfeld"><span class="wlab">Grundstück</span><span class="winput">' +
+        '<select id="w-land">' +
+        '<option value="kauf"' + (wEingaben.land_ansatz === "kauf" ? " selected" : "") + ">wird gekauft</option>" +
+        '<option value="im_besitz"' + (wEingaben.land_ansatz === "im_besitz" ? " selected" : "") + ">gehört bereits</option>" +
+        "</select></span></label>" +
+      '<label class="wfeld"><span class="wlab">Zielmarge</span><span class="winput">' +
+        '<input type="number" id="w-zielmarge" value="' + (wEingaben.zielmarge * 100).toFixed(0) +
+        '" step="1" min="0" max="60"><em>%</em></span></label>' +
+    "</div>" +
+    referenzZeile(preis, "Verkaufspreis") +
+    referenzZeile((e.miete || {}).ansatz, "Mietzins") +
+    referenzZeile((e.land || {}).bodenpreis, "Bodenpreis") +
+    ((e.land || {}).ansatz_bedeutung ? '<div class="note">' + esc(e.land.ansatz_bedeutung) + "</div>" : "") +
+  "</div>";
+}
+
+function mixBlock() {
+  var summe = wEingaben.wohnungsmix.reduce(function (s, t) { return s + (Number(t.anteil) || 0); }, 0);
+  return '<div class="wkarte"><h4>Wohnungsmix</h4>' +
+    '<div class="wmix">' + wEingaben.wohnungsmix.map(function (t, i) {
+      return '<div class="wmixzeile">' +
+        '<input type="text" class="wmix-typ" data-i="' + i + '" value="' + esc(t.typ) + '">' +
+        '<span class="winput"><input type="number" class="wmix-flaeche" data-i="' + i + '" value="' +
+          esc(t.flaeche_m2) + '" step="1" min="1"><em>m²</em></span>' +
+        '<span class="winput"><input type="number" class="wmix-anteil" data-i="' + i + '" value="' +
+          Math.round((Number(t.anteil) || 0) * 100) + '" step="5" min="0" max="100"><em>%</em></span>' +
+        '<button class="wmix-weg" data-i="' + i + '" title="Typ entfernen">&times;</button>' +
+      "</div>";
+    }).join("") + "</div>" +
+    '<div class="wmixfuss">' +
+      '<button class="szbtn" id="w-mix-plus">+ Wohnungstyp</button>' +
+      '<span class="' + (Math.abs(summe - 1) < 0.001 ? "wok" : "wfehler") + '">Summe ' +
+        Math.round(summe * 100) + " %" + (Math.abs(summe - 1) < 0.001 ? "" : " — muss 100 % ergeben") +
+      "</span></div>" +
+  "</div>";
+}
+
+function bkpBlock() {
+  var e = wErgebnis && wErgebnis.szenarien ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
+  var positionen = alsListe((e.kosten || {}).positionen);
+  if (!positionen.length) {
+    return '<div class="wkarte"><h4>Kosten (BKP)</h4><div class="note">Noch nichts gerechnet.</div></div>';
+  }
+  return '<div class="wkarte"><h4>Kosten (BKP)</h4>' +
+    '<div class="scroller"><table class="src"><thead><tr><th>BKP</th><th>Position</th><th>Ansatz</th>' +
+    "<th>Berechnungsbasis</th><th>Betrag</th><th>Herkunft</th></tr></thead><tbody>" +
+    positionen.map(function (p) {
+      var badge = HERKUNFT_KURZ[p.herkunft] || [p.herkunft, "mute"];
+      var eingabe = p.art === "prozent"
+        ? '<span class="winput"><input type="number" class="w-bkp" data-k="' + esc(p.schluessel) +
+          '" value="' + (p.ansatz === null ? "" : (p.ansatz * 100).toFixed(1)) +
+          '" step="0.5" data-prozent="1"><em>%</em></span>'
+        : '<span class="winput"><input type="number" class="w-bkp" data-k="' + esc(p.schluessel) +
+          '" value="' + (p.ansatz === null ? "" : p.ansatz) + '" step="50"><em>' +
+          (p.art === "chf_pro_m2" ? "CHF/m²" : "CHF") + "</em></span>";
+      return "<tr><td><b>" + esc(p.bkp) + "</b></td><td>" + esc(p.bezeichnung) + "</td>" +
+        "<td>" + eingabe + "</td>" +
+        '<td class="f">' + esc(p.rechnung || p.grund || "–") + "</td>" +
+        "<td><b>" + chf(p.betrag_chf) + "</b></td>" +
+        '<td><span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></td></tr>";
+    }).join("") +
+    '<tr class="wsumme"><td colspan="4">Baukosten total</td><td><b>' +
+      chf((e.kosten || {}).baukosten_chf) + "</b></td><td></td></tr>" +
+    "</tbody></table></div>" +
+    (alsListe((e.kosten || {}).offene_positionen).length
+      ? alsListe(e.kosten.offene_positionen).map(function (o) {
+          return '<div class="note warn">' + esc(o) + "</div>"; }).join("")
+      : "") +
+  "</div>";
+}
+
+function ergebnisBlock() {
+  var e = wErgebnis && wErgebnis.szenarien ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
+  var g = e.ergebnis || {};
+  var r = e.residualwert || {};
+  var zielBadge = g.zielmarge_erreicht === true ? "ok" : (g.zielmarge_erreicht === false ? "stop" : "mute");
+  return '<div class="wergebnis">' +
+    '<div class="wgross"><span class="wlabel">Verkaufserlös</span><b>CHF ' + chf(g.verkaufserloes_chf, true) + "</b></div>" +
+    '<div class="wgross"><span class="wlabel">Investition</span><b>CHF ' + chf(g.gesamtinvestition_chf, true) + "</b></div>" +
+    '<div class="wgross"><span class="wlabel">Gewinn</span><b class="' +
+      (leer(g.gewinn_chf) ? "" : (g.gewinn_chf >= 0 ? "wpos" : "wneg")) + '">CHF ' + chf(g.gewinn_chf, true) + "</b></div>" +
+    '<div class="wgross"><span class="wlabel">Marge <span class="badge ' + zielBadge + '">Ziel ' +
+      proz(g.zielmarge) + "</span></span><b>" + proz(g.marge) + "</b></div>" +
+    '<div class="wgross"><span class="wlabel">Bruttorendite</span><b>' + proz(g.bruttorendite) + "</b></div>" +
+    '<div class="wgross whervor"><span class="wlabel">Max. tragbarer Landwert</span><b>CHF ' +
+      chf(r.max_landwert_chf, true) + "</b><span class=\"wklein\">" +
+      (leer(r.max_landwert_chf_pro_m2) ? "" : chf(r.max_landwert_chf_pro_m2) + " CHF/m² Grundstück") + "</span></div>" +
+  "</div>" +
+  (r.rechnung ? '<div class="note">' + esc(r.rechnung) + "</div>" : "") +
+  (r.hinweis ? '<div class="note stop">' + esc(r.hinweis) + "</div>" : "") +
+  (r.grund ? '<div class="note warn">' + esc(r.grund) + "</div>" : "") +
+  (alsListe(e.offene_punkte).length
+    ? '<details class="more"><summary>Offene Punkte (' + alsListe(e.offene_punkte).length +
+      ')</summary><div><ul class="plain">' +
+      alsListe(e.offene_punkte).map(function (o) { return "<li>" + esc(o) + "</li>"; }).join("") +
+      "</ul></div></details>"
+    : "");
+}
+
+function wVergleichBlock() {
+  var v = alsListe((wErgebnis || {}).vergleich);
+  if (!v.length) return "";
+  return '<h4 class="subhead">Szenarien im Vergleich</h4>' +
+    '<div class="scroller"><table class="src"><thead><tr><th>Variante</th><th>Machbarkeit</th>' +
+    "<th>Verkauf</th><th>Miete/Jahr</th><th>Kosten</th><th>Investition</th><th>Gewinn</th>" +
+    "<th>Marge</th><th>Rendite</th><th>Max. Landwert</th></tr></thead><tbody>" +
+    v.map(function (z) {
+      var badge = MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit, "mute"];
+      var aktiv = z.id === wAktivesSzenario() ? ' class="wzeile aktiv"' : ' class="wzeile"';
+      return "<tr" + aktiv + ' data-wszenario="' + esc(z.id) + '"><td><b>' + esc(z.bezeichnung) + "</b></td>" +
+        '<td><span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></td>" +
+        "<td>" + chf(z.verkaufserloes_chf) + "</td><td>" + chf(z.jahresmietertrag_chf) + "</td>" +
+        "<td>" + chf(z.baukosten_chf) + (z.kosten_vollstaendig === false ? ' <span class="badge warn">unvollständig</span>' : "") + "</td>" +
+        "<td>" + chf(z.gesamtinvestition_chf) + "</td>" +
+        '<td class="' + (leer(z.gewinn_chf) ? "" : (z.gewinn_chf >= 0 ? "wpos" : "wneg")) + '">' + chf(z.gewinn_chf) + "</td>" +
+        "<td>" + proz(z.marge) + "</td><td>" + proz(z.bruttorendite) + "</td>" +
+        "<td><b>" + chf(z.max_landwert_chf) + "</b></td></tr>";
+    }).join("") + "</tbody></table></div>";
+}
+
+var _wAktiv = null;
+function wAktivesSzenario() {
+  if (_wAktiv) return _wAktiv;
+  var v = alsListe((wErgebnis || {}).vergleich);
+  return v.length ? v[0].id : null;
+}
+
 function secWirtschaft(erg) {
   var blockiert = (erg.zonen_zuordnung || {}).status !== "gefunden";
-  return '<section class="sec" id="sec-wirtschaft">' +
-    '<div class="sechead"><span class="num">08</span><h3>Wirtschaftlichkeit</h3><span class="right"><span class="badge mute">optional</span></span></div>' +
-    '<div class="note">Die vollständige Grundstücks-, Standort- und Baurechtsanalyse oben ist ohne Verkaufspreis gültig. Der Preis wird ausschliesslich hier für die Residualwertrechnung verwendet.</div>' +
-    (blockiert
-      ? '<div class="note warn">Ohne eindeutige Zonenzuordnung liefert die Finanzrechnung keinen belastbaren Residualwert — die Eingabe bleibt deshalb bewusst gesperrt.</div>'
-      : '<div class="priceform"><div class="modus">' +
-        '<label><input type="radio" name="preismodus" value="pro_m2" checked> CHF / m²</label>' +
-        '<label><input type="radio" name="preismodus" value="total"> Total CHF</label></div>' +
-        '<input type="number" id="preisfeld" placeholder="z.B. 1200" min="0" step="any">' +
-        '<button class="btn" id="preis-btn">Wirtschaftlichkeit berechnen</button>' +
-        '<div id="preis-status"></div></div>') +
-    '<div id="finanz-ergebnis">' + finanzHtml(erg.modul3_financial) + "</div>" +
+  var kopf = '<div class="sechead"><span class="num">08</span><h3>Wirtschaftlichkeit</h3>' +
+    '<span class="right"><span class="badge mute">dynamisch</span></span></div>';
+  if (blockiert) {
+    return '<section class="sec" id="sec-wirtschaft">' + kopf +
+      '<div class="note warn">Ohne eindeutige Zonenzuordnung gibt es keine belastbare Fläche — und damit keine belastbare Wirtschaftlichkeit. Die Eingabe bleibt deshalb bewusst gesperrt.</div></section>';
+  }
+  return '<section class="sec" id="sec-wirtschaft">' + kopf +
+    '<div class="note">Jede Änderung rechnet Flächen, Wohnungen, Kosten, Gewinn, Marge und den maximal tragbaren Landwert neu — die baurechtliche Analyse wird dabei <b>nicht</b> wiederholt.</div>' +
+    '<div id="w-status" class="wstatus"></div>' +
+    '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
+    '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
+    '<div class="wspalten">' +
+      '<div id="w-markt">' + marktBlock(erg) + "</div>" +
+      '<div id="w-mix">' + mixBlock() + "</div>" +
+    "</div>" +
+    '<div id="w-bkp">' + bkpBlock() + "</div>" +
   "</section>";
+}
+
+function wSammleEingaben() {
+  var z = function (id) {
+    var el = document.getElementById(id);
+    if (!el || el.value === "") return null;
+    return Number(el.value);
+  };
+  var w = document.getElementById("w-verkauf");
+  if (w) {
+    wEingaben.verkauf_chf_pro_m2 = z("w-verkauf");
+    wEingaben.miete_chf_pro_m2_jahr = z("w-miete");
+    wEingaben.bodenpreis_chf_pro_m2 = z("w-boden");
+    var zm = z("w-zielmarge");
+    wEingaben.zielmarge = zm === null ? 0.15 : zm / 100;
+    var basis = document.getElementById("w-basis");
+    if (basis) wEingaben.verkauf_basis = basis.value;
+    var land = document.getElementById("w-land");
+    if (land) wEingaben.land_ansatz = land.value;
+  }
+  document.querySelectorAll(".wmix-typ").forEach(function (el) {
+    wEingaben.wohnungsmix[Number(el.dataset.i)].typ = el.value;
+  });
+  document.querySelectorAll(".wmix-flaeche").forEach(function (el) {
+    wEingaben.wohnungsmix[Number(el.dataset.i)].flaeche_m2 = Number(el.value) || 0;
+  });
+  document.querySelectorAll(".wmix-anteil").forEach(function (el) {
+    wEingaben.wohnungsmix[Number(el.dataset.i)].anteil = (Number(el.value) || 0) / 100;
+  });
+  document.querySelectorAll(".w-bkp").forEach(function (el) {
+    if (el.value === "") { delete wEingaben.bkp[el.dataset.k]; return; }
+    wEingaben.bkp[el.dataset.k] = el.dataset.prozent ? Number(el.value) / 100 : Number(el.value);
+  });
+}
+
+function wRechne() {
+  if (!jobIdAktuell) return;
+  var summe = wEingaben.wohnungsmix.reduce(function (s, t) { return s + (Number(t.anteil) || 0); }, 0);
+  var status = document.getElementById("w-status");
+  if (Math.abs(summe - 1) > 0.001) {
+    if (status) status.innerHTML = '<span class="wfehler">Wohnungsmix ergibt ' +
+      Math.round(summe * 100) + " % — er muss 100 % ergeben. Bis dahin wird nicht gerechnet.</span>";
+    return;
+  }
+  if (wLaeuft) return;
+  wLaeuft = true;
+  if (status) status.innerHTML = '<span class="wlaeuft">rechnet …</span>';
+  var t0 = performance.now();
+  fetch("/api/entwicklung", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({ job_id: jobIdAktuell }, wEingaben))
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    wLaeuft = false;
+    if (!data.ok) {
+      if (status) status.innerHTML = '<span class="wfehler">' + esc(data.fehler) + "</span>";
+      return;
+    }
+    wErgebnis = data.wirtschaftlichkeit;
+    ergebnisAktuell.szenarien = data.szenarien;
+    ergebnisAktuell.wirtschaftlichkeit = data.wirtschaftlichkeit;
+    if (status) {
+      status.innerHTML = '<span class="wok">aktualisiert in ' +
+        Math.round(performance.now() - t0) + " ms — ohne neue Baurechtsanalyse</span>";
+    }
+    wZeichneNeu();
+  }).catch(function (e) {
+    wLaeuft = false;
+    if (status) status.innerHTML = '<span class="wfehler">' + esc(String(e)) + "</span>";
+  });
+}
+
+function wZeichneNeu() {
+  var setze = function (id, html) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  };
+  setze("w-ergebnis", ergebnisBlock());
+  setze("w-vergleich", wVergleichBlock());
+  setze("w-bkp", bkpBlock());
+  setze("w-markt", marktBlock(ergebnisAktuell || {}));
+  verdrahteWirtschaft();
+  // Die Szenarien haben sich mitgeaendert -- Karte und 3D nachziehen.
+  if (typeof zeichneSzenario === "function" && aktivesSzenario) zeichneSzenario(aktivesSzenario);
+  if (window.zeichne3D && aktivesSzenario) window.zeichne3D(aktivesSzenario);
+}
+
+function wAngestossen() {
+  wSammleEingaben();
+  clearTimeout(wTimer);
+  wTimer = setTimeout(wRechne, 350);
+}
+
+function verdrahteWirtschaft() {
+  document.querySelectorAll("#sec-wirtschaft input, #sec-wirtschaft select").forEach(function (el) {
+    if (el.dataset.verdrahtet) return;
+    el.dataset.verdrahtet = "1";
+    el.addEventListener("input", wAngestossen);
+    el.addEventListener("change", wAngestossen);
+  });
+  document.querySelectorAll(".wmix-weg").forEach(function (b) {
+    if (b.dataset.verdrahtet) return;
+    b.dataset.verdrahtet = "1";
+    b.addEventListener("click", function () {
+      wEingaben.wohnungsmix.splice(Number(b.dataset.i), 1);
+      var el = document.getElementById("w-mix");
+      if (el) el.innerHTML = mixBlock();
+      verdrahteWirtschaft();
+      wAngestossen();
+    });
+  });
+  var plus = document.getElementById("w-mix-plus");
+  if (plus && !plus.dataset.verdrahtet) {
+    plus.dataset.verdrahtet = "1";
+    plus.addEventListener("click", function () {
+      wEingaben.wohnungsmix.push({ typ: "neuer Typ", flaeche_m2: 90, anteil: 0 });
+      var el = document.getElementById("w-mix");
+      if (el) el.innerHTML = mixBlock();
+      verdrahteWirtschaft();
+    });
+  }
+  document.querySelectorAll("[data-wszenario]").forEach(function (tr) {
+    if (tr.dataset.verdrahtet) return;
+    tr.dataset.verdrahtet = "1";
+    tr.addEventListener("click", function () {
+      _wAktiv = tr.getAttribute("data-wszenario");
+      wZeichneNeu();
+      if (typeof szenarioKarte === "function") szenarioKarte(_wAktiv);
+    });
+  });
 }
 
 /* ===================== Verdrahtung ===================== */
@@ -1871,37 +2231,6 @@ function verdrahteDossier() {
       }, 1400);
     });
   });
-
-  var preisBtn = document.getElementById("preis-btn");
-  if (preisBtn) {
-    preisBtn.addEventListener("click", function () {
-      var feld = document.getElementById("preisfeld");
-      var statusEl = document.getElementById("preis-status");
-      var wert = parseFloat(feld.value);
-      if (!wert || wert <= 0) { statusEl.innerHTML = '<div class="note warn">Bitte einen Preis grösser als 0 eingeben.</div>'; return; }
-      var modus = document.querySelector('input[name="preismodus"]:checked').value;
-      preisBtn.disabled = true;
-      preisBtn.textContent = "Berechne …";
-      statusEl.innerHTML = "";
-      var body = { job_id: aktuelleJobId };
-      if (modus === "pro_m2") body.verkaufspreis = wert; else body.verkaufspreis_total = wert;
-      fetch("/api/wirtschaftlichkeit", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
-      })
-      .then(function (x) { return x.json(); })
-      .then(function (r) {
-        if (!r.ok) { statusEl.innerHTML = '<div class="note stop">' + esc(r.fehler) + "</div>"; return; }
-        if (ergebnisAktuell) ergebnisAktuell.modul3_financial = r.modul3_financial;
-        statusEl.innerHTML = '<div class="note ok">Gerechnet mit ' + fmt(r.verwendeter_preis_chf_pro_m2, 2) + " CHF/m² Parzellenfläche.</div>";
-        document.getElementById("finanz-ergebnis").innerHTML = finanzHtml(r.modul3_financial);
-      })
-      .catch(function () { statusEl.innerHTML = '<div class="note stop">Verbindung zum Analyse-Server fehlgeschlagen.</div>'; })
-      .then(function () {
-        preisBtn.disabled = false;
-        preisBtn.textContent = "Wirtschaftlichkeit berechnen";
-      });
-    });
-  }
 
   if (window.IntersectionObserver) {
     var obs = new IntersectionObserver(function (entries) {

@@ -18,6 +18,7 @@ Module:
     flaechenmodell                 Baurecht -> Flaeche -> Wohnung (Stufe 3)
     bestand                        Gebaeude der Parzelle (GWR + Grundrisse)
     szenarien                      Entwicklungsszenarien (Stufe 4)
+    wirtschaftlichkeit             Markt, BKP, Gewinn, Residualwert (Stufe 5)
     quellen                        Quellennachweis pro Einzelwert
     referenzprojekte               Referenzdaten fuer Flaechenverhaeltnisse
     entwicklungsszenarien          Szenario-Taxonomie (ohne Rechenlogik)
@@ -41,6 +42,15 @@ kommen mit oeffentlichen Geodiensten aus.
 """
 
 from .flaechenmodell import PROFIL_WOHNUNGSBAU_MFH, WohnungstypVorgabe
+from .wirtschaftlichkeit import (
+    Kostenposition,
+    Marktannahmen,
+    Mietannahme,
+    Referenzwert,
+    Verkaufsannahme,
+    marktwert,
+    standard_kostenmodell,
+)
 from .pipeline import (
     Analyse,
     PreisEingabeFehler,
@@ -49,6 +59,7 @@ from .pipeline import (
     berechne_flaechen,
     berechne_szenarien,
     berechne_wirtschaftlichkeit,
+    berechne_wirtschaftlichkeit_je_szenario,
 )
 
 __all__ = [
@@ -61,4 +72,12 @@ __all__ = [
     "berechne_flaechen",
     "berechne_szenarien",
     "berechne_wirtschaftlichkeit",
+    "berechne_wirtschaftlichkeit_je_szenario",
+    "Kostenposition",
+    "Marktannahmen",
+    "Mietannahme",
+    "Referenzwert",
+    "Verkaufsannahme",
+    "marktwert",
+    "standard_kostenmodell",
 ]

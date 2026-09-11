@@ -37,6 +37,7 @@ from .flaechenmodell import (
 )
 from .kantenklassifikation import quellen_fuer_kanten
 from .szenarien import berechne_szenarien as _berechne_szenarien
+from .wirtschaftlichkeit import Marktannahmen, berechne_alle as _berechne_wirtschaftlich
 from .modul1_geodata import Modul1Error, run_modul1
 from .modul2_bzo_analysis import analyze_from_oereb_result
 from .modul3_financial import ermittle_zonenzuordnung, run_from_modul_results
@@ -281,6 +282,43 @@ def berechne_szenarien(
         wohnungsmix_begruendung=wohnungsmix_begruendung, profil=profil,
         attika_zulaessig=attika_zulaessig, dachgeschoss_zulaessig=dachgeschoss_zulaessig,
         gebaeudeabstand_m=gebaeudeabstand_m,
+    )
+
+
+def berechne_wirtschaftlichkeit_je_szenario(
+    analyse: Analyse,
+    markt: Marktannahmen,
+    *,
+    kostenpositionen: Optional[list] = None,
+    auswahl: Optional[list[str]] = None,
+    szenarien_ergebnis: Optional[dict] = None,
+    **szenario_kwargs,
+) -> dict:
+    """Markt, BKP und Wirtschaftlichkeit je Szenario -- ohne erneute Abfrage.
+
+    Rechnet auf einer bereits erstellten Analyse. Eine Aenderung an
+    Verkaufspreis, Miete, Bodenpreis, Wohnungsmix, BKP oder Zielmarge kostet
+    Millisekunden; Geodaten, ÖREB und die Reglementsauswertung werden NICHT
+    wiederholt.
+
+    `szenarien_ergebnis` kann uebergeben werden, wenn die Szenarien bereits mit
+    einem bestimmten Wohnungsmix gerechnet wurden; sonst werden sie hier mit
+    `szenario_kwargs` neu gebildet.
+    """
+    if szenarien_ergebnis is None:
+        szenarien_ergebnis = berechne_szenarien(analyse, **szenario_kwargs)
+
+    kataster = (analyse.ergebnis.get("modul1_geodaten") or {}).get("kataster") or {}
+    bestand = (analyse.kontext.get("modul1") or {}).get("bestand") or {}
+    haupt = bestand.get("hauptgebaeude") or {}
+
+    return _berechne_wirtschaftlich(
+        szenarien_ergebnis,
+        kataster.get("flaeche_m2"),
+        markt,
+        kostenpositionen,
+        auswahl=auswahl,
+        bestand_volumen_m3=haupt.get("gebaeudevolumen_m3"),
     )
 
 
