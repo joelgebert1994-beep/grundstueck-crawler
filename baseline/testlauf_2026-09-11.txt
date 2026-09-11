@@ -1,0 +1,461 @@
+Testlauf-Protokoll Potenzial-Engine
+Datum:   2026-09-11 09:41 (lokale Zeit)
+Commit:  7007c042c313329fe952215b3ef1b57466655bf9
+Branch:  main
+Python:  Python 3.12.10
+Zweck:   Referenzverhalten VOR dem Paketumbau (Phase 0.3/0.4).
+         Nach dem Umbau muss dieser Lauf identisch ausfallen.
+======================================================================
+
+########## test_baubereich.py ##########
+=== T1: Rechteck 40x30, einheitlicher Grenzabstand 5m ===
+  [OK  ] Baubereich-Flaeche = 600.0 m2 (erwartet 600)
+  [OK  ] Deckt sich mit unabhaengiger buffer(-5)-Gegenprobe (600.0 m2)
+  [OK  ] Fussabdruck = 600.0 m2
+  [OK  ] Fussabdruck limitiert durch Geometrie (keine UZ vorgegeben)
+  [OK  ] Geschosszahl = 3 (nur Vollgeschosse vorgegeben)
+  [OK  ] Geschossflaeche = 600.0 m2 (AZ 0.5 x 1200 m2 Parzelle = 600)
+  [OK  ] Geschossflaeche limitiert durch AZ (600 < 600*3 Geometrie)
+
+=== T2: L-Form (konkav), einheitlicher Grenzabstand 2m ===
+  [OK  ] Testpolygon selbst hat Flaeche 300 m2 (Sanity-Check)
+  [OK  ] Baubereich nicht leer
+  [OK  ] Baubereich ist ein valides Polygon
+  [OK  ] Flaeche 156.00 m2 deckt sich mit unabhaengiger buffer(-2)-Gegenprobe (156.00 m2)
+  [OK  ] Baubereich kleiner als Ausgangsparzelle (Erosion hat gewirkt)
+
+=== T3: Rechteck 40x30, unterschiedliche Grenzabstaende je Kante ===
+  [OK  ] x_min = 3.00 (erwartet 3, Kante links=3)
+  [OK  ] x_max = 32.00 (erwartet 32 = 40-8, Kante rechts=8)
+  [OK  ] y_min = 5.00 (erwartet 5, Kante unten=5)
+  [OK  ] y_max = 28.00 (erwartet 28 = 30-2, Kante oben=2)
+  [OK  ] Flaeche = 667.0 m2 (erwartet 667)
+
+=== T4: Rechteck mit synthetischer Restriktionsflaeche (Gewaesserraum) ===
+  [OK  ] Baubereich vor Restriktion unveraendert (936.0 m2)
+  [OK  ] Baubereich nach Restriktion = 911.0 m2 (erwartet 911.0)
+  [OK  ] Anrechenbare Landflaeche = 1175.0 m2 (1200 Parzelle - 25 Restriktion)
+  [OK  ] Hinweis zur Restriktions-Annahme wird transparent ausgewiesen
+
+=== T6: Ueberbauungsziffer (UZ) limitiert den Fussabdruck ===
+  [OK  ] Fussabdruck limitiert durch UZ (kandidaten={'geometrie': 1064.0, 'ueberbauungsziffer': 240.0})
+  [OK  ] Fussabdruck = 240.0 m2 (erwartet 240)
+
+=== T7: Baumassenziffer (BMZ) limitiert die Geschossflaeche ===
+  [OK  ] Geschossflaeche limitiert durch BMZ (kandidaten={'fussabdruck_x_geschosse': 9360.0, 'ausnuetzung_az': 6000.0, 'baumasse': 600.0})
+  [OK  ] Geschossflaeche = 600.0 m2 (erwartet 600)
+
+=== T8: Gebaeudehoehe limitiert die Geschosszahl staerker als Vollgeschosse ===
+  [OK  ] Geschosszahl limitiert durch Hoehe (kandidaten={'vollgeschosse': 6, 'hoehe': 3})
+  [OK  ] Geschosszahl = 3 (erwartet 3 = floor(9.5/3.0))
+  [OK  ] Geschossflaeche folgt aus Fussabdruck x Geschosszahl (nicht aus AZ, die bewusst nicht bindet)
+
+=== T9: Ausnuetzungsziffer (AZ) limitiert staerker als Geometrie/Hoehe ===
+  [OK  ] Geschosszahl = 8 (Vollgeschosse bindet vor Hoehe)
+  [OK  ] Geschossflaeche limitiert durch AZ (kandidaten={'fussabdruck_x_geschosse': 8512.0, 'ausnuetzung_az': 360.0})
+  [OK  ] Geschossflaeche = 360.0 m2 (erwartet 360)
+
+=== T10: Mehrlaengenzuschlag erhoeht effektiven Grenzabstand einer langen Kante ===
+  [OK  ] Effektiver Abstand Kante 0 = 7.50 m (erwartet 7.50)
+  [OK  ] Baubereich mit Zuschlag (260.0 m2) kleiner als ohne (624.0 m2)
+  [OK  ] Mehrlaengenzuschlag-Naeherung wird transparent als Hinweis ausgewiesen
+  [OK  ] Kurze Kante (< Schwelle) bleibt beim Basis-Grenzabstand
+
+============================================================
+ALLE G1-TESTS BESTANDEN (9/9 synthetisch + T5 bereits in test_klassifikation.py)
+## Exitcode: 0
+
+########## test_sia416_flaechen.py ##########
+=== 1) Nur GF gegeben, keine Modellannahme -> NF/HNF/NNF/Rest bleiben nicht_bestimmbar ===
+  [OK  ] GF unveraendert uebernommen
+  [OK  ] GF-Status = bestimmt
+  [OK  ] nutzflaeche_nf.wert ist None (kein Raten)
+  [OK  ] nutzflaeche_nf.status = nicht_bestimmbar
+  [OK  ] nutzflaeche_nf.unklarheit ist gesetzt und erklaert WARUM
+  [OK  ] hauptnutzflaeche_hnf.wert ist None (kein Raten)
+  [OK  ] hauptnutzflaeche_hnf.status = nicht_bestimmbar
+  [OK  ] hauptnutzflaeche_hnf.unklarheit ist gesetzt und erklaert WARUM
+  [OK  ] nebennutzflaeche_nnf.wert ist None (kein Raten)
+  [OK  ] nebennutzflaeche_nnf.status = nicht_bestimmbar
+  [OK  ] nebennutzflaeche_nnf.unklarheit ist gesetzt und erklaert WARUM
+  [OK  ] uebrige_flaechen_vf_ff_kf.wert ist None (kein Raten)
+  [OK  ] uebrige_flaechen_vf_ff_kf.status = nicht_bestimmbar
+  [OK  ] uebrige_flaechen_vf_ff_kf.unklarheit ist gesetzt und erklaert WARUM
+
+=== 2) Modellannahme ohne Begruendung -> ValueError (keine stillen Defaults) ===
+  [OK  ] ValueError korrekt ausgeloest bei leerer Begruendung
+
+=== 3) NF ueber Modellannahme bestimmt, HNF ohne eigene Annahme bleibt nicht_bestimmbar ===
+  [OK  ] NF = 850.0 (tatsaechlich 850.0)
+  [OK  ] NF-Status = modellannahme_basiert
+  [OK  ] Begruendung wird in herkunft sichtbar mitgefuehrt
+  [OK  ] Rest (VF+FF+KF) = GF-NF = 150.0 (tatsaechlich 150.0)
+  [OK  ] HNF bleibt None ohne eigene HNF/NF-Annahme
+  [OK  ] HNF-Status = nicht_bestimmbar trotz bestimmter NF
+
+=== 4) Vollstaendige Kaskade: beide Modellannahmen gegeben ===
+  [OK  ] NF = 850.0
+  [OK  ] HNF = 850*0.8 = 680.0 (tatsaechlich 680.0)
+  [OK  ] NNF = NF-HNF = 170.0 (tatsaechlich 170.0)
+  [OK  ] HNF-Status = modellannahme_basiert
+  [OK  ] Quelle der Modellannahme wird mitgefuehrt
+
+=== 5) Anteil ausserhalb (0,1) -> ValueError statt stiller Fehlrechnung ===
+  [OK  ] ValueError korrekt ausgeloest bei Anteil > 1
+
+=== 6) Wohnungsanzahl ohne HNF oder ohne Mix -> None (kein Durchschnittswert geraten) ===
+  [OK  ] beide fehlen -> None
+  [OK  ] HNF da, Mix fehlt -> None
+  [OK  ] Mix da, HNF fehlt -> None
+
+=== 7) Wohnungsmix-Anteile != 1.0 -> ValueError (keine stille Normalisierung) ===
+  [OK  ] ValueError korrekt ausgeloest bei Summe 0.8
+
+=== 8) Wohnungsmix-Verteilung: ganze Einheiten + transparenter Rest, kein Runden ===
+  [OK  ] Ergebnis vorhanden
+  [OK  ] 2.5-Zi HNF zugewiesen = 408.0 (tatsaechlich 408.0)
+  [OK  ] 2.5-Zi ganze Einheiten = 6 (tatsaechlich 6)
+  [OK  ] 2.5-Zi Rest = 18.0 (tatsaechlich 18.0)
+  [OK  ] 4.5-Zi ganze Einheiten = 2 (tatsaechlich 2)
+  [OK  ] 4.5-Zi Rest = 82.0 (tatsaechlich 82.0)
+  [OK  ] Gesamt ganze Einheiten = 8 (tatsaechlich 8)
+  [OK  ] Begruendung des Mix bleibt im Ergebnis sichtbar
+
+=== 9) aus_g1_ergebnis: G1 hat eine Geschossflaeche bestimmt ===
+  [OK  ] GF uebernommen (tatsaechlich 600.0)
+  [OK  ] GF-Status = bestimmt
+  [OK  ] limitierender Parameter wird in herkunft sichtbar
+
+=== 10) aus_g1_ergebnis: G1 konnte keine Geschossflaeche bestimmen ===
+  [OK  ] GF bleibt None statt geraten
+  [OK  ] GF-Status = nicht_bestimmbar
+  [OK  ] Unklarheit erklaert, dass G1 selbst keinen Kandidaten fand
+
+=== 11) berechne_sia416_aus_g1: End-zu-End mit erfolgreichem G1-Ergebnis ===
+  [OK  ] Ergebnis wird geliefert
+  [OK  ] GF korrekt aus G1 uebernommen
+  [OK  ] G1-Herkunft (limitierender Parameter) im Endergebnis sichtbar
+  [OK  ] NF korrekt weiterberechnet (tatsaechlich 850.0)
+
+=== 12) berechne_sia416_aus_g1: G1 liefert keine GF -> None statt Kaskade auf Fantasiewert ===
+  [OK  ] Kaskade wird gar nicht erst ausgefuehrt
+
+=== 13) BandbreitenWert: alle Metadatenfelder sind Pflicht, Wert muss in (0,1) liegen ===
+  [OK  ] ValueError korrekt bei leerer quelle
+  [OK  ] ValueError korrekt bei wert ausserhalb (0,1)
+
+=== 14) FlaechenverhaeltnisBandbreite: keine automatische Sortierung/Normalisierung ===
+  [OK  ] ValueError korrekt bei unsortierter Bandbreite -- keine stille Korrektur
+  [OK  ] ValueError korrekt bei gemischten Entwicklungsszenarien innerhalb einer Bandbreite
+  [OK  ] konsistent geordnete Bandbreite wird akzeptiert
+
+=== 15) GWR-Sperrregel: bekannte Falschverwendungen werden erkannt ===
+  [OK  ] Energiebezugsflaeche ist gelistet
+  [OK  ] Warnung nennt den korrekten Normbezug (SIA 380/1, nicht SIA 416)
+  [OK  ] Grundflaeche (Fussabdruck) ist gelistet
+  [OK  ] Gebaeudevolumen ist gelistet
+  [OK  ] Parzellenflaeche ist gelistet
+  [OK  ] unkritisches Feld (baujahr) liefert korrekt keine Warnung
+
+============================================================
+ALLE SIA-416-TESTS BESTANDEN
+## Exitcode: 0
+
+########## test_quellen.py ##########
+=== 1) Unbekannter quelle_typ -> ValueError ===
+  [OK  ] ValueError korrekt ausgeloest
+
+=== 2) Leere quelle_bezeichnung -> ValueError ===
+  [OK  ] ValueError korrekt ausgeloest
+
+=== 3) Adapter aus realer Modul-2-Kennzahl-Struktur (mit Bedingungen/Confidence) ===
+  [OK  ] quelle_typ = llm_extraktion
+  [OK  ] Wert korrekt uebernommen
+  [OK  ] Quelldokument korrekt uebernommen
+  [OK  ] Artikel-Referenz korrekt uebernommen
+  [OK  ] Zitat korrekt uebernommen
+  [OK  ] Confidence korrekt uebernommen
+
+=== 4) Adapter mit unvollstaendigem Kennzahl-Dict -> fehlende Felder bleiben None, kein Erfinden ===
+  [OK  ] artikel_referenz bleibt None
+  [OK  ] zitat bleibt None
+  [OK  ] confidence bleibt None
+  [OK  ] Fallback-Bezeichnung transparent statt leer
+
+=== 5) Adapter aus amtlichem Modul-1-Wert (GWR, bekannte Bezeichnung) ===
+  [OK  ] quelle_typ = amtliche_quelle
+  [OK  ] amtliche Werte defaulten auf confidence=hoch
+  [OK  ] quelle_url wird aus der bekannten Endpunkt-Konstante nachgeschlagen (tatsaechlich https://api3.geo.admin.ch/rest/services/api/MapServer/identify)
+  [OK  ] abgerufen_am wird automatisch gesetzt
+  [OK  ] quelle_url bleibt None bei unbekannter Bezeichnung (kein Erfinden)
+  [OK  ] explizit uebergebene quelle_url hat Vorrang vor dem Lookup
+
+=== 6) Adapter fuer Modellannahme und Geometrie-Berechnung ===
+  [OK  ] quelle_typ = modellannahme
+  [OK  ] Begruendung landet in quelle_bezeichnung
+  [OK  ] quelle_typ = geometrie_berechnung
+  [OK  ] keine Dokument-Felder bei Geometrie-Werten
+
+=== 7) quelle_url wird aus Modul-2 source_dokumente nachgeschlagen (exakt + Teilstring) ===
+  [OK  ] exakter Titel-Treffer liefert URL (tatsaechlich https://example.ch/bno_buchs.pdf)
+  [OK  ] Teilstring-Treffer liefert URL (tatsaechlich https://example.ch/bno_buchs.pdf)
+  [OK  ] kein Treffer -> quelle_url bleibt None statt zu raten
+  [OK  ] ohne source_dokumente-Parameter bleibt quelle_url None (Rueckwaertskompatibilitaet)
+
+=== 8) url_fuer_oereb_kanton: reale Vorlage aus Modul 1, kein Raten fuer unbekannte Kantone ===
+  [OK  ] ZH-URL korrekt aus Vorlage gebaut (tatsaechlich https://maps.zh.ch/oereb/v2/extract/json?EGRID=CH123456789012)
+  [OK  ] GR ist in Modul 1 nicht gelistet -> None statt geratener Endpunkt
+
+=== 9) quellen_aus_modul1_ergebnis: End-zu-End amtlicher Abruf -> Quellenobjekt ===
+  [OK  ] kataster.egrid ist als Quellenobjekt vorhanden
+  [OK  ] Wert stimmt mit dem Original ueberein
+  [OK  ] quelle_url zeigt auf den realen MapServer-identify-Endpunkt
+  [OK  ] konkrete Layer-ID steht in der Bezeichnung
+  [OK  ] kataster.flaeche_m2 vorhanden
+  [OK  ] Flaechenherkunft (geometrie_berechnet) wird konkret in der Bezeichnung unterschieden
+  [OK  ] gwr.baujahr vorhanden
+  [OK  ] GWR-Baujahr korrekt uebernommen
+  [OK  ] oereb.amtliche_zonenbezeichnungen vorhanden
+  [OK  ] quelle_url ist die ECHTE, in Modul 1 bereits aufgeloeste OEREB-URL (source_url), nicht neu gebaut
+  [OK  ] umgebung.oev_naechste_haltestelle vorhanden (kein Fehler vermerkt)
+  [OK  ] umgebung.schule_naechste fehlt korrekt (None -- kein amtlicher Wert)
+  [OK  ] umgebung.supermarkt_naechster fehlt korrekt (None)
+  [OK  ] geocoding.lv95_koordinaten: abgerufen_am ist gesetzt
+  [OK  ] geocoding.lv95_koordinaten: amtliche Werte haben confidence=hoch
+  [OK  ] geocoding.matched_label: abgerufen_am ist gesetzt
+  [OK  ] geocoding.matched_label: amtliche Werte haben confidence=hoch
+  [OK  ] kataster.egrid: abgerufen_am ist gesetzt
+  [OK  ] kataster.egrid: amtliche Werte haben confidence=hoch
+  [OK  ] kataster.parzellennummer: abgerufen_am ist gesetzt
+  [OK  ] kataster.parzellennummer: amtliche Werte haben confidence=hoch
+  [OK  ] kataster.flaeche_m2: abgerufen_am ist gesetzt
+  [OK  ] kataster.flaeche_m2: amtliche Werte haben confidence=hoch
+  [OK  ] kataster.parzellengeometrie: abgerufen_am ist gesetzt
+  [OK  ] kataster.parzellengeometrie: amtliche Werte haben confidence=hoch
+  [OK  ] gemeinde.gemeinde: abgerufen_am ist gesetzt
+  [OK  ] gemeinde.gemeinde: amtliche Werte haben confidence=hoch
+  [OK  ] gemeinde.kanton: abgerufen_am ist gesetzt
+  [OK  ] gemeinde.kanton: amtliche Werte haben confidence=hoch
+  [OK  ] gemeinde.bfs_nummer: abgerufen_am ist gesetzt
+  [OK  ] gemeinde.bfs_nummer: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.egid: abgerufen_am ist gesetzt
+  [OK  ] gwr.egid: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.baujahr: abgerufen_am ist gesetzt
+  [OK  ] gwr.baujahr: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.anzahl_geschosse: abgerufen_am ist gesetzt
+  [OK  ] gwr.anzahl_geschosse: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.gebaeudekategorie_gkat: abgerufen_am ist gesetzt
+  [OK  ] gwr.gebaeudekategorie_gkat: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.gebaeudeklasse_gklas: abgerufen_am ist gesetzt
+  [OK  ] gwr.gebaeudeklasse_gklas: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.grundflaeche_m2: abgerufen_am ist gesetzt
+  [OK  ] gwr.grundflaeche_m2: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.energiebezugsflaeche_m2: abgerufen_am ist gesetzt
+  [OK  ] gwr.energiebezugsflaeche_m2: amtliche Werte haben confidence=hoch
+  [OK  ] gwr.gebaeudevolumen_m3: abgerufen_am ist gesetzt
+  [OK  ] gwr.gebaeudevolumen_m3: amtliche Werte haben confidence=hoch
+  [OK  ] radon.wahrscheinlichkeit_prozent: abgerufen_am ist gesetzt
+  [OK  ] radon.wahrscheinlichkeit_prozent: amtliche Werte haben confidence=hoch
+  [OK  ] topographie.hoehe_m: abgerufen_am ist gesetzt
+  [OK  ] topographie.hoehe_m: amtliche Werte haben confidence=hoch
+  [OK  ] topographie.hangneigung: abgerufen_am ist gesetzt
+  [OK  ] topographie.hangneigung: amtliche Werte haben confidence=hoch
+  [OK  ] umgebung.oev_naechste_haltestelle: abgerufen_am ist gesetzt
+  [OK  ] umgebung.oev_naechste_haltestelle: amtliche Werte haben confidence=hoch
+  [OK  ] umgebung.spital_naechstes: abgerufen_am ist gesetzt
+  [OK  ] umgebung.spital_naechstes: amtliche Werte haben confidence=hoch
+  [OK  ] oereb.amtliche_zonenbezeichnungen: abgerufen_am ist gesetzt
+  [OK  ] oereb.amtliche_zonenbezeichnungen: amtliche Werte haben confidence=hoch
+  [OK  ] oereb.rechtsvorschriften: abgerufen_am ist gesetzt
+  [OK  ] oereb.rechtsvorschriften: amtliche Werte haben confidence=hoch
+
+=== 10) quellen_aus_modul1_ergebnis: found=False und Umgebungs-Fehler erzeugen KEIN Quellenobjekt ===
+  [OK  ] kein kataster.*-Quellenobjekt bei found=False
+  [OK  ] kein oereb.*-Quellenobjekt bei found=False
+  [OK  ] trotz vorhandenem Wert kein Quellenobjekt, wenn 'fehler' das Feld als unsicher markiert (Netzwerkfehler waehrend derselben Abfrage darf nicht als verifizierter Treffer erscheinen)
+
+============================================================
+ALLE QUELLENOBJEKT-TESTS BESTANDEN
+## Exitcode: 0
+
+########## test_entwicklungsszenarien.py ##########
+=== 1) Alle 5 vom Auftrag geforderten Szenarien sind als Enum-Werte vorhanden ===
+  [OK  ] Enum-Werte stimmen exakt ueberein (tatsaechlich ['anbau_erweiterung', 'aufstockung_dachausbau', 'bestand', 'ersatzneubau', 'kombination_bestand_neubau'])
+
+=== 2) Jeder Enum-Wert hat genau einen SZENARIO_ANFORDERUNGEN-Eintrag, keine Luecke ===
+  [OK  ] bestand hat einen Eintrag
+  [OK  ] anbau_erweiterung hat einen Eintrag
+  [OK  ] aufstockung_dachausbau hat einen Eintrag
+  [OK  ] ersatzneubau hat einen Eintrag
+  [OK  ] kombination_bestand_neubau hat einen Eintrag
+  [OK  ] keine ueberzaehligen Eintraege
+
+=== 3) Jede Anforderung hat nicht-leere Zusatzeingaben, Beschreibung und Status-Notiz ===
+  [OK  ] bestand: mindestens 1 Zusatzeingabe benannt
+  [OK  ] bestand: Beschreibung vorhanden
+  [OK  ] bestand: Status quo dokumentiert
+  [OK  ] bestand: SIA-416-Besonderheit dokumentiert
+  [OK  ] bestand: mindestens 1 Flaechen-/Geometriedatum benannt
+  [OK  ] bestand: Anforderung referenziert das richtige Szenario
+  [OK  ] anbau_erweiterung: mindestens 1 Zusatzeingabe benannt
+  [OK  ] anbau_erweiterung: Beschreibung vorhanden
+  [OK  ] anbau_erweiterung: Status quo dokumentiert
+  [OK  ] anbau_erweiterung: SIA-416-Besonderheit dokumentiert
+  [OK  ] anbau_erweiterung: mindestens 1 Flaechen-/Geometriedatum benannt
+  [OK  ] anbau_erweiterung: Anforderung referenziert das richtige Szenario
+  [OK  ] aufstockung_dachausbau: mindestens 1 Zusatzeingabe benannt
+  [OK  ] aufstockung_dachausbau: Beschreibung vorhanden
+  [OK  ] aufstockung_dachausbau: Status quo dokumentiert
+  [OK  ] aufstockung_dachausbau: SIA-416-Besonderheit dokumentiert
+  [OK  ] aufstockung_dachausbau: mindestens 1 Flaechen-/Geometriedatum benannt
+  [OK  ] aufstockung_dachausbau: Anforderung referenziert das richtige Szenario
+  [OK  ] ersatzneubau: mindestens 1 Zusatzeingabe benannt
+  [OK  ] ersatzneubau: Beschreibung vorhanden
+  [OK  ] ersatzneubau: Status quo dokumentiert
+  [OK  ] ersatzneubau: SIA-416-Besonderheit dokumentiert
+  [OK  ] ersatzneubau: mindestens 1 Flaechen-/Geometriedatum benannt
+  [OK  ] ersatzneubau: Anforderung referenziert das richtige Szenario
+  [OK  ] kombination_bestand_neubau: mindestens 1 Zusatzeingabe benannt
+  [OK  ] kombination_bestand_neubau: Beschreibung vorhanden
+  [OK  ] kombination_bestand_neubau: Status quo dokumentiert
+  [OK  ] kombination_bestand_neubau: SIA-416-Besonderheit dokumentiert
+  [OK  ] kombination_bestand_neubau: mindestens 1 Flaechen-/Geometriedatum benannt
+  [OK  ] kombination_bestand_neubau: Anforderung referenziert das richtige Szenario
+
+=== 4) anforderungen_fuer() liefert den korrekten Eintrag ===
+  [OK  ] korrektes Szenario zurueckgegeben
+  [OK  ] erwartete Zusatzeingabe enthalten
+
+============================================================
+ALLE ENTWICKLUNGSSZENARIEN-TESTS BESTANDEN
+## Exitcode: 0
+
+########## test_referenzprojekte.py ##########
+=== 1) REFERENZPROJEKTE ist leer -- keine erfundenen/vorbelegten Projekte ===
+  [OK  ] Registry enthaelt keine seed-Eintraege
+
+=== 2) Pflichtfelder (Identifikation/Quelle) sind erzwungen, Flaechenwerte optional ===
+  [OK  ] ValueError korrekt bei leerer projekt_bezeichnung
+  [OK  ] GF bleibt None, wenn nicht angegeben (kein Default)
+  [OK  ] HNF bleibt None, wenn nicht angegeben (kein Default)
+
+=== 3) Vollstaendig befuelltes Referenzprojekt behaelt alle Werte verlustfrei ===
+  [OK  ] GF korrekt gesetzt
+  [OK  ] HNF korrekt gesetzt
+  [OK  ] Erschliessungstyp korrekt gesetzt
+  [OK  ] Uebertragbarkeitshinweis kann dokumentiert werden
+
+=== 4) NF/GF, HNF/NF, HNF/GF: nur berechnet, wenn beide Originalwerte vorhanden ===
+  [OK  ] nf_gf_quote ist None ohne NF (kein Raten)
+  [OK  ] hnf_nf_quote ist None ohne NF/HNF
+  [OK  ] hnf_gf_quote ist None ohne HNF
+  [OK  ] nf_gf_quote = 850/1000 = 0.85 (tatsaechlich 0.85)
+  [OK  ] hnf_nf_quote = 680/850 = 0.8 (tatsaechlich 0.8)
+  [OK  ] hnf_gf_quote = 680/1000 = 0.68 (tatsaechlich 0.68)
+
+=== 5) datenqualitaet: nur definierte Werte zulaessig, None bleibt erlaubt ===
+  [OK  ] ValueError korrekt bei unbekanntem datenqualitaet-Wert
+  [OK  ] gueltiger Wert wird uebernommen
+  [OK  ] None bleibt erlaubt (keine Pflichtangabe)
+
+=== 6) JSON-Export/Import: verlustfreie Rundreise, unbekannte Felder werden erkannt ===
+  [OK  ] genau 1 Projekt zurueckgeladen
+  [OK  ] Roundtrip ist verlustfrei (dataclass-Gleichheit)
+  [OK  ] abgeleitete Eigenschaften funktionieren auch nach dem Reload
+  [OK  ] ValueError korrekt bei unbekanntem Feld im importierten Datensatz (kein stilles Ignorieren)
+
+=== 7) gebaeudetyp und entwicklungsszenario: nur definierte Werte, kein freier Text ===
+  [OK  ] ValueError korrekt bei nicht-kanonischem gebaeudetyp
+  [OK  ] ValueError korrekt bei unbekanntem entwicklungsszenario
+  [OK  ] gueltiges Szenariotyp-Value wird uebernommen
+
+=== 8) kf_gf_quote und verfuegbare_verhaeltnisse-Uebersicht ===
+  [OK  ] kf_gf_quote = 150/1000 = 0.15 (tatsaechlich 0.15)
+  [OK  ] Uebersicht enthaelt kf_gf
+  [OK  ] Uebersicht enthaelt nf_gf
+  [OK  ] kf_gf fehlt korrekt in der Uebersicht, wenn KF unbekannt
+
+=== 9) ist_belastbare_referenz: GF+NF+HNF UND keine Schaetzung ===
+  [OK  ] GF+NF+HNF vorhanden, nicht geschaetzt -> belastbar
+  [OK  ] HNF fehlt -> nicht belastbar, obwohl NF/GF berechenbar waere
+  [OK  ] vollstaendige, aber geschaetzte Daten sind NICHT belastbar (Ansatz B, nicht A)
+
+=== 10) leite_bandbreite_ab: zu wenig passende Projekte -> ValueError statt Fake-Bandbreite ===
+  [OK  ] ValueError korrekt bei nur 1 passendem Projekt
+
+=== 11) leite_bandbreite_ab: filtert nach Belastbarkeit, Typ, Szenario UND Verhaeltnis-Verfuegbarkeit ===
+  [OK  ] konservativ = min = 0.8 (tatsaechlich 0.8)
+  [OK  ] optimiert = max = 0.9 (tatsaechlich 0.9)
+  [OK  ] mittel = median_low = 0.85, aus Projekt B (tatsaechlich 0.85)
+  [OK  ] konservativ-Quelle nennt das konkrete Projekt A
+  [OK  ] mittel-Quelle nennt das konkrete Projekt B
+  [OK  ] geschaetztes Projekt D wird nirgends verwendet
+  [OK  ] Gebaeudetyp wird als Gueltigkeitsbereich mitgefuehrt
+  [OK  ] Entwicklungsszenario wird als Gueltigkeitsbereich mitgefuehrt
+  [OK  ] kf_gf konservativ = 0.13 (Projekt C, tatsaechlich 0.13)
+
+=== 12) leite_bandbreite_ab mit genau 2 Projekten: mittel faellt ehrlich mit konservativ zusammen ===
+  [OK  ] konservativ = 0.8
+  [OK  ] mittel faellt mit konservativ zusammen (median_low bei 2 Werten) -- kein erfundener Mittelwert
+  [OK  ] optimiert = 0.9
+
+============================================================
+ALLE REFERENZPROJEKTE-TESTS BESTANDEN
+## Exitcode: 0
+
+########## test_klassifikation.py ##########
+=== Baden (AG): Kernzone 5 + 2 Sondernutzungsplaene -> muss blockieren ===
+  [OK  ] Nutzungsklassifikation gefunden
+  [OK  ] Quelle ist geodienste.ch
+  [OK  ] Basiszone eindeutig bestimmt
+  [OK  ] Grundnutzung ist Kernzone (tatsaechlich: Kernzone 5)
+  [OK  ] Gestaltungsplan als SNP erkannt (['Kantonaler Nutzungsplan Thermenschutzbereiche', 'Gestaltungsplan Innenstadt Nord - Westlich Bahnlinie'])
+  [OK  ] Grundnutzung selbst taucht nicht in der SNP-Liste auf
+  [OK  ] Modul 3 blockiert (status=sondernutzungsplan_massgebend)
+  [OK  ] Keine Szenarien-Matrix im blockierten Ergebnis -- keine scheinpraezise Zahl
+
+=== Zuerich: Kernzone + Gestaltungsplan -> muss blockieren ===
+  [OK  ] Nutzungsklassifikation gefunden
+  [OK  ] Quelle ist der ZH-Sonderweg (zh_wfs)
+  [OK  ] Basiszone eindeutig bestimmt
+  [OK  ] Grundnutzung ist Kernzone (tatsaechlich: Kernzone)
+  [OK  ] Gestaltungsplan als SNP erkannt (['Kommunaler Gestaltungsplan'])
+  [OK  ] Kernzonenplan (Kategorie 69, Ergaenzung) wird NICHT als SNP gefuehrt (['Kommunaler Gestaltungsplan'])
+  [OK  ] Modul 3 blockiert (status=sondernutzungsplan_massgebend)
+  [OK  ] Keine Szenarien-Matrix -- die zuvor ausgegebene Bandbreite (1.49-4.23 Mio. CHF) gilt als zurueckgezogen
+
+=== Buchs AG: Gartenstadtzone ohne SNP -> muss normal durchrechnen ===
+  [OK  ] Nutzungsklassifikation gefunden
+  [OK  ] Basiszone eindeutig bestimmt
+  [OK  ] Kein Sondernutzungsplan vorhanden
+  [OK  ] Modul 3 rechnet normal (kein Blockieren)
+  [OK  ] Zone erfolgreich zugeordnet
+  [OK  ] Basiszone stammt aus Modul 1b, nicht aus dem alten Fallback
+  [OK  ] Richtige Zone zugeordnet
+  [OK  ] Residualwert berechnet: 727,734 CHF
+
+=== Rorschach (SG): OEREB-Webservice muss erreichbar sein und echte Rechtsvorschriften liefern ===
+  [OK  ] OEREB fuer SG gefunden (reason falls nicht: None)
+  [OK  ] Kanton korrekt als SG erkannt
+  [OK  ] Rechtsvorschriften geladen (16 Eintraege)
+  [OK  ] Mindestens ein BZO-relevantes Dokument erkannt (['Teilzonenplan Ausschlussgebiet sexgewerblicher Betriebe und Dienstleistungen - Genehmigung', 'Baureglement', 'Baureglement', 'Planungs- und Baugesetz', 'Verordnung zum Planungs- und Baugesetz', 'Zonenplan - Genehmigung'])
+  [OK  ] Nutzungsklassifikation fuer SG gefunden (via geodienste.ch)
+  [OK  ] Sondernutzungsplan real erkannt (['BauG_Sondernutzungsplan'])
+  [OK  ] Modul 3 blockiert (status=sondernutzungsplan_massgebend)
+
+=== ermittle_zonenzuordnung(): BZO-Zuordnung funktioniert OHNE Verkaufspreis (Web-App-Fix) ===
+  [OK  ] Zonenzuordnung ohne Preis gefunden (status=gefunden)
+  [OK  ] Richtige Zone auch ohne Preis zugeordnet
+  [OK  ] Identisches Ergebnis wie die preisabhaengige Finanzrechnung (keine Fachlogik-Abweichung durch die Auslagerung)
+
+=== Parzellenauswahl: es muss die Parzelle gewaehlt werden, die den Punkt ENTHAELT ===
+  [OK  ] Toleranzabfrage liefert mehrere Parzellen (4) -- Auswahl ist noetig
+  [OK  ] Genau eine Parzelle enthaelt den Punkt (tatsaechlich: 1)
+  [OK  ] Auswahl per Punkt-in-Parzelle (tatsaechlich: punkt_in_parzelle)
+  [OK  ] EGRID stammt von der Parzelle, die den Punkt enthaelt (CH975272732334)
+  [OK  ] Parzellennummer stammt von derselben Parzelle (1145)
+  [OK  ] Nicht mehr die Nachbarparzelle aus results[0] (der alte Fehler)
+
+============================================================
+ALLE TESTS BESTANDEN
+## Exitcode: 0
