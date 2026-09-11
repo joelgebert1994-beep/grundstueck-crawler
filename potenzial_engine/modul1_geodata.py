@@ -1230,6 +1230,28 @@ def run_modul1(address: str) -> dict[str, Any]:
             "kanten": [],
         }
 
+    # Bestand: alle Gebaeude der Parzelle mit Grundriss und GWR-Merkmalen.
+    # Loest die alte Einzelabfrage get_gwr_data() NICHT ab (sie bleibt fuer
+    # Abwaertskompatibilitaet unter result["gwr"]), liefert aber die
+    # parzellenweite Sicht, die die Entwicklungsszenarien brauchen.
+    if parzellengeometrie:
+        from .bestand import hole_bestand
+
+        try:
+            result["bestand"] = hole_bestand(e, n, parzellengeometrie)
+        except (Exception,) as exc:  # noqa: BLE001 -- Bestand darf die Analyse nicht stoppen
+            result["bestand"] = {
+                "gefunden": False,
+                "reason": f"{type(exc).__name__}: {exc}",
+                "gebaeude": [],
+            }
+    else:
+        result["bestand"] = {
+            "gefunden": False,
+            "reason": "Keine Parzellengeometrie verfuegbar -- Bestandsermittlung uebersprungen.",
+            "gebaeude": [],
+        }
+
     result["_meta"] = {
         "duration_seconds": round(time.time() - started, 2),
         "modul": "Modul 1 - Geo-Data & Registry Ingestion",

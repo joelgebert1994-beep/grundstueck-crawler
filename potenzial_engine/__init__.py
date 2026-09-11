@@ -16,6 +16,8 @@ Module:
     g1_verdrahtung                 Verdrahtung Modul 1/2 -> G1
     sia416_flaechen                SIA-416-Flaechenkaskade
     flaechenmodell                 Baurecht -> Flaeche -> Wohnung (Stufe 3)
+    bestand                        Gebaeude der Parzelle (GWR + Grundrisse)
+    szenarien                      Entwicklungsszenarien (Stufe 4)
     quellen                        Quellennachweis pro Einzelwert
     referenzprojekte               Referenzdaten fuer Flaechenverhaeltnisse
     entwicklungsszenarien          Szenario-Taxonomie (ohne Rechenlogik)
@@ -45,6 +47,7 @@ from .pipeline import (
     Wirtschaftlichkeit,
     analysiere_grundstueck,
     berechne_flaechen,
+    berechne_szenarien,
     berechne_wirtschaftlichkeit,
 )
 
@@ -56,5 +59,6 @@ __all__ = [
     "WohnungstypVorgabe",
     "analysiere_grundstueck",
     "berechne_flaechen",
+    "berechne_szenarien",
     "berechne_wirtschaftlichkeit",
 ]

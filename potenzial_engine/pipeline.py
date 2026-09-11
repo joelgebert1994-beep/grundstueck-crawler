@@ -36,6 +36,7 @@ from .flaechenmodell import (
     berechne_flaechen_und_wohnungen,
 )
 from .kantenklassifikation import quellen_fuer_kanten
+from .szenarien import berechne_szenarien as _berechne_szenarien
 from .modul1_geodata import Modul1Error, run_modul1
 from .modul2_bzo_analysis import analyze_from_oereb_result
 from .modul3_financial import ermittle_zonenzuordnung, run_from_modul_results
@@ -233,6 +234,56 @@ def _flaechen_fuer_g1_ergebnis(
     }
 
 
+def _szenarien_fuer_analyse(
+    g1_ergebnis: Optional[dict],
+    zonen_zuordnung: dict,
+    modul1_result: dict,
+    **kwargs,
+) -> dict:
+    """Szenarien auf dem einzelnen G1-Ergebnis.
+
+    Liegt nur eine Bandbreite vor, waeren Szenarien auf einem willkuerlich
+    gewaehlten Rand nicht belastbar -- dann meldet berechne_szenarien() das
+    selbst mit Grund.
+    """
+    return _berechne_szenarien(
+        _g1_einzelergebnis(g1_ergebnis),
+        modul1_result.get("bestand"),
+        zonen_zuordnung.get("zone"),
+        restriktionen=modul1_result.get("restriktionsgeometrie"),
+        **kwargs,
+    )
+
+
+def berechne_szenarien(
+    analyse: Analyse,
+    *,
+    auswahl: Optional[list[str]] = None,
+    benutzerwerte: Optional[dict[str, float]] = None,
+    wohnungsmix: Optional[list[WohnungstypVorgabe]] = None,
+    wohnungsmix_begruendung: str = "",
+    profil: str = PROFIL_WOHNUNGSBAU_MFH,
+    attika_zulaessig: Optional[bool] = None,
+    dachgeschoss_zulaessig: Optional[bool] = None,
+    gebaeudeabstand_m: Optional[float] = None,
+) -> dict:
+    """Rechnet die Entwicklungsszenarien neu -- ohne erneute Abfrage.
+
+    Arbeitet auf einer bereits erstellten Analyse. Ein anderer Wohnungsmix,
+    eine andere Annahme oder eine nachgetragene Attika-Regel kosten damit
+    Millisekunden statt Minuten.
+    """
+    return _szenarien_fuer_analyse(
+        analyse.ergebnis.get("g1_ergebnis"),
+        analyse.ergebnis.get("zonen_zuordnung") or {},
+        analyse.kontext.get("modul1") or {},
+        auswahl=auswahl, benutzerwerte=benutzerwerte, wohnungsmix=wohnungsmix,
+        wohnungsmix_begruendung=wohnungsmix_begruendung, profil=profil,
+        attika_zulaessig=attika_zulaessig, dachgeschoss_zulaessig=dachgeschoss_zulaessig,
+        gebaeudeabstand_m=gebaeudeabstand_m,
+    )
+
+
 def berechne_flaechen(
     analyse: Analyse,
     *,
@@ -311,6 +362,13 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
     # ueber berechne_flaechen(), ohne erneute Geo-/Gemini-Abfrage.
     flaechenmodell_ergebnis = _flaechen_fuer_g1_ergebnis(g1_ergebnis, zonen_zuordnung)
 
+    # Stufe 4: die Entwicklungsszenarien. Ebenfalls ohne Wohnungsmix -- der ist
+    # eine Benutzerentscheidung. Nachtraeglich neu rechenbar ueber
+    # berechne_szenarien(), ohne erneute Geo-/Gemini-Abfrage.
+    szenarien_ergebnis = _szenarien_fuer_analyse(
+        g1_ergebnis, zonen_zuordnung, modul1_result,
+    )
+
     # Quellenobjekte: Rueckverfolgbarkeit jedes amtlichen Modul-1-Werts auf
     # Endpunkt/Layer/URL -- vor dem Trimmen berechnet (unabhaengig davon, ob
     # raw_attributes/raw_extract fuer die Anzeige weggeschnitten werden).
@@ -327,6 +385,7 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
         "g1_fehler": g1_fehler,
         "sia416_ergebnis": sia416_ergebnis,
         "flaechen_und_wohnungen": flaechenmodell_ergebnis,
+        "szenarien": szenarien_ergebnis,
         "quellen": quellen,
         "entwicklungsszenarien": ENTWICKLUNGSSZENARIEN_INFO,
         "modul2_bzo_analyse": modul2_result,

@@ -246,6 +246,20 @@ details.more > div { padding-top: 10px; }
 ul.plain { margin: 6px 0; padding-left: 17px; font-size: 12.5px; color: var(--ink-2); }
 ul.plain li { margin-bottom: 4px; }
 
+.szwahl { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.szbtn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 12px;
+  font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s; }
+.szbtn:hover { border-color: var(--ink-3); }
+.szbtn.aktiv { border-color: var(--ink); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--ink); }
+.szaktion { margin-top: 10px; }
+.card.szenario .szgrund { margin: 6px 0 10px; font-size: 13px; line-height: 1.5; }
+#view3d { width: 100%; height: 380px; border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden; background: var(--bg-2); cursor: grab; touch-action: none; }
+#view3d:active { cursor: grabbing; }
+#view3d-legende { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 2px; font-size: 11px; color: var(--ink-2); }
+#view3d-legende .l3d { display: inline-flex; align-items: center; gap: 6px; }
+#view3d-legende i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
 table.src { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.src th { text-align: left; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 5px 6px; border-bottom: 1px solid var(--line); }
 table.src td { padding: 6px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
@@ -308,6 +322,8 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
           <label class="layeropt off" id="opt-zonen"><input type="checkbox" id="lay-zonen" checked disabled><span class="swatch" style="border-color:#2a7f8f;background:rgba(42,127,143,.18)"></span>Zonen<span class="cnt" id="cnt-zonen">&ndash;</span></label>
           <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;background:rgba(31,122,77,.25)"></span>Baubereich G1<span class="cnt" id="cnt-baubereich">&ndash;</span></label>
           <label class="layeropt off" id="opt-restrikt"><input type="checkbox" id="lay-restrikt" checked disabled><span class="swatch" style="border-color:#b4661a;background:rgba(180,102,26,.22)"></span>Restriktionen<span class="cnt" id="cnt-restrikt">&ndash;</span></label>
+          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" checked disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span>Bestand<span class="cnt" id="cnt-bestand">&ndash;</span></label>
+          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" checked disabled><span class="swatch" style="border-color:#0369a1;background:rgba(3,105,161,.30)"></span>Szenario<span class="cnt" id="cnt-szenario">&ndash;</span></label>
         </div>
       </div>
     </details>
@@ -332,6 +348,7 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 /* =====================================================================
    Koordinaten: die Engine liefert alle Geometrien in LV95 (EPSG:2056).
@@ -404,7 +421,9 @@ var gruppen = {
   zonen: L.layerGroup().addTo(map),
   restrikt: L.layerGroup().addTo(map),
   parzelle: L.layerGroup().addTo(map),
-  baubereich: L.layerGroup().addTo(map)
+  baubereich: L.layerGroup().addTo(map),
+  bestand: L.layerGroup().addTo(map),
+  szenario: L.layerGroup().addTo(map)
 };
 var adressMarker = null, pickMarker = null;
 
@@ -413,7 +432,8 @@ var STIL = {
   zone:      { color: "#2a7f8f", weight: 1.5, fillColor: "#2a7f8f", fillOpacity: .13 },
   zoneUeber: { color: "#6a4c93", weight: 2,   fillColor: "#6a4c93", fillOpacity: .15, dashArray: "5,4" },
   baubereich:{ color: "#1f7a4d", weight: 2,   fillColor: "#1f7a4d", fillOpacity: .30 },
-  restrikt:  { color: "#b4661a", weight: 2,   fillColor: "#b4661a", fillOpacity: .22, dashArray: "6,3" }
+  restrikt:  { color: "#b4661a", weight: 2,   fillColor: "#b4661a", fillOpacity: .22, dashArray: "6,3" },
+  bestand:   { color: "#6b7280", weight: 2,   fillColor: "#6b7280", fillOpacity: .45 }
 };
 var selektiert = null;
 function selektiere(layer, sectionId) {
@@ -467,7 +487,7 @@ Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), fu
     if (ev.target.checked) paar[1].addTo(map); else map.removeLayer(paar[1]);
   });
 });
-["parzelle", "zonen", "baubereich", "restrikt"].forEach(function (name) {
+["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (name) {
   document.getElementById("lay-" + name).addEventListener("change", function (ev) {
     if (ev.target.checked) gruppen[name].addTo(map); else map.removeLayer(gruppen[name]);
   });
@@ -567,7 +587,7 @@ goBtn.addEventListener("click", function () {
   goBtn.textContent = "Analyse läuft …";
   ergebnisAktuell = null;
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
-  ["parzelle", "zonen", "baubereich", "restrikt"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
+  ["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
   renderLoading();
   fetch("/api/analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -704,6 +724,20 @@ function zeichneErgebnisAufKarte(erg) {
   }
   setLayerVerfuegbar("baubereich", anzB);
 
+  /* Bestand: echte Gebaeudegrundrisse mit GWR-Merkmalen */
+  var anzBest = 0;
+  alsListe((m1.bestand || {}).gebaeude).forEach(function (g) {
+    if (!g.grundriss) return;
+    var popup = "<b>" + esc(g.adresse || ("EGID " + g.egid)) + "</b><span class=\"m\">" +
+      esc(g.kategorie_text || "Kategorie unbekannt") + "<br>" +
+      (leer(g.baujahr) ? "Baujahr unbekannt" : "Baujahr " + esc(g.baujahr)) + ", " +
+      (leer(g.geschosse) ? "Geschosszahl unbekannt" : esc(g.geschosse) + " Geschoss(e)") + "<br>" +
+      "Grundriss " + fmt(g.grundriss_flaeche_m2, 1) + " m²" +
+      (leer(g.grundflaeche_gwr_m2) ? "" : ", GWR " + fmt(g.grundflaeche_gwr_m2, 1) + " m²") + "</span>";
+    anzBest += zeichnePolygone(gruppen.bestand, [g.grundriss], STIL.bestand, popup, "sec-szenarien").length;
+  });
+  setLayerVerfuegbar("bestand", anzBest);
+
   var rg = m1.restriktionsgeometrie || {};
   var anzR = 0;
   alsListe(rg.gewaesserraum_flaechen).forEach(function (gr) {
@@ -736,6 +770,7 @@ var SEKTIONEN = [
   ["sec-restriktionen", "Restriktionen"],
   ["sec-potenzial", "Potenzial"],
   ["sec-flaechen", "Flächen & Wohnungen"],
+  ["sec-szenarien", "Szenarien"],
   ["sec-entwicklung", "Entwicklung"],
   ["sec-quellen", "Quellen"],
   ["sec-wirtschaft", "Wirtschaftlichkeit"]
@@ -795,9 +830,10 @@ function renderDossier(erg) {
       return '<button data-sec="' + s[0] + '">' + s[1] + "</button>";
     }).join("") + "</nav>" +
     secGrundstueck(m1) + secStandort(m1) + secBaurecht(erg, m1, zz) +
-    secRestriktionen(m1) + secPotenzial(erg) + secFlaechen(erg) + secEntwicklung(erg) +
+    secRestriktionen(m1) + secPotenzial(erg) + secFlaechen(erg) + secSzenarien(erg) + secEntwicklung(erg) +
     secQuellen(erg) + secWirtschaft(erg);
   verdrahteDossier();
+  verdrahteSzenarien();
 }
 
 function statusBadge(zz) {
@@ -1422,6 +1458,309 @@ function secFlaechen(erg) {
   return '<section class="sec" id="sec-flaechen">' + kopf + pruef + flaechenErgebnis(f) + "</section>";
 }
 
+/* --- 07 Entwicklungsszenarien (Stufe 4) --- */
+var MACHBARKEIT_BADGE = {
+  moeglich: ["möglich", "ok"],
+  eingeschraenkt_moeglich: ["eingeschränkt", "warn"],
+  besteht: ["Ist-Zustand", "mute"],
+  nicht_moeglich: ["nicht möglich", "stop"],
+  nicht_bestimmbar: ["nicht bestimmbar", "warn"]
+};
+var BAUKOERPER_FARBE = {
+  bestand: "#6b7280",
+  anbau: "#c2410c",
+  aufstockung: "#7c3aed",
+  ersatzneubau: "#1f7a4d",
+  neubau: "#0369a1"
+};
+var aktivesSzenario = null;
+
+function szenarioKarte(id) {
+  aktivesSzenario = id;
+  zeichneSzenario(id);
+  document.querySelectorAll("[data-szenario]").forEach(function (b) {
+    b.classList.toggle("aktiv", b.getAttribute("data-szenario") === id);
+  });
+  if (window.zeichne3D) window.zeichne3D(id);
+}
+
+function zeichneSzenario(id) {
+  if (!gruppen.szenario) return;
+  gruppen.szenario.clearLayers();
+  var erg = ergebnisAktuell;
+  var s = ((erg && erg.szenarien && erg.szenarien.szenarien) || {})[id];
+  if (!s) { setLayerVerfuegbar("szenario", 0); return; }
+  var anz = 0;
+  alsListe(s.baukoerper).forEach(function (k) {
+    var farbe = BAUKOERPER_FARBE[k.art] || "#0369a1";
+    var stil = {
+      color: farbe, weight: 2, fillColor: farbe,
+      fillOpacity: k.art === "bestand" ? 0.45 : 0.32,
+      dashArray: k.art === "bestand" ? null : "6,3"
+    };
+    var popup = "<b>" + esc(k.name) + "</b><span class=\"m\">" +
+      fmt(k.flaeche_m2, 1) + " m² Grundfläche<br>max. " + esc(k.max_laenge_m) + " × " +
+      esc(k.max_breite_m) + " m<br>" +
+      (leer(k.geschosse) ? "" : esc(k.geschosse) + " Geschoss(e)") +
+      (leer(k.hoehe_m) ? "" : ", " + esc(k.hoehe_m) + " m hoch") + "<br>" +
+      esc(k.herkunft) + "</span>";
+    anz += zeichnePolygone(gruppen.szenario, [k.ring], stil, popup, "sec-szenarien").length;
+  });
+  setLayerVerfuegbar("szenario", anz);
+}
+
+function szenarioKarteZeile(s) {
+  var badge = MACHBARKEIT_BADGE[s.machbarkeit] || [s.machbarkeit, "mute"];
+  var f = (s.flaechen || {}).flaechen || {};
+  return '<div class="card szenario" data-szenario-karte="' + esc(s.id) + '">' +
+    '<div class="cardhead"><h4>' + esc(s.bezeichnung) + '</h4>' +
+    '<span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></div>" +
+    '<p class="szgrund">' + esc(s.begruendung) + "</p>" +
+    '<div class="tiles">' +
+      tile("Geschossfläche", leer(s.geschossflaeche_m2) ? null : fmt(s.geschossflaeche_m2, 0), "m²") +
+      tile("Wohnfläche", leer((f.wohnflaeche_nwf || {}).wert) ? null : fmt(f.wohnflaeche_nwf.wert, 0), "m²") +
+      tile("Wohnungen", (s.wohnungen || {}).anzahl_wohnungen) +
+      tile("Geschosse", s.geschosse) +
+    "</div>" +
+    (s.geschossflaeche_herkunft ? '<div class="note">' + esc(s.geschossflaeche_herkunft) + "</div>" : "") +
+    alsListe(s.konflikte).map(function (k) {
+      return '<div class="note ' + (k.schwere === "ausschluss" ? "stop" : "warn") + '"><b>' +
+        esc(k.art) + ":</b> " + esc(k.meldung) + "</div>";
+    }).join("") +
+    (alsListe(s.unsicherheiten).length
+      ? '<details class="more"><summary>Unsicherheiten (' + alsListe(s.unsicherheiten).length +
+        ')</summary><div><ul class="plain">' +
+        alsListe(s.unsicherheiten).map(function (u) { return "<li>" + esc(u) + "</li>"; }).join("") +
+        "</ul></div></details>" : "") +
+    (alsListe(s.baukoerper).length
+      ? '<details class="more"><summary>Baukörper (' + alsListe(s.baukoerper).length + ')</summary><div>' +
+        '<div class="scroller"><table class="src"><thead><tr><th>Name</th><th>Art</th><th>Fläche</th><th>max. L × B</th><th>Geschosse</th><th>Höhe</th><th>Herkunft</th></tr></thead><tbody>' +
+        alsListe(s.baukoerper).map(function (k) {
+          return "<tr><td><b>" + esc(k.name) + "</b></td><td>" + esc(k.art) + "</td>" +
+            "<td>" + fmt(k.flaeche_m2, 1) + " m²</td>" +
+            "<td>" + esc(k.max_laenge_m) + " × " + esc(k.max_breite_m) + " m</td>" +
+            "<td>" + esc(k.geschosse) + "</td><td>" + (leer(k.hoehe_m) ? "–" : esc(k.hoehe_m) + " m") + "</td>" +
+            "<td>" + esc(k.herkunft) + "</td></tr>";
+        }).join("") + "</tbody></table></div></div></details>" : "") +
+    '<div class="szaktion"><button class="szbtn" data-szenario="' + esc(s.id) +
+      '">Auf Karte und in 3D zeigen</button></div>' +
+  "</div>";
+}
+
+function secSzenarien(erg) {
+  var kopf = '<div class="sechead"><span class="num">07</span><h3>Entwicklungsszenarien</h3></div>';
+  var sz = erg.szenarien;
+  if (!sz) {
+    return '<section class="sec" id="sec-szenarien">' + kopf +
+      '<div class="note warn">Für diese Analyse wurden keine Szenarien gerechnet.</div></section>';
+  }
+  if (sz.status !== "berechnet") {
+    return '<section class="sec" id="sec-szenarien">' + kopf +
+      '<div class="note warn"><b>Keine Szenarien.</b> ' + esc(sz.grund) + "</div></section>";
+  }
+
+  var b = sz.ausnuetzungsbudget || {};
+  var vergleich = alsListe(sz.vergleich);
+  var szenarien = sz.szenarien || {};
+
+  var budgetBlock = '<h4 class="subhead">Ausnützungsbudget</h4>' +
+    kvRows([
+      ["baurechtlich zulässig", leer(b.zulaessig_gf_m2) ? null : fmt(b.zulaessig_gf_m2, 1) + " m² GF"],
+      ["durch den Bestand belegt", leer(b.bestand_gf_m2) ? null : fmt(b.bestand_gf_m2, 1) + " m² GF"],
+      ["verbleibend", leer(b.verbleibend_gf_m2) ? null : fmt(b.verbleibend_gf_m2, 1) + " m² GF"],
+      ["limitierende Grösse", b.limitierend]
+    ]) +
+    (b.bestand_herkunft ? '<div class="note">' + esc(b.bestand_herkunft) + "</div>" : "") +
+    alsListe(b.hinweise).map(function (h) {
+      return '<div class="note ' + (h.indexOf("UEBERBAUT") >= 0 ? "stop" : "warn") + '">' + esc(h) + "</div>";
+    }).join("");
+
+  var tabelle = '<h4 class="subhead">Vergleich</h4>' +
+    '<div class="scroller"><table class="src"><thead><tr><th>Szenario</th><th>Machbarkeit</th>' +
+    '<th>Geschosse</th><th>Höhe</th><th>GF</th><th>NF</th><th>HNF</th><th>NWF</th><th>Wohnungen</th><th>Konflikte</th></tr></thead><tbody>' +
+    vergleich.map(function (z) {
+      var badge = MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit, "mute"];
+      var m = function (v) { return leer(v) ? "–" : fmt(v, 0) + " m²"; };
+      return '<tr data-szenario="' + esc(z.id) + '"><td><b>' + esc(z.bezeichnung) + "</b></td>" +
+        '<td><span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></td>" +
+        "<td>" + esc(z.geschosse) + "</td>" +
+        "<td>" + (leer(z.hoehe_m) ? "–" : esc(z.hoehe_m) + " m") + "</td>" +
+        "<td>" + m(z.geschossflaeche_m2) + "</td><td>" + m(z.nutzflaeche_nf_m2) + "</td>" +
+        "<td>" + m(z.hauptnutzflaeche_hnf_m2) + "</td><td><b>" + m(z.wohnflaeche_nwf_m2) + "</b></td>" +
+        "<td>" + (leer(z.wohnungen) ? "–" : esc(z.wohnungen)) + "</td>" +
+        "<td>" + (z.anzahl_konflikte ? '<span class="badge warn">' + z.anzahl_konflikte + "</span>" : "–") + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+
+  var waehler = '<div class="szwahl">' +
+    vergleich.map(function (z) {
+      var badge = MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit, "mute"];
+      return '<button class="szbtn" data-szenario="' + esc(z.id) + '">' + esc(z.bezeichnung) +
+        '<span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></button>";
+    }).join("") + "</div>";
+
+  var karten = vergleich.map(function (z) {
+    var s = szenarien[z.id] || {};
+    s.id = z.id;
+    return szenarioKarteZeile(s);
+  }).join("");
+
+  return '<section class="sec" id="sec-szenarien">' + kopf +
+    '<div class="note">Jedes Szenario ist aus dem G1-Baubereich, dem Bestand und den Zonenkennzahlen abgeleitet — keine frei entworfene Architektur. Wähle ein Szenario, um seine Baukörper auf der Karte und in 3D zu sehen.</div>' +
+    waehler +
+    '<h4 class="subhead">3D &mdash; Baukörper aus den berechneten Geometrien</h4>' +
+    '<div id="view3d"></div><div id="view3d-legende"></div>' +
+    '<div class="note">Ziehen dreht die Ansicht, Scrollen zoomt. Jedes Volumen ist das Extrudat eines real berechneten Polygons mit der berechneten Höhe &mdash; ist keine Höhe bekannt, wird der Körper flach dargestellt statt geraten.</div>' +
+    budgetBlock + tabelle +
+    '<h4 class="subhead">Die Szenarien im Einzelnen</h4>' + karten +
+    "</section>";
+}
+
+/* --- 3D-Ansicht: Baukoerper aus den berechneten Geometrien ---
+   Keine erfundene Architektur: jedes Volumen ist das Extrudat eines real
+   berechneten Polygons (Parzelle, Baubereich, Bestandsgrundriss, Szenario-
+   Baukoerper) mit der ebenfalls berechneten Hoehe. Ist keine Hoehe bekannt,
+   wird der Koerper flach dargestellt statt geraten. */
+(function () {
+  var szene = null, kamera = null, renderer = null, gruppe3d = null, animation = null;
+  var drehung = 0.6, neigung = 0.9, zoom = 1.0, ziehtGerade = false, letzteMaus = null;
+
+  function behaelter() { return document.getElementById("view3d"); }
+
+  function bereitMachen() {
+    var el = behaelter();
+    if (!el || typeof THREE === "undefined") return false;
+    if (renderer) return true;
+    szene = new THREE.Scene();
+    szene.background = new THREE.Color(
+      getComputedStyle(document.body).getPropertyValue("--bg-2").trim() || "#f2f0ec");
+    kamera = new THREE.PerspectiveCamera(45, el.clientWidth / el.clientHeight, 0.5, 4000);
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(el.clientWidth, el.clientHeight);
+    el.appendChild(renderer.domElement);
+    szene.add(new THREE.AmbientLight(0xffffff, 0.72));
+    var sonne = new THREE.DirectionalLight(0xffffff, 0.85);
+    sonne.position.set(-60, 90, 70);
+    szene.add(sonne);
+    gruppe3d = new THREE.Group();
+    szene.add(gruppe3d);
+
+    renderer.domElement.addEventListener("pointerdown", function (e) {
+      ziehtGerade = true; letzteMaus = { x: e.clientX, y: e.clientY };
+    });
+    window.addEventListener("pointerup", function () { ziehtGerade = false; });
+    window.addEventListener("pointermove", function (e) {
+      if (!ziehtGerade || !letzteMaus) return;
+      drehung += (e.clientX - letzteMaus.x) * 0.006;
+      neigung = Math.max(0.12, Math.min(1.45, neigung - (e.clientY - letzteMaus.y) * 0.005));
+      letzteMaus = { x: e.clientX, y: e.clientY };
+    });
+    renderer.domElement.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      zoom = Math.max(0.45, Math.min(3.2, zoom * (e.deltaY > 0 ? 1.1 : 0.9)));
+    }, { passive: false });
+    window.addEventListener("resize", function () {
+      if (!renderer || !behaelter()) return;
+      var b = behaelter();
+      kamera.aspect = b.clientWidth / b.clientHeight;
+      kamera.updateProjectionMatrix();
+      renderer.setSize(b.clientWidth, b.clientHeight);
+    });
+    return true;
+  }
+
+  function form(ring, mx, my) {
+    var shape = new THREE.Shape();
+    ring.forEach(function (p, i) {
+      var x = p[0] - mx, y = p[1] - my;
+      if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+    });
+    return shape;
+  }
+
+  function koerper(ring, mx, my, hoehe, farbe, deckkraft) {
+    var geo = hoehe > 0
+      ? new THREE.ExtrudeGeometry(form(ring, mx, my), { depth: hoehe, bevelEnabled: false })
+      : new THREE.ShapeGeometry(form(ring, mx, my));
+    var mat = new THREE.MeshLambertMaterial({
+      color: new THREE.Color(farbe), transparent: deckkraft < 1,
+      opacity: deckkraft, side: THREE.DoubleSide
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    var kanten = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(farbe) })
+    );
+    kanten.rotation.x = -Math.PI / 2;
+    var g = new THREE.Group();
+    g.add(mesh); g.add(kanten);
+    return g;
+  }
+
+  window.zeichne3D = function (szenarioId) {
+    if (!bereitMachen()) return;
+    var erg = ergebnisAktuell;
+    if (!erg) return;
+    while (gruppe3d.children.length) gruppe3d.remove(gruppe3d.children[0]);
+
+    var m1 = erg.modul1_geodaten || {};
+    var parzelle = (m1.kataster || {}).parzellengeometrie;
+    if (!parzelle || !parzelle.length) return;
+
+    var xs = parzelle.map(function (p) { return p[0]; });
+    var ys = parzelle.map(function (p) { return p[1]; });
+    var mx = (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2;
+    var my = (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2;
+    var spanne = Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs),
+                          Math.max.apply(null, ys) - Math.min.apply(null, ys));
+
+    gruppe3d.add(koerper(parzelle, mx, my, 0, "#b3324a", 0.22));
+
+    var g1 = erg.g1_ergebnis || {};
+    var e1 = g1.ergebnis || (g1.szenarien ? g1.szenarien[Object.keys(g1.szenarien)[0]] : null);
+    if (e1 && e1.baubereich_koordinaten) {
+      alsListe(e1.baubereich_koordinaten).forEach(function (r) {
+        gruppe3d.add(koerper(r, mx, my, 0.25, "#1f7a4d", 0.30));
+      });
+    }
+
+    var s = ((erg.szenarien || {}).szenarien || {})[szenarioId];
+    var legende = [];
+    if (s) {
+      alsListe(s.baukoerper).forEach(function (k) {
+        var h = leer(k.hoehe_m) ? 0 : k.hoehe_m;
+        gruppe3d.add(koerper(k.ring, mx, my, h, BAUKOERPER_FARBE[k.art] || "#0369a1",
+                             k.art === "bestand" ? 0.85 : 0.6));
+        legende.push({ name: k.name, art: k.art, hoehe: k.hoehe_m });
+      });
+    }
+
+    var info = document.getElementById("view3d-legende");
+    if (info) {
+      info.innerHTML = legende.length
+        ? legende.map(function (l) {
+            return '<span class="l3d"><i style="background:' + (BAUKOERPER_FARBE[l.art] || "#0369a1") +
+              '"></i>' + esc(l.name) + (leer(l.hoehe) ? " (Höhe unbekannt — flach dargestellt)" : " · " + esc(l.hoehe) + " m") + "</span>";
+          }).join("")
+        : '<span class="l3d">Kein Baukörper für dieses Szenario.</span>';
+    }
+
+    if (animation) cancelAnimationFrame(animation);
+    (function schleife() {
+      animation = requestAnimationFrame(schleife);
+      var d = spanne * 1.8 * zoom;
+      kamera.position.set(
+        Math.sin(drehung) * Math.cos(neigung) * d,
+        Math.sin(neigung) * d,
+        Math.cos(drehung) * Math.cos(neigung) * d
+      );
+      kamera.lookAt(0, 0, 0);
+      renderer.render(szene, kamera);
+    })();
+  };
+})();
+
 function secEntwicklung(erg) {
   return '<section class="sec" id="sec-entwicklung">' +
     '<div class="sechead"><span class="num">06</span><h3>Entwicklungsszenarien</h3><span class="right"><span class="badge mute">Struktur, noch nicht gerechnet</span></span></div>' +
@@ -1501,6 +1840,15 @@ function secWirtschaft(erg) {
 }
 
 /* ===================== Verdrahtung ===================== */
+function verdrahteSzenarien() {
+  var knoepfe = document.querySelectorAll("[data-szenario]");
+  knoepfe.forEach(function (b) {
+    if (b.tagName !== "BUTTON" && b.tagName !== "TR") return;
+    b.addEventListener("click", function () { szenarioKarte(b.getAttribute("data-szenario")); });
+  });
+  var erstes = (((ergebnisAktuell || {}).szenarien || {}).vergleich || [])[0];
+  if (erstes) szenarioKarte(erstes.id);
+}
 function verdrahteDossier() {
   Array.prototype.forEach.call(document.querySelectorAll("#navbar button"), function (b) {
     b.addEventListener("click", function () { springeZu(b.dataset.sec); });
