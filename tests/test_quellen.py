@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 
-from quellen import (
+from potenzial_engine.quellen import (
     MAPSERVER_IDENTIFY_URL,
     QUELLE_BEZEICHNUNG_GWR,
     QUELLE_TYP_AMTLICH,

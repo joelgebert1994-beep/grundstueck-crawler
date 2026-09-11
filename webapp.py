@@ -47,13 +47,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
-from entwicklungsszenarien import SZENARIO_ANFORDERUNGEN
-from g1_verdrahtung import G1VerdrahtungError, berechne_g1_fuer_fall
-from modul1_geodata import Modul1Error, get_gwr_data, get_parcel_data, run_modul1
-from modul2_bzo_analysis import Modul2Error, analyze_from_oereb_result
-from modul3_financial import Modul3Error, ermittle_zonenzuordnung, run_from_modul_results
-from quellen import Quellenobjekt, quellen_aus_modul1_ergebnis
-from sia416_flaechen import berechne_sia416_kaskade
+from potenzial_engine.entwicklungsszenarien import SZENARIO_ANFORDERUNGEN
+from potenzial_engine.g1_verdrahtung import G1VerdrahtungError, berechne_g1_fuer_fall
+from potenzial_engine.modul1_geodata import Modul1Error, get_gwr_data, get_parcel_data, run_modul1
+from potenzial_engine.modul2_bzo_analysis import Modul2Error, analyze_from_oereb_result
+from potenzial_engine.modul3_financial import Modul3Error, ermittle_zonenzuordnung, run_from_modul_results
+from potenzial_engine.quellen import Quellenobjekt, quellen_aus_modul1_ergebnis
+from potenzial_engine.sia416_flaechen import berechne_sia416_kaskade
 
 DEFAULT_PORT = 8787
 

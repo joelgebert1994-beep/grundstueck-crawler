@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from baubereich import berechne_potenzial
+from .baubereich import berechne_potenzial
 
 
 class G1VerdrahtungError(Exception):

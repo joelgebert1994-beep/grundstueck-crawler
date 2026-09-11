@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import sys
 
-from modul1_geodata import run_modul1
-from modul2_bzo_analysis import analyze_from_oereb_result, Modul2Error
-from g1_verdrahtung import berechne_g1_fuer_fall, G1VerdrahtungError
+from potenzial_engine.modul1_geodata import run_modul1
+from potenzial_engine.modul2_bzo_analysis import analyze_from_oereb_result, Modul2Error
+from potenzial_engine.g1_verdrahtung import berechne_g1_fuer_fall, G1VerdrahtungError
 
 # Referenzwerte: in der letzten Session manuell aus den echten BZO-Dokumenten
 # verifiziert (siehe g1_reale_bzo_faelle.py). Nur fuer Faelle vorhanden, wo

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sys
 
-from entwicklungsszenarien import SZENARIO_ANFORDERUNGEN, Szenariotyp, anforderungen_fuer
+from potenzial_engine.entwicklungsszenarien import SZENARIO_ANFORDERUNGEN, Szenariotyp, anforderungen_fuer
 
 FEHLER: list[str] = []
 

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import sys
 
-from baubereich import PotenzialErgebnis
-from sia416_flaechen import (
+from potenzial_engine.baubereich import PotenzialErgebnis
+from potenzial_engine.sia416_flaechen import (
     BandbreitenWert,
     FlaechenverhaeltnisBandbreite,
     GWR_FELDER_KEINE_SIA416_FLAECHE,

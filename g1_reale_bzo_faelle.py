@@ -29,8 +29,8 @@ CLI: python g1_reale_bzo_faelle.py
 
 from __future__ import annotations
 
-from modul1_geodata import run_modul1
-from g1_verdrahtung import berechne_g1_fuer_fall
+from potenzial_engine.modul1_geodata import run_modul1
+from potenzial_engine.g1_verdrahtung import berechne_g1_fuer_fall
 
 
 def drucke_kaskade(titel: str, g1: dict, quelle: str) -> None:

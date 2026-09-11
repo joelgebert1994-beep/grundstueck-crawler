@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "potenzial-engine"
+version = "0.1.0"
+description = "Grundstuecks-Potenzialanalyse Schweiz (Geodaten, BZO, G1, SIA 416)"
+requires-python = ">=3.11"
+dependencies = [
+    "requests",
+    "shapely",
+]
+
+[tool.setuptools]
+packages = ["potenzial_engine"]

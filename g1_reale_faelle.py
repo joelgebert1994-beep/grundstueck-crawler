@@ -17,8 +17,8 @@ CLI: python g1_reale_faelle.py
 
 from __future__ import annotations
 
-from modul1_geodata import run_modul1
-from g1_verdrahtung import berechne_g1_fuer_fall, laengste_kante_index
+from potenzial_engine.modul1_geodata import run_modul1
+from potenzial_engine.g1_verdrahtung import berechne_g1_fuer_fall, laengste_kante_index
 
 
 def drucke_kaskade(titel: str, g1: dict) -> None:
@@ -128,8 +128,8 @@ def main() -> None:
     # Illustrativ: zeigt, dass die Restriktion tatsaechlich wirkt, SOBALD ein
     # Waldabstand bekannt ist -- 15m ist hier ein angenommener Beispielwert,
     # KEIN recherchierter gesetzlicher Wert fuer Rueschlikon.
-    from modul1_geodata import geocode_address
-    from restriktionsgeometrie import hole_restriktionen_fuer_parzelle
+    from potenzial_engine.modul1_geodata import geocode_address
+    from potenzial_engine.restriktionsgeometrie import hole_restriktionen_fuer_parzelle
     geo = geocode_address("Sonnenbergstrasse 1, 8803 Rueschlikon")
     r6_mit_wald = dict(r6)
     r6_mit_wald["restriktionsgeometrie"] = hole_restriktionen_fuer_parzelle(

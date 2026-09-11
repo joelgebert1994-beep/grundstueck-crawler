@@ -17,7 +17,7 @@ CLI:
     python modul4_export.py --from-json ergebnis.json --out dossier.html
 
 Als Bibliothek:
-    from modul4_export import render_html_dossier
+    from potenzial_engine.modul4_export import render_html_dossier
     html = render_html_dossier(pipeline_result)
 """
 
@@ -256,7 +256,7 @@ def main() -> None:
         if args.verkaufspreis_m2 is None:
             print(json.dumps({"error": "--verkaufspreis-m2 ist bei --address erforderlich."}, ensure_ascii=False))
             sys.exit(1)
-        from modul3_financial import run_full_pipeline
+        from .modul3_financial import run_full_pipeline
 
         pipeline_result = run_full_pipeline(args.address, verkaufspreis_chf_pro_m2=args.verkaufspreis_m2, backend=args.backend)
 

@@ -47,7 +47,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from baubereich import PotenzialErgebnis
+    from .baubereich import PotenzialErgebnis
 
 STATUS_BESTIMMT = "bestimmt"
 STATUS_MODELLANNAHME_BASIERT = "modellannahme_basiert"

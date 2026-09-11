@@ -39,7 +39,7 @@ CLI:
     python modul1_geodata.py "Bahnhofstrasse 1, 8001 Zuerich"
 
 Als Bibliothek:
-    from modul1_geodata import run_modul1
+    from potenzial_engine.modul1_geodata import run_modul1
     result = run_modul1("Bahnhofstrasse 1, 8001 Zuerich")
 """
 
@@ -57,8 +57,8 @@ import urllib.parse
 import requests
 from pydantic import BaseModel
 
-from modul1b_nutzungsklassifikation import klassifiziere_nutzung
-from restriktionsgeometrie import hole_restriktionen_fuer_parzelle
+from .modul1b_nutzungsklassifikation import klassifiziere_nutzung
+from .restriktionsgeometrie import hole_restriktionen_fuer_parzelle
 
 GEOADMIN_BASE = "https://api3.geo.admin.ch/rest/services/api"
 HEIGHT_URL = "https://api3.geo.admin.ch/rest/services/height"

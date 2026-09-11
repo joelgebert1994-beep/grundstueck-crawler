@@ -44,7 +44,7 @@ CLI:
     python modul2_bzo_analysis.py --file "./bauordnung.pdf"
 
 Als Bibliothek:
-    from modul2_bzo_analysis import analyze_bzo_document
+    from potenzial_engine.modul2_bzo_analysis import analyze_bzo_document
     result = analyze_bzo_document(pdf_bytes=..., gemeinde="Zuerich", kanton="ZH")
 """
 
@@ -716,7 +716,7 @@ def main() -> None:
                 pdf_bytes = f.read()
             result = analyze_bzo_document(pdf_bytes, gemeinde=args.gemeinde, kanton=args.kanton, backend=args.backend)
         else:
-            from modul1_geodata import run_modul1
+            from .modul1_geodata import run_modul1
 
             modul1_result = run_modul1(args.address)
             oereb = modul1_result.get("oereb", {})

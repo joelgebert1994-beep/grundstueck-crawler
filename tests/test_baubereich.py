@@ -28,7 +28,7 @@ import sys
 
 from shapely.geometry import Polygon
 
-from baubereich import berechne_baubereich_polygon, berechne_potenzial
+from potenzial_engine.baubereich import berechne_baubereich_polygon, berechne_potenzial
 
 FEHLER: list[str] = []
 

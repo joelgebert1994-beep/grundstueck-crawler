@@ -45,7 +45,7 @@ import requests
 from shapely.geometry import LineString, Polygon
 from shapely.ops import split
 
-from modul1b_nutzungsklassifikation import (
+from .modul1b_nutzungsklassifikation import (
     NutzungsklassifikationError,
     extrahiere_koordinatenlisten,
     klassifiziere_nutzung,

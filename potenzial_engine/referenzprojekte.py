@@ -33,8 +33,8 @@ from pathlib import Path
 from statistics import median_low
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from entwicklungsszenarien import Szenariotyp
-from sia416_flaechen import BandbreitenWert, FlaechenverhaeltnisBandbreite
+from .entwicklungsszenarien import Szenariotyp
+from .sia416_flaechen import BandbreitenWert, FlaechenverhaeltnisBandbreite
 
 DATENQUALITAET_VOLLSTAENDIG_VERIFIZIERT = "vollstaendig_verifiziert"
 DATENQUALITAET_TEILWEISE_VERIFIZIERT = "teilweise_verifiziert"

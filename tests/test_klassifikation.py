@@ -29,8 +29,8 @@ from __future__ import annotations
 
 import sys
 
-from modul1_geodata import run_modul1
-from modul3_financial import ermittle_zonenzuordnung, run_from_modul_results
+from potenzial_engine.modul1_geodata import run_modul1
+from potenzial_engine.modul3_financial import ermittle_zonenzuordnung, run_from_modul_results
 
 FEHLER: list[str] = []
 
@@ -189,7 +189,7 @@ def test_parzellenauswahl_am_punkt() -> None:
     analysiert.
     """
     print("=== Parzellenauswahl: es muss die Parzelle gewaehlt werden, die den Punkt ENTHAELT ===")
-    from modul1_geodata import _identify, _point_in_polygon, LAYER_PARCEL, get_parcel_data
+    from potenzial_engine.modul1_geodata import _identify, _point_in_polygon, LAYER_PARCEL, get_parcel_data
 
     e, n = 2647661.0, 1248717.25  # Rosenweg 4, 5033 Buchs AG (amtliches Geocoding)
 

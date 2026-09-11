@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from modul1_geodata import (
+from .modul1_geodata import (
     GEOADMIN_BASE,
     HEIGHT_URL,
     LAYER_CADASTRE_GEOM,

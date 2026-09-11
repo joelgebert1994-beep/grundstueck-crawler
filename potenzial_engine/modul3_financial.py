@@ -33,7 +33,7 @@ CLI:
     python modul3_financial.py --parzelle-m2 500 --az 1.2 --bestand-bgf-m2 350 --verkaufspreis-m2 12000
 
 Als Bibliothek:
-    from modul3_financial import run_full_pipeline
+    from potenzial_engine.modul3_financial import run_full_pipeline
     result = run_full_pipeline("Bahnhofstrasse 1, 8001 Zuerich", verkaufspreis_chf_pro_m2=14000)
 """
 
@@ -784,8 +784,8 @@ def run_full_pipeline(
 
     backend: an Modul 2 durchgereicht -- "gemini" (Standard, kostenlos) oder "claude".
     """
-    from modul1_geodata import run_modul1
-    from modul2_bzo_analysis import analyze_from_oereb_result
+    from .modul1_geodata import run_modul1
+    from .modul2_bzo_analysis import analyze_from_oereb_result
 
     modul1_result = run_modul1(address)
 
@@ -825,8 +825,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    from modul1_geodata import Modul1Error
-    from modul2_bzo_analysis import Modul2Error
+    from .modul1_geodata import Modul1Error
+    from .modul2_bzo_analysis import Modul2Error
 
     try:
         if args.address:

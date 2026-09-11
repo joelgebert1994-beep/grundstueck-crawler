@@ -12,7 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from referenzprojekte import (
+from potenzial_engine.referenzprojekte import (
     DATENQUALITAET_GESCHAETZT,
     DATENQUALITAET_VOLLSTAENDIG_VERIFIZIERT,
     GEBAEUDETYP_MFH,
