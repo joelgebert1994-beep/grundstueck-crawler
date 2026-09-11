@@ -735,6 +735,7 @@ var SEKTIONEN = [
   ["sec-baurecht", "Baurecht"],
   ["sec-restriktionen", "Restriktionen"],
   ["sec-potenzial", "Potenzial"],
+  ["sec-flaechen", "Flächen & Wohnungen"],
   ["sec-entwicklung", "Entwicklung"],
   ["sec-quellen", "Quellen"],
   ["sec-wirtschaft", "Wirtschaftlichkeit"]
@@ -794,7 +795,7 @@ function renderDossier(erg) {
       return '<button data-sec="' + s[0] + '">' + s[1] + "</button>";
     }).join("") + "</nav>" +
     secGrundstueck(m1) + secStandort(m1) + secBaurecht(erg, m1, zz) +
-    secRestriktionen(m1) + secPotenzial(erg) + secEntwicklung(erg) +
+    secRestriktionen(m1) + secPotenzial(erg) + secFlaechen(erg) + secEntwicklung(erg) +
     secQuellen(erg) + secWirtschaft(erg);
   verdrahteDossier();
 }
@@ -1261,6 +1262,166 @@ var SZ_LABEL = {
   ersatzneubau: "Ersatzneubau",
   kombination_bestand_neubau: "Bestand + neuer Baukörper"
 };
+/* --- 06 Flaechen & Wohnungen (Stufe 3) --- */
+var HERKUNFT_BADGE = {
+  berechnet: ["berechnet", "ok"],
+  systemannahme: ["Systemannahme", "warn"],
+  benutzerannahme: ["meine Annahme", "ok"],
+  referenz: ["Marktreferenz", "mute"],
+  nicht_bestimmbar: ["nicht bestimmbar", "warn"]
+};
+var FLAECHEN_LABEL = {
+  geschossflaeche_gf: "Geschossfläche GF",
+  konstruktionsflaeche_kf: "Konstruktionsfläche KF",
+  nettogeschossflaeche_ngf: "Nettogeschossfläche NGF",
+  verkehrs_und_funktionsflaeche_vf_ff: "Verkehrs- und Funktionsfläche VF+FF",
+  nutzflaeche_nf: "Nutzfläche NF",
+  hauptnutzflaeche_hnf: "Hauptnutzfläche HNF",
+  nebennutzflaeche_nnf: "Nebennutzfläche NNF",
+  uebrige_flaechen_vf_ff_kf: "übrige Flächen (VF+FF+KF)",
+  wohnflaeche_nwf: "Wohnfläche NWF"
+};
+function annahmenTabelle(annahmen) {
+  var keys = Object.keys(annahmen || {});
+  if (!keys.length) return "";
+  return '<div class="scroller"><table class="src"><thead><tr><th>Annahme</th><th>Wert</th><th>Herkunft</th><th>üblicher Bereich</th><th>Begründung</th></tr></thead><tbody>' +
+    keys.map(function (k) {
+      var a = annahmen[k];
+      var badge = HERKUNFT_BADGE[a.herkunft] || [a.herkunft, "mute"];
+      var bereich = a.referenzbereich ? a.referenzbereich[0] + " – " + a.referenzbereich[1] : "–";
+      return '<tr><td class="f">' + esc(a.schluessel) + "</td>" +
+        "<td>" + esc(a.wert) + (a.einheit === "m" ? " m" : "") + "</td>" +
+        '<td><span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></td>" +
+        "<td>" + esc(bereich) + "</td>" +
+        "<td>" + esc(a.begruendung) + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+}
+function rechenwegTabelle(rechenweg) {
+  if (!rechenweg || !rechenweg.length) return "";
+  return '<div class="scroller"><table class="src"><thead><tr><th>Schritt</th><th>Eingang</th><th>Operation</th><th>Ergebnis</th><th>Herkunft</th></tr></thead><tbody>' +
+    rechenweg.map(function (s) {
+      var name = FLAECHEN_LABEL[s.schritt] || s.schritt;
+      return "<tr><td>" + esc(name) + "</td>" +
+        "<td>" + (leer(s.eingang) ? "–" : fmt(s.eingang, 1)) + "</td>" +
+        '<td class="f">' + esc(s.operation) + "</td>" +
+        "<td>" + (leer(s.ausgang) ? '<span class="na">nicht bestimmbar</span>' : "<b>" + fmt(s.ausgang, 1) + "</b> " + esc(s.einheit)) + "</td>" +
+        "<td>" + esc(s.herkunft) + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+}
+function wohnungsBlock(w) {
+  if (!w || w.status === "nicht_bestimmbar") {
+    return '<div class="note warn"><b>Keine Wohnungsstruktur.</b> ' + esc((w || {}).grund) + "</div>";
+  }
+  var zeilen = alsListe(w.typen).map(function (t) {
+    return "<tr><td>" + esc(t.typ) + "</td>" +
+      "<td>" + (leer(t.anteil) ? "–" : Math.round(t.anteil * 100) + " %") + "</td>" +
+      "<td><b>" + esc(t.anzahl) + "</b></td>" +
+      "<td>" + fmt(t.flaeche_pro_einheit_m2, 0) + " m²</td>" +
+      "<td>" + fmt(t.flaeche_total_m2, 1) + " m²</td>" +
+      "<td>" + (leer(t.ist_anteil) ? "–" : Math.round(t.ist_anteil * 100) + " %") + "</td></tr>";
+  }).join("");
+  return '<div class="tiles">' +
+      tile("Wohnungen", w.anzahl_wohnungen) +
+      tile("Ø Fläche", leer(w.durchschnittsflaeche_m2) ? null : fmt(w.durchschnittsflaeche_m2, 0), "m²") +
+      tile("belegt", leer(w.belegte_flaeche_m2) ? null : fmt(w.belegte_flaeche_m2, 0), "m²") +
+      tile("Restfläche", leer(w.restflaeche_m2) ? null : fmt(w.restflaeche_m2, 0), "m²") +
+    "</div>" +
+    '<div class="scroller"><table class="src"><thead><tr><th>Typ</th><th>Soll-Anteil</th><th>Anzahl</th><th>Fläche/Einheit</th><th>Fläche total</th><th>Ist-Anteil</th></tr></thead><tbody>' +
+      zeilen + "</tbody></table></div>" +
+    (w.hinweis ? '<div class="note' + (w.passt === false ? " warn" : "") + '">' + esc(w.hinweis) + "</div>" : "");
+}
+function volumenBlock(v) {
+  if (!v || !v.gilt) return "";
+  return '<h4 class="subhead">Volumen (Baumassenziffer)</h4>' +
+    kvRows([
+      ["baurechtlich zulässig", leer(v.zulaessiges_volumen_m3) ? null : fmt(v.zulaessiges_volumen_m3, 0) + " m³"],
+      ["geometrisch umsetzbar", leer(v.geometrisch_moegliches_volumen_m3) ? null : fmt(v.geometrisch_moegliches_volumen_m3, 0) + " m³"],
+      ["massgebend", leer(v.massgebendes_volumen_m3) ? null : fmt(v.massgebendes_volumen_m3, 0) + " m³ (" + v.bindend + ")"]
+    ]) + (v.hinweis ? '<div class="note">' + esc(v.hinweis) + "</div>" : "");
+}
+function geschossBlock(ga) {
+  var gg = alsListe((ga || {}).geschosse);
+  if (!gg.length) {
+    return '<h4 class="subhead">Geschosse</h4><div class="note warn">' +
+      esc(alsListe((ga || {}).offene_punkte).join(" ")) + "</div>";
+  }
+  var ja = function (b) { return b ? '<span class="badge ok">ja</span>' : '<span class="badge mute">nein</span>'; };
+  return '<h4 class="subhead">Geschosse</h4>' +
+    '<div class="scroller"><table class="src"><thead><tr><th>Geschoss</th><th>Art</th><th>Fläche</th><th>Vollgeschoss</th><th>zählt zur GF</th><th>Wohnnutzung</th></tr></thead><tbody>' +
+    gg.map(function (g) {
+      return "<tr><td><b>" + esc(g.bezeichnung) + "</b></td><td>" + esc(g.art) + "</td>" +
+        "<td>" + (leer(g.flaeche_m2) ? "–" : fmt(g.flaeche_m2, 1) + " m²") + "</td>" +
+        "<td>" + ja(g.zaehlt_als_vollgeschoss) + "</td><td>" + ja(g.zaehlt_zur_geschossflaeche) + "</td>" +
+        "<td>" + ja(g.wohnnutzung_moeglich) + "</td></tr>";
+    }).join("") + "</tbody></table></div>" +
+    alsListe(ga.hinweise).map(function (h) { return '<div class="note">' + esc(h) + "</div>"; }).join("") +
+    alsListe(ga.offene_punkte).map(function (h) { return '<div class="note warn">' + esc(h) + "</div>"; }).join("");
+}
+function hoehenBlock(h) {
+  if (!h || !h.geschosshoehe_m) return "";
+  return '<h4 class="subhead">Höhen</h4>' +
+    kvRows([
+      ["Geschosshöhe (Rohboden–Rohboden)", h.geschosshoehe_m.wert + " m"],
+      ["lichte Raumhöhe", h.lichte_raumhoehe_m.wert + " m"],
+      ["konstruktive Höhe", h.konstruktive_hoehe_m + " m"]
+    ]) + '<div class="note">' + esc(h.abgrenzung) + "</div>" +
+    alsListe(h.hinweise).map(function (x) { return '<div class="note warn">' + esc(x) + "</div>"; }).join("");
+}
+function flaechenErgebnis(f) {
+  var fl = f.flaechen || {};
+  var reihe = ["geschossflaeche_gf", "nettogeschossflaeche_ngf", "nutzflaeche_nf",
+               "hauptnutzflaeche_hnf", "wohnflaeche_nwf"];
+  return '<div class="tiles">' + reihe.map(function (k) {
+      var w = fl[k] || {};
+      return tile(FLAECHEN_LABEL[k] || k, leer(w.wert) ? null : fmt(w.wert, 0), "m²", k === "wohnflaeche_nwf");
+    }).join("") + "</div>" +
+    '<h4 class="subhead">Rechenweg</h4>' + rechenwegTabelle(f.rechenweg) +
+    '<h4 class="subhead">Wohnungen</h4>' + wohnungsBlock(f.wohnungen) +
+    volumenBlock(f.volumen) + geschossBlock(f.geschossaufbau) +
+    '<h4 class="subhead">Annahmen — alle überschreibbar</h4>' +
+    '<div class="note">Die Geschossfläche stammt aus der realen Geometrie. Alles danach beruht auf diesen Annahmen: SIA 416 definiert Messgrössen, keine Verhältnisse zwischen ihnen. Eine Benutzerannahme hat immer Vorrang vor dem Systemvorschlag.</div>' +
+    annahmenTabelle(f.annahmen) + hoehenBlock(f.hoehenmodell);
+}
+function secFlaechen(erg) {
+  var f = erg.flaechen_und_wohnungen;
+  var kopf = '<div class="sechead"><span class="num">06</span><h3>Flächen &amp; Wohnungen</h3></div>';
+  if (!f) {
+    return '<section class="sec" id="sec-flaechen">' + kopf +
+      '<div class="note warn"><b>Keine Flächenkaskade.</b> Ohne G1-Ergebnis gibt es keine Geschossfläche, aus der sich Flächen ableiten liessen — siehe Abschnitt 05.</div></section>';
+  }
+  var pruef = alsListe(f.datenpruefung).map(function (b) {
+    return '<div class="note stop"><b>Datenprüfung:</b> ' + esc(b.meldung) + "</div>";
+  }).join("");
+
+  if (f.status === "nicht_bestimmbar") {
+    return '<section class="sec" id="sec-flaechen">' + kopf + pruef +
+      '<div class="note warn"><b>Flächen nicht bestimmbar.</b> ' + esc(f.grund) + "</div></section>";
+  }
+  if (f.status === "bandbreite") {
+    var namen = Object.keys(f.szenarien || {});
+    var spanne = f.spanne || {};
+    var wSpanne = alsListe(f.wohnungen_spanne);
+    return '<section class="sec" id="sec-flaechen">' + kopf + pruef +
+      '<div class="note warn"><b>Ergebnis als Bandbreite.</b> ' + esc(f.grund) + "</div>" +
+      '<div class="scroller"><table class="src"><thead><tr><th>Grösse</th><th>von</th><th>bis</th></tr></thead><tbody>' +
+      Object.keys(spanne).map(function (k) {
+        var v = spanne[k] || [];
+        if (!v.length) return "";
+        return "<tr><td>" + esc(FLAECHEN_LABEL[k] || k) + "</td><td>" + fmt(v[0], 1) + " m²</td><td>" +
+          fmt(v[v.length - 1], 1) + " m²</td></tr>";
+      }).join("") +
+      (wSpanne.length
+        ? "<tr><td>Wohnungen</td><td>" + esc(wSpanne[0]) + "</td><td>" + esc(wSpanne[wSpanne.length - 1]) + "</td></tr>"
+        : "") +
+      "</tbody></table></div>" +
+      namen.map(function (n) {
+        return '<details class="more"><summary>' + esc(SZENARIO_G1_LABEL[n] || n) + " — vollständiger Rechenweg</summary><div>" +
+          flaechenErgebnis(f.szenarien[n]) + "</div></details>";
+      }).join("") + "</section>";
+  }
+  return '<section class="sec" id="sec-flaechen">' + kopf + pruef + flaechenErgebnis(f) + "</section>";
+}
+
 function secEntwicklung(erg) {
   return '<section class="sec" id="sec-entwicklung">' +
     '<div class="sechead"><span class="num">06</span><h3>Entwicklungsszenarien</h3><span class="right"><span class="badge mute">Struktur, noch nicht gerechnet</span></span></div>' +

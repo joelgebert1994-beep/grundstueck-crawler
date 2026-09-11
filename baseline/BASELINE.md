@@ -29,8 +29,9 @@ Vollstaendiges Protokoll: [`testlauf_2026-09-11.txt`](testlauf_2026-09-11.txt)
 
 **6/6 Suiten, 311 einzelne OK-Zusicherungen, alle Exitcodes 0.**
 
-Seither hinzugekommen: `test_abrufmechanik.py` (Stufe 1) und
-`test_kantenklassifikation.py` (Stufe 2), beide vollstaendig offline.
+Seither hinzugekommen: `test_abrufmechanik.py` (Stufe 1),
+`test_kantenklassifikation.py` (Stufe 2) und `test_flaechenmodell.py`
+(Stufe 3), alle drei vollstaendig offline.
 `python -m tests.alle` fuehrt alle Suiten der Engine aus und ist seit Stufe 1
 die verbindliche Liste; `--offline` laesst die beiden Netz-Suiten weg.
 
@@ -68,6 +69,28 @@ Modul 3:   None (kein Verkaufspreis uebergeben)
 
 Diese G1-Werte wurden am 04.09. und am 11.09. unabhaengig voneinander auf zwei
 Nachkommastellen identisch reproduziert — die Geometriekaskade ist stabil.
+
+### Aenderung durch Stufe 3 (11.09.2026, Flaechenmodell)
+
+Zwei Verfahrensaenderungen, die Zahlen bewegen -- beide korrigieren einen
+Fehler, nicht eine Konvention:
+
+* **Wohnungsverteilung** laeuft ueber den groessten Rest auf der ANZAHL statt
+  ueber typweises Abrunden der Flaeche. Referenzfall 680 m2 / Mix 60-40
+  (65/95 m2): frueher 6 + 2 Wohnungen, jetzt 5 + 3 -- der Ist-Anteil 62.5 %
+  trifft den Soll-Anteil 60 % deutlich besser als die frueheren 75 %. Die
+  Gesamtzahl bleibt 8.
+* **Die SIA-416-Kaskade** kennt neu die NGF und den detaillierten Weg
+  (KF/GF plus (VF+FF)/NGF). Der pauschale Weg ueber ein einziges NF/GF-
+  Verhaeltnis liefert unveraendert dieselben Werte wie bisher.
+
+Buchs AG, vollstaendige Kette (Stand nach Stufe 2/3):
+
+```
+GF   299.44 m2  (AZ 0.5 bindet; Geometrie haette 351.3 zugelassen)
+KF    44.9 m2 -> NGF 254.5 m2 -> VF+FF 35.6 m2 -> NF 218.9 m2
+HNF  197.0 m2 -> NWF 197.0 m2 -> 2 Wohnungen, 47.0 m2 Rest
+```
 
 ### Aenderung durch Stufe 2 (11.09.2026, Kantenklassifikation)
 

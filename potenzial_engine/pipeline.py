@@ -30,6 +30,11 @@ from typing import Any, Optional
 
 from .entwicklungsszenarien import SZENARIO_ANFORDERUNGEN
 from .g1_verdrahtung import G1VerdrahtungError, berechne_g1_fuer_fall
+from .flaechenmodell import (
+    PROFIL_WOHNUNGSBAU_MFH,
+    WohnungstypVorgabe,
+    berechne_flaechen_und_wohnungen,
+)
 from .kantenklassifikation import quellen_fuer_kanten
 from .modul1_geodata import Modul1Error, run_modul1
 from .modul2_bzo_analysis import analyze_from_oereb_result
@@ -161,6 +166,98 @@ def _preis_pro_m2(
     return verkaufspreis_total_chf / flaeche
 
 
+def _g1_einzelergebnis(g1_ergebnis: Optional[dict]) -> Optional[dict]:
+    """Das eine G1-Ergebnis, auf dem die Flaechenkaskade aufsetzt.
+
+    Im Bandbreiten-Modus gibt es kein einzelnes Ergebnis -- dann liefert diese
+    Funktion `None`, und die Kaskade meldet das als nicht bestimmbar, statt
+    sich stillschweigend einen der beiden Raender auszusuchen.
+    """
+    if not g1_ergebnis:
+        return None
+    return g1_ergebnis.get("ergebnis")
+
+
+def _flaechen_fuer_g1_ergebnis(
+    g1_ergebnis: Optional[dict],
+    zonen_zuordnung: dict,
+    *,
+    benutzerwerte: Optional[dict[str, float]] = None,
+    wohnungsmix: Optional[list] = None,
+    wohnungsmix_begruendung: str = "",
+    profil: str = PROFIL_WOHNUNGSBAU_MFH,
+) -> Optional[dict]:
+    def rechne(g1_einzel: dict) -> dict:
+        return berechne_flaechen_und_wohnungen(
+            g1_einzel,
+            zone=zonen_zuordnung.get("zone"),
+            profil=profil,
+            benutzerwerte=benutzerwerte,
+            wohnungsmix=wohnungsmix,
+            wohnungsmix_begruendung=wohnungsmix_begruendung,
+        )
+
+    einzel = _g1_einzelergebnis(g1_ergebnis)
+    if einzel is not None:
+        return rechne(einzel)
+
+    szenarien = (g1_ergebnis or {}).get("szenarien") or {}
+    if not szenarien:
+        return None
+
+    # Ist die Kantenzuordnung unvollstaendig, liefert G1 zwei Raender statt
+    # eines Ergebnisses. Einen davon auszuwaehlen waere Willkuer -- beide
+    # durchzurechnen und als Bandbreite auszuweisen ist die ehrliche Form.
+    gerechnet = {name: rechne(erg) for name, erg in szenarien.items()}
+    return {
+        "status": "bandbreite",
+        "grund": (
+            "Die Kantenzuordnung ist unvollstaendig, deshalb liefert G1 zwei Raender "
+            "statt eines Ergebnisses. Die Flaechenkaskade wurde fuer beide gerechnet; "
+            "das reale Ergebnis liegt dazwischen. Siehe das Kantenprotokoll fuer die "
+            "offenen Kanten."
+        ),
+        "szenarien": gerechnet,
+        "spanne": {
+            feld: sorted(
+                w for w in (
+                    ((e.get("flaechen") or {}).get(feld) or {}).get("wert") for e in gerechnet.values()
+                ) if w is not None
+            )
+            for feld in ("geschossflaeche_gf", "nutzflaeche_nf", "hauptnutzflaeche_hnf", "wohnflaeche_nwf")
+        },
+        "wohnungen_spanne": sorted(
+            n for n in ((e.get("wohnungen") or {}).get("anzahl_wohnungen") for e in gerechnet.values())
+            if n is not None
+        ),
+    }
+
+
+def berechne_flaechen(
+    analyse: Analyse,
+    *,
+    benutzerwerte: Optional[dict[str, float]] = None,
+    wohnungsmix: Optional[list[WohnungstypVorgabe]] = None,
+    wohnungsmix_begruendung: str = "",
+    profil: str = PROFIL_WOHNUNGSBAU_MFH,
+) -> Optional[dict]:
+    """Rechnet die Flaechenkaskade und die Wohnungsstruktur neu.
+
+    Arbeitet auf einer bereits erstellten Analyse: Geodaten, Reglement und
+    Geometrie werden NICHT erneut abgerufen. Ein geaenderter Abzug oder ein
+    anderer Wohnungsmix kostet damit Millisekunden statt Minuten -- die
+    Voraussetzung dafuer, dass die Werte im Produkt frei einstellbar sind.
+    """
+    return _flaechen_fuer_g1_ergebnis(
+        analyse.ergebnis.get("g1_ergebnis"),
+        analyse.ergebnis.get("zonen_zuordnung") or {},
+        benutzerwerte=benutzerwerte,
+        wohnungsmix=wohnungsmix,
+        wohnungsmix_begruendung=wohnungsmix_begruendung,
+        profil=profil,
+    )
+
+
 def analysiere_grundstueck(adresse: str) -> Analyse:
     """Vollstaendige baurechtliche Potenzialanalyse fuer eine Adresse.
 
@@ -207,6 +304,13 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
 
     sia416_ergebnis = _sia416_fuer_g1_ergebnis(g1_ergebnis)
 
+    # Stufe 3: die Bruecke Baurecht -> Flaeche -> Wohnung. Ohne Wohnungsmix,
+    # weil der eine Benutzerentscheidung ist -- die Flaechenkaskade steht
+    # trotzdem vollstaendig da, und die Wohnungszahl meldet sich ehrlich als
+    # nicht bestimmbar. Nachtraeglich mit eigenen Annahmen neu rechenbar
+    # ueber berechne_flaechen(), ohne erneute Geo-/Gemini-Abfrage.
+    flaechenmodell_ergebnis = _flaechen_fuer_g1_ergebnis(g1_ergebnis, zonen_zuordnung)
+
     # Quellenobjekte: Rueckverfolgbarkeit jedes amtlichen Modul-1-Werts auf
     # Endpunkt/Layer/URL -- vor dem Trimmen berechnet (unabhaengig davon, ob
     # raw_attributes/raw_extract fuer die Anzeige weggeschnitten werden).
@@ -222,6 +326,7 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
         "g1_ergebnis": g1_ergebnis,
         "g1_fehler": g1_fehler,
         "sia416_ergebnis": sia416_ergebnis,
+        "flaechen_und_wohnungen": flaechenmodell_ergebnis,
         "quellen": quellen,
         "entwicklungsszenarien": ENTWICKLUNGSSZENARIEN_INFO,
         "modul2_bzo_analyse": modul2_result,

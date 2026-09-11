@@ -136,7 +136,7 @@ def test_7_wohnungsmix_anteile_muessen_1_ergeben() -> None:
 
 
 def test_8_wohnungsmix_verteilung_mit_transparentem_rest() -> None:
-    print("=== 8) Wohnungsmix-Verteilung: ganze Einheiten + transparenter Rest, kein Runden ===")
+    print("=== 8) Wohnungsmix-Verteilung: groesster Rest auf der Anzahl, kein Runden der Flaeche ===")
     mix = Wohnungsmix(
         typen=[
             WohnungstypAnteil("2.5-Zimmer", 0.6, 65.0),
@@ -148,15 +148,115 @@ def test_8_wohnungsmix_verteilung_mit_transparentem_rest() -> None:
     pruefe(ergebnis is not None, "Ergebnis vorhanden")
     typ_klein = next(t for t in ergebnis.typen if t.typ == "2.5-Zimmer")
     typ_gross = next(t for t in ergebnis.typen if t.typ == "4.5-Zimmer")
-    # 680*0.6 = 408.0 HNF fuer 2.5-Zi -> 408/65 = 6 ganze (390) + Rest 18.0
-    pruefe(typ_klein.hnf_zugewiesen_m2 == 408.0, f"2.5-Zi HNF zugewiesen = 408.0 (tatsaechlich {typ_klein.hnf_zugewiesen_m2})")
-    pruefe(typ_klein.anzahl_ganze_einheiten == 6, f"2.5-Zi ganze Einheiten = 6 (tatsaechlich {typ_klein.anzahl_ganze_einheiten})")
-    pruefe(typ_klein.rest_hnf_m2 == 18.0, f"2.5-Zi Rest = 18.0 (tatsaechlich {typ_klein.rest_hnf_m2})")
-    # 680*0.4 = 272.0 HNF fuer 4.5-Zi -> 272/95 = 2 ganze (190) + Rest 82.0
-    pruefe(typ_gross.anzahl_ganze_einheiten == 2, f"4.5-Zi ganze Einheiten = 2 (tatsaechlich {typ_gross.anzahl_ganze_einheiten})")
-    pruefe(typ_gross.rest_hnf_m2 == 82.0, f"4.5-Zi Rest = 82.0 (tatsaechlich {typ_gross.rest_hnf_m2})")
-    pruefe(ergebnis.gesamtanzahl_ganze_einheiten == 8, f"Gesamt ganze Einheiten = 8 (tatsaechlich {ergebnis.gesamtanzahl_ganze_einheiten})")
+
+    # Mittlere Wohnungsgroesse im Mix: 0.6*65 + 0.4*95 = 77.0 m2
+    # -> 680 / 77 = 8.8 -> 8 Wohnungen insgesamt.
+    # Soll je Typ: 4.8 und 3.2 -> ganze 4 und 3, eine Einheit bleibt uebrig,
+    # sie geht an den groesseren Rest (0.8 > 0.2) -> 5 und 3.
+    pruefe(ergebnis.durchschnittsflaeche_pro_einheit_m2 == 77.0,
+           f"mittlere Wohnungsgroesse im Mix = 77.0 (tatsaechlich {ergebnis.durchschnittsflaeche_pro_einheit_m2})")
+    pruefe(ergebnis.gesamtanzahl_ganze_einheiten == 8,
+           f"Gesamt ganze Einheiten = 8 (tatsaechlich {ergebnis.gesamtanzahl_ganze_einheiten})")
+    pruefe(typ_klein.anzahl_ganze_einheiten == 5,
+           f"2.5-Zi ganze Einheiten = 5 (tatsaechlich {typ_klein.anzahl_ganze_einheiten})")
+    pruefe(typ_gross.anzahl_ganze_einheiten == 3,
+           f"4.5-Zi ganze Einheiten = 3 (tatsaechlich {typ_gross.anzahl_ganze_einheiten})")
+
+    # Der Ist-Anteil (5/8 = 62.5 %) trifft den Soll-Anteil (60 %) deutlich besser
+    # als das frueher verwendete typweise Abrunden der Flaeche (das ergab 6/8 = 75 %).
+    ist_anteil_klein = typ_klein.anzahl_ganze_einheiten / ergebnis.gesamtanzahl_ganze_einheiten
+    pruefe(abs(ist_anteil_klein - 0.6) <= abs(0.75 - 0.6),
+           f"Ist-Anteil {ist_anteil_klein:.3f} liegt naeher am Soll 0.6 als das alte Verfahren (0.75)")
+
+    pruefe(typ_klein.hnf_sollanteil_m2 == 408.0,
+           f"2.5-Zi Sollanteil = 680*0.6 = 408.0 (tatsaechlich {typ_klein.hnf_sollanteil_m2})")
+    pruefe(typ_klein.belegte_hnf_m2 == 325.0,
+           f"2.5-Zi belegt = 5*65 = 325.0 (tatsaechlich {typ_klein.belegte_hnf_m2})")
+    pruefe(typ_gross.belegte_hnf_m2 == 285.0,
+           f"4.5-Zi belegt = 3*95 = 285.0 (tatsaechlich {typ_gross.belegte_hnf_m2})")
+    pruefe(typ_gross.abweichung_vom_sollanteil_m2 == 13.0,
+           f"4.5-Zi liegt 13.0 m2 ueber seinem Sollanteil (tatsaechlich {typ_gross.abweichung_vom_sollanteil_m2})")
+
+    pruefe(ergebnis.belegte_hnf_m2 == 610.0, f"belegte HNF = 610.0 (tatsaechlich {ergebnis.belegte_hnf_m2})")
+    pruefe(ergebnis.gesamt_rest_hnf_m2 == 70.0, f"Restflaeche = 680-610 = 70.0 (tatsaechlich {ergebnis.gesamt_rest_hnf_m2})")
+    pruefe(ergebnis.belegte_hnf_m2 <= 680.0, "die belegte Flaeche uebersteigt die vorhandene NIE")
     pruefe("Marktanalyse Gemeinde X" in ergebnis.unklarheit, "Begruendung des Mix bleibt im Ergebnis sichtbar")
+    print()
+
+
+def test_8b_kleines_gebaeude_liefert_trotzdem_wohnungen() -> None:
+    """Regression: das frueher verwendete typweise Abrunden der Flaeche lieferte
+    bei kleinen Gebaeuden UEBERALL 0 Wohnungen und wies die gesamte Flaeche als
+    'Rest' aus -- rechnerisch nicht falsch, als Aussage unbrauchbar."""
+    print("=== 8b) Kleines Gebaeude: die Verteilung darf nicht bei 0 Wohnungen enden ===")
+    mix = Wohnungsmix(
+        typen=[
+            WohnungstypAnteil("2.5-Zimmer", 0.2, 62.0),
+            WohnungstypAnteil("3.5-Zimmer", 0.5, 88.0),
+            WohnungstypAnteil("4.5-Zimmer", 0.3, 112.0),
+        ],
+        begruendung="Regressionsfall kleines Mehrfamilienhaus",
+    )
+    ergebnis = berechne_wohnungsanzahl(154.1, mix)
+    # Mittlere Groesse 0.2*62 + 0.5*88 + 0.3*112 = 90.0 -> 154.1/90 = 1.7 -> 1 Wohnung.
+    pruefe(ergebnis.gesamtanzahl_ganze_einheiten == 1,
+           f"eine Wohnung statt null (tatsaechlich {ergebnis.gesamtanzahl_ganze_einheiten})")
+    belegt = next(t for t in ergebnis.typen if t.anzahl_ganze_einheiten > 0)
+    pruefe(belegt.typ == "3.5-Zimmer", f"sie geht an den groessten Mix-Anteil (tatsaechlich {belegt.typ})")
+    pruefe(ergebnis.belegte_hnf_m2 <= 154.1, "die Wohnung passt in die vorhandene Flaeche")
+    pruefe(ergebnis.gesamt_rest_hnf_m2 == round(154.1 - 88.0, 1),
+           f"der Rest ist die tatsaechlich freie Flaeche (tatsaechlich {ergebnis.gesamt_rest_hnf_m2})")
+    print()
+
+
+def test_8d_zu_grosse_wohnung_wird_ersetzt_nicht_gestrichen() -> None:
+    """Regression aus dem Realfall Buchs AG: 197 m2 Wohnflaeche, Mix 20/50/30
+    (62/88/112 m2). Der groesste Rest verteilt auf 3.5-Zi + 4.5-Zi = 200 m2 --
+    2.9 m2 zu viel. Wer dann nur die grosse Wohnung streicht, kommt auf EINE
+    Wohnung mit 109 m2 Rest, obwohl zwei hineinpassen. Die grosse Wohnung muss
+    durch eine kleinere ersetzt werden, nicht ersatzlos entfallen."""
+    print("=== 8d) Zu grosse Wohnung wird durch eine kleinere ersetzt, nicht gestrichen ===")
+    mix = Wohnungsmix(
+        typen=[
+            WohnungstypAnteil("2.5-Zimmer", 0.2, 62.0),
+            WohnungstypAnteil("3.5-Zimmer", 0.5, 88.0),
+            WohnungstypAnteil("4.5-Zimmer", 0.3, 112.0),
+        ],
+        begruendung="Realfall Buchs AG",
+    )
+    e = berechne_wohnungsanzahl(197.0, mix)
+    pruefe(e.gesamtanzahl_ganze_einheiten == 2,
+           f"zwei Wohnungen statt einer (tatsaechlich {e.gesamtanzahl_ganze_einheiten})")
+    pruefe(e.belegte_hnf_m2 == 150.0,
+           f"62 + 88 = 150 m2 belegt (tatsaechlich {e.belegte_hnf_m2})")
+    pruefe(e.belegte_hnf_m2 <= 197.0, "und passt in die vorhandene Flaeche")
+    pruefe(e.gesamt_rest_hnf_m2 == 47.0,
+           f"Rest 47 m2 statt 109 m2 (tatsaechlich {e.gesamt_rest_hnf_m2})")
+    gross = next(t for t in e.typen if t.typ == "4.5-Zimmer")
+    pruefe(gross.anzahl_ganze_einheiten == 0, "die nicht passende 4.5-Zi-Wohnung entfaellt")
+    print()
+
+
+def test_8c_belegung_uebersteigt_flaeche_nie() -> None:
+    """Die mittlere Wohnungsgroesse ist ein Durchschnitt -- verschiebt der
+    groesste Rest die Verteilung zu den grossen Typen, koennte die belegte
+    Flaeche die vorhandene knapp uebersteigen. Dann wird eine Einheit
+    abgezogen, statt eine Wohnung auszuweisen, die nicht hineinpasst."""
+    print("=== 8c) Die belegte Flaeche uebersteigt die vorhandene nie ===")
+    mix = Wohnungsmix(
+        typen=[
+            WohnungstypAnteil("1.5-Zimmer", 0.5, 40.0),
+            WohnungstypAnteil("5.5-Zimmer", 0.5, 160.0),
+        ],
+        begruendung="Extremer Mix zur Pruefung der Flaechendeckung",
+    )
+    for flaeche in (100.0, 199.0, 200.0, 250.0, 399.0, 1000.0):
+        ergebnis = berechne_wohnungsanzahl(flaeche, mix)
+        pruefe(
+            ergebnis.belegte_hnf_m2 <= flaeche + 1e-9,
+            f"{flaeche:.0f} m2 -> {ergebnis.gesamtanzahl_ganze_einheiten} Wohnungen, "
+            f"belegt {ergebnis.belegte_hnf_m2} m2 (passt)",
+        )
     print()
 
 
@@ -270,6 +370,9 @@ def main() -> None:
     test_6_wohnungsmix_ohne_eingabe_liefert_none()
     test_7_wohnungsmix_anteile_muessen_1_ergeben()
     test_8_wohnungsmix_verteilung_mit_transparentem_rest()
+    test_8b_kleines_gebaeude_liefert_trotzdem_wohnungen()
+    test_8c_belegung_uebersteigt_flaeche_nie()
+    test_8d_zu_grosse_wohnung_wird_ersetzt_nicht_gestrichen()
     test_9_aus_g1_ergebnis_erfolgreich()
     test_10_aus_g1_ergebnis_nicht_bestimmbar()
     test_11_berechne_sia416_aus_g1_end_zu_end()
