@@ -200,27 +200,44 @@ def _flaeche_aus(
     return wert, name
 
 
-def _restflaeche_hinweis(
-    flaeche: Optional[float], basis: str, wohnungen: Optional[dict[str, Any]],
-) -> Optional[str]:
-    """Wird auf eine volle Flaeche gerechnet, obwohl der Wohnungsmix nur einen
-    Teil davon belegt, gehoert das in die Ausgabe.
+def _verkaufsflaeche(
+    flaechen: Optional[dict[str, Any]], basis: str, wohnungen: Optional[dict[str, Any]],
+) -> tuple[Optional[float], str, Optional[float], Optional[str]]:
+    """Die Flaeche, auf der ein Preis je m2 tatsaechlich gerechnet werden darf.
 
-    Live beobachtet: ein grosszuegigerer Mix (nur 3.5-/4.5-Zimmer) halbierte
-    die Wohnungszahl von 2 auf 1, Erloes und Gewinn blieben aber gleich --
-    72 m2 wurden mitverkauft, die keiner Wohnung zugeteilt sind.
+    Kernregel: Flaeche, die KEINER Wohnung zugeordnet ist, fliesst nicht in
+    Erloes oder Mietertrag. Liegt ein Wohnungsmix vor, ist die belegte Flaeche
+    massgebend -- auch wenn als Basis eine groessere Flaeche gewaehlt wurde.
+    Die Differenz wird beziffert zurueckgegeben statt stillschweigend
+    mitverkauft.
+
+    Live beobachtet: 197 m2 Wohnflaeche, ein Mix aus nur 3.5-/4.5-Zimmer-
+    wohnungen belegte davon 125 m2 -- die restlichen 72 m2 wurden trotzdem
+    voll mitverkauft.
+
+    Liefert (flaeche, name, nicht_zugeordnet_m2, hinweis).
     """
+    flaeche, name = _flaeche_aus(flaechen, basis, wohnungen)
+    if flaeche is None:
+        return None, name, None, None
+
     belegt = (wohnungen or {}).get("belegte_flaeche_m2")
-    if flaeche is None or belegt is None or basis == "belegt":
-        return None
+    if basis == "belegt" or belegt is None:
+        return flaeche, name, None, None
+
     rest = round(flaeche - belegt, 1)
     if rest <= 0.5:
-        return None
-    return (
-        f"Gerechnet wird auf der vollen Flaeche ({flaeche:,.1f} m2), der Wohnungsmix belegt "
-        f"davon aber nur {belegt:,.1f} m2 -- {rest:,.1f} m2 sind keiner Wohnung zugeteilt. "
-        "Entweder werden die Wohnungen entsprechend groesser, oder die Flaeche ist nicht "
-        "verkaeuflich. Mit basis='belegt' wird nur die zugeteilte Flaeche gerechnet."
+        return flaeche, name, None, None
+    if rest < 0:
+        # Der Mix braucht mehr als vorhanden -- das meldet berechne_wohnungen
+        # selbst; hier wird auf die vorhandene Flaeche begrenzt.
+        return flaeche, name, None, None
+
+    return belegt, f"{name}, davon zugeordnet", rest, (
+        f"{rest:,.1f} m2 der {name} ({flaeche:,.1f} m2) sind KEINER Wohnung zugeordnet und "
+        f"gehen NICHT in die Rechnung ein -- gerechnet wird auf {belegt:,.1f} m2. "
+        "Den Wohnungsmix anpassen, die Restflaeche auf die Wohnungen verteilen oder sie als "
+        "gemeinsame Nebennutzflaeche fuehren."
     )
 
 
@@ -244,7 +261,8 @@ class Verkaufsannahme:
             if self.preis_pro_m2 is None or self.preis_pro_m2.wert is None:
                 return {"erloes_chf": None, "status": HERKUNFT_NICHT_BESTIMMBAR,
                         "grund": "Kein Verkaufspreis je m2 gesetzt."}
-            flaeche, name = _flaeche_aus(flaechen, self.basis, wohnungen)
+            flaeche, name, nicht_zugeordnet, hinweis = _verkaufsflaeche(
+                flaechen, self.basis, wohnungen)
             if flaeche is None:
                 return {"erloes_chf": None, "status": HERKUNFT_NICHT_BESTIMMBAR,
                         "grund": f"{name} ist nicht bestimmt -- ohne sie kein Erloes."}
@@ -253,9 +271,10 @@ class Verkaufsannahme:
                 "erloes_chf": round(flaeche * preis, 0),
                 "status": self.preis_pro_m2.herkunft,
                 "basis": self.basis, "basis_name": name, "basis_flaeche_m2": flaeche,
+                "nicht_zugeordnet_m2": nicht_zugeordnet,
                 "preis": self.preis_pro_m2.to_dict(),
                 "rechnung": f"{flaeche:,.1f} m² {name} × {preis:,.0f} CHF/m²",
-                "hinweis": _restflaeche_hinweis(flaeche, self.basis, wohnungen),
+                "hinweis": hinweis,
             }
 
         if self.art == VERKAUF_PRO_TYP:
@@ -319,7 +338,8 @@ class Mietannahme:
             if self.miete_pro_m2_jahr is None or self.miete_pro_m2_jahr.wert is None:
                 return {"jahresertrag_chf": None, "status": HERKUNFT_NICHT_BESTIMMBAR,
                         "grund": "Kein Mietansatz je m2 gesetzt."}
-            flaeche, name = _flaeche_aus(flaechen, self.basis, wohnungen)
+            flaeche, name, nicht_zugeordnet, hinweis = _verkaufsflaeche(
+                flaechen, self.basis, wohnungen)
             if flaeche is None:
                 return {"jahresertrag_chf": None, "status": HERKUNFT_NICHT_BESTIMMBAR,
                         "grund": f"{name} ist nicht bestimmt."}
@@ -327,9 +347,10 @@ class Mietannahme:
             return {"jahresertrag_chf": round(flaeche * ansatz, 0),
                     "status": self.miete_pro_m2_jahr.herkunft,
                     "basis": self.basis, "basis_name": name, "basis_flaeche_m2": flaeche,
+                    "nicht_zugeordnet_m2": nicht_zugeordnet,
                     "ansatz": self.miete_pro_m2_jahr.to_dict(),
                     "rechnung": f"{flaeche:,.1f} m² {name} × {ansatz:,.0f} CHF/m²/Jahr",
-                    "hinweis": _restflaeche_hinweis(flaeche, self.basis, wohnungen)}
+                    "hinweis": hinweis}
 
         if self.art == MIETE_PRO_TYP_MONAT:
             typen = (wohnungen or {}).get("typen") or []
@@ -763,6 +784,7 @@ def berechne_fuer_szenario(
         "machbarkeit": szenario.get("machbarkeit"),
         "verkauf": verkauf,
         "miete": miete,
+        "flaechenbilanz": (wohnungen or {}).get("flaechenbilanz"),
         "kosten": kosten,
         "land": {
             "wert_chf": landwert, "herkunft": landwert_herkunft, "rechnung": landwert_rechnung,

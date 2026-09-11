@@ -267,6 +267,7 @@ def berechne_szenarien(
     attika_zulaessig: Optional[bool] = None,
     dachgeschoss_zulaessig: Optional[bool] = None,
     gebaeudeabstand_m: Optional[float] = None,
+    restflaeche_verteilen: bool = False,
 ) -> dict:
     """Rechnet die Entwicklungsszenarien neu -- ohne erneute Abfrage.
 
@@ -281,7 +282,7 @@ def berechne_szenarien(
         auswahl=auswahl, benutzerwerte=benutzerwerte, wohnungsmix=wohnungsmix,
         wohnungsmix_begruendung=wohnungsmix_begruendung, profil=profil,
         attika_zulaessig=attika_zulaessig, dachgeschoss_zulaessig=dachgeschoss_zulaessig,
-        gebaeudeabstand_m=gebaeudeabstand_m,
+        gebaeudeabstand_m=gebaeudeabstand_m, restflaeche_verteilen=restflaeche_verteilen,
     )
 
 

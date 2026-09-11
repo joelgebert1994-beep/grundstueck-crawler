@@ -104,8 +104,35 @@ sah aus wie „kostet nichts". Sie ist jetzt `None` mit Begründung.
 **3 · Ein grosszügigerer Wohnungsmix halbierte die Wohnungszahl, liess Erlös
 und Gewinn aber unverändert.** 197 m² Wohnfläche, Mix nur 3.5-/4.5-Zimmer →
 1 Wohnung à 125 m², **72 m² keiner Wohnung zugeteilt** — aber voll mitverkauft.
-Der Hinweis erscheint jetzt am Verkauf und unter den offenen Punkten, und
-`basis='belegt'` rechnet nur die zugeteilte Fläche.
+
+### Nachgefasst: die Flächenkette ist jetzt geschlossen
+
+Ein Hinweis genügte dafür nicht — die Fläche floss weiterhin in den Erlös.
+Jedes Wohnungsergebnis trägt jetzt eine **Flächenbilanz**:
+
+```
+197 m² Wohnfläche  →  125 m² Wohnungen  →  72 m² nicht zugeordnet
+```
+
+Nicht zugeordnete Fläche geht **weder in den Verkaufserlös noch in den
+Mietertrag** ein — gerechnet wird auf der belegten Fläche, auch wenn als Basis
+eine grössere gewählt wurde. Die Differenz wird beziffert, nicht verschwiegen.
+
+Drei Wege schliessen die Kette, alle im Produkt verfügbar:
+
+| Weg | Wirkung |
+|---|---|
+| Wohnungsmix anpassen | andere Typen/Anteile, bis es aufgeht |
+| Restfläche verteilen (`restflaeche_verteilen=True`) | Anzahl bleibt, Wohnungen wachsen proportional; der Faktor wird ausgewiesen |
+| Rest stehen lassen | die Fläche bleibt ausgewiesen und unverkauft |
+
+Eine Streckung über **15 %** wird als unplausibel gemeldet: 125 m² auf 197 m²
+zu strecken ergibt keine 4.5-Zimmerwohnung mehr, sondern ein anderes Produkt —
+dann ist der Mix zu ändern, nicht die Wohnung.
+
+In der Oberfläche steht die Bilanz über dem Wohnungsmix (grün wenn
+geschlossen, rot wenn offen), dazu ein Schalter für die Verteilung und eine
+Warnung im Ergebnisblock.
 
 ## Dynamik — live gemessen
 

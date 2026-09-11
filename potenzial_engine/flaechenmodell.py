@@ -138,6 +138,11 @@ class Annahme:
 # Zahl ist ein Erfahrungswert, KEINE Norm: SIA 416 definiert Messgroessen,
 # keine Verhaeltnisse zwischen ihnen. Alle Werte sind zu ueberschreiben,
 # sobald ein Grundriss- oder Referenzprojekt vorliegt.
+# Ab diesem Streckungsfaktor ist die Restflaechenverteilung nicht mehr
+# plausibel: die Wohnungen werden dann so viel groesser, dass es ein anderes
+# Produkt ist (125 m2 auf 197 m2 sind keine 4.5-Zimmerwohnung mehr).
+MAX_VERTEILUNGSFAKTOR = 1.15
+
 PROFIL_WOHNUNGSBAU_MFH = "wohnungsbau_mfh_neubau"
 
 _PROFILE: dict[str, list[Annahme]] = {
@@ -595,19 +600,79 @@ class WohnungstypVorgabe:
             )
 
 
+def _flaechenbilanz(
+    verfuegbar: Optional[float], belegt: Optional[float],
+) -> dict[str, Any]:
+    """Die Flaechenkette muss geschlossen sein: verfuegbar = belegt + Rest.
+
+    Ohne diese Bilanz konnte Flaeche unbemerkt im Erloes landen, die keiner
+    Wohnung zugeordnet war (live beobachtet: 197 m2 Wohnflaeche, ein Mix aus
+    nur 3.5-/4.5-Zimmerwohnungen belegte davon 125 m2, die restlichen 72 m2
+    wurden trotzdem voll mitverkauft).
+    """
+    if verfuegbar is None or belegt is None:
+        return {
+            "verfuegbar_m2": verfuegbar, "belegt_m2": belegt,
+            "nicht_zugeordnet_m2": None, "geschlossen": False,
+            "hinweis": "Flaechenbilanz nicht bestimmbar.",
+        }
+    rest = round(verfuegbar - belegt, 1)
+    geschlossen = abs(rest) <= 0.5
+    return {
+        "verfuegbar_m2": round(verfuegbar, 1),
+        "belegt_m2": round(belegt, 1),
+        "nicht_zugeordnet_m2": rest,
+        "geschlossen": geschlossen,
+        "hinweis": (
+            "Die gesamte Wohnflaeche ist Wohnungen zugeordnet."
+            if geschlossen else
+            f"{rest:,.1f} m2 sind KEINER Wohnung zugeordnet. Diese Flaeche geht nicht in "
+            "Verkaufserloes oder Mietertrag ein. Entweder den Wohnungsmix anpassen, die "
+            "Wohnungen vergroessern (restflaeche_verteilen=True) oder die Flaeche als "
+            "gemeinsame Nebennutzflaeche fuehren."
+        ),
+    }
+
+
+def _verteile_restflaeche(zeilen: list[dict[str, Any]], verfuegbar: float) -> Optional[float]:
+    """Vergroessert alle Wohnungen gleichmaessig, bis die Flaeche aufgeht.
+
+    Das ist die mathematisch saubere Variante zu "Rest stehen lassen": die
+    Anzahl Wohnungen bleibt, ihre Flaechen wachsen proportional. Liefert den
+    Faktor zurueck, damit sichtbar bleibt, wie stark verschoben wurde.
+    """
+    belegt = sum(z["flaeche_total_m2"] for z in zeilen)
+    if belegt <= 0 or verfuegbar <= 0:
+        return None
+    faktor = verfuegbar / belegt
+    for z in zeilen:
+        if not z["anzahl"]:
+            continue
+        z["flaeche_pro_einheit_urspruenglich_m2"] = z["flaeche_pro_einheit_m2"]
+        z["flaeche_pro_einheit_m2"] = round(z["flaeche_pro_einheit_m2"] * faktor, 1)
+        z["flaeche_total_m2"] = round(z["anzahl"] * z["flaeche_pro_einheit_m2"], 1)
+    return round(faktor, 4)
+
+
 def berechne_wohnungen(
     nwf_m2: Optional[float],
     typen: Optional[list[WohnungstypVorgabe]],
     begruendung: str = "",
+    restflaeche_verteilen: bool = False,
 ) -> dict[str, Any]:
     """Leitet aus der Wohnflaeche eine Wohnungsstruktur ab.
 
     Zwei Eingabearten, die sich nicht mischen lassen:
       * ANTEILE -- die Wohnflaeche wird nach Prozenten verteilt, je Typ
-        werden nur ganze Einheiten gebildet, der Rest wird ausgewiesen.
+        werden nur ganze Einheiten gebildet.
       * STUECKZAHLEN -- der Benutzer gibt die Anzahl je Typ vor; gerechnet
         wird die benoetigte Flaeche und die Differenz zur verfuegbaren.
         Passt es nicht, wird das gemeldet und nicht zurechtgerechnet.
+
+    Jedes Ergebnis traegt eine `flaechenbilanz`: verfuegbar, belegt und
+    nicht zugeordnet. Mit `restflaeche_verteilen=True` werden die Wohnungen
+    gleichmaessig vergroessert, bis die Bilanz aufgeht -- die Anzahl bleibt,
+    der Verschiebefaktor wird ausgewiesen.
     """
     if nwf_m2 is None:
         return {
@@ -650,8 +715,11 @@ def berechne_wohnungen(
             "anzahl_wohnungen": sum(t.anzahl for t in nach_anzahl),
             "benoetigte_flaeche_m2": round(benoetigt, 1),
             "verfuegbare_flaeche_m2": round(nwf_m2, 1),
+            "belegte_flaeche_m2": round(benoetigt, 1),
+            "restflaeche_m2": differenz,
             "differenz_m2": differenz,
             "passt": differenz >= 0,
+            "flaechenbilanz": _flaechenbilanz(nwf_m2, benoetigt),
             "hinweis": (
                 f"Die vorgegebenen Wohnungen brauchen {benoetigt:.1f} m2, verfuegbar sind "
                 f"{nwf_m2:.1f} m2 -- "
@@ -695,21 +763,49 @@ def berechne_wohnungen(
             ),
         })
 
-    return {
+    faktor = None
+    if restflaeche_verteilen and roh.gesamtanzahl_ganze_einheiten:
+        faktor = _verteile_restflaeche(zeilen, nwf_m2)
+
+    belegt = round(sum(z["flaeche_total_m2"] for z in zeilen), 1)
+    rest = round(nwf_m2 - belegt, 1)
+
+    ergebnis = {
         "status": STATUS_MODELLANNAHME_BASIERT,
         "eingabeart": "anteile",
         "typen": zeilen,
         "anzahl_wohnungen": roh.gesamtanzahl_ganze_einheiten,
         "verfuegbare_flaeche_m2": round(nwf_m2, 1),
-        "belegte_flaeche_m2": roh.belegte_hnf_m2,
-        "restflaeche_m2": roh.gesamt_rest_hnf_m2,
+        "belegte_flaeche_m2": belegt,
+        "restflaeche_m2": rest,
         "durchschnittsflaeche_m2": (
-            round(roh.belegte_hnf_m2 / roh.gesamtanzahl_ganze_einheiten, 1)
+            round(belegt / roh.gesamtanzahl_ganze_einheiten, 1)
             if roh.gesamtanzahl_ganze_einheiten else None
         ),
         "mittlere_wohnungsgroesse_im_mix_m2": roh.durchschnittsflaeche_pro_einheit_m2,
+        "flaechenbilanz": _flaechenbilanz(nwf_m2, belegt),
         "hinweis": roh.unklarheit,
     }
+    if faktor is not None:
+        ergebnis["restflaeche_verteilt"] = True
+        ergebnis["verteilungsfaktor"] = faktor
+        ergebnis["hinweis"] = (
+            f"Die Restflaeche wurde auf die {roh.gesamtanzahl_ganze_einheiten} Wohnungen "
+            f"verteilt: alle Flaechen x {faktor:.3f}. Die Anzahl Wohnungen bleibt gleich, "
+            "die einzelnen Wohnungen werden entsprechend groesser. "
+        ) + (roh.unklarheit or "")
+        # Ein grosser Faktor heisst: der Mix passt nicht zur verfuegbaren
+        # Flaeche. 125 m2 auf 197 m2 zu strecken ergibt keine 4.5-Zimmer-
+        # wohnung mehr, sondern ein anderes Produkt.
+        if faktor > MAX_VERTEILUNGSFAKTOR:
+            ergebnis["verteilung_unplausibel"] = True
+            ergebnis["hinweis"] = (
+                f"ACHTUNG: die Wohnungen muessten um {(faktor - 1) * 100:.0f} % wachsen, damit "
+                "die Flaeche aufgeht -- der Wohnungsmix passt nicht zur verfuegbaren Flaeche. "
+                "Besser den Mix anpassen (kleinere Typen oder andere Anteile) als die "
+                "Wohnungen so stark zu strecken. "
+            ) + ergebnis["hinweis"]
+    return ergebnis
 
 
 # ---------------------------------------------------------------------------
@@ -735,6 +831,7 @@ def berechne_flaechen_und_wohnungen(
     wohnungsmix: Optional[list[WohnungstypVorgabe]] = None,
     wohnungsmix_begruendung: str = "",
     zusaetzliche_geschosse: Optional[list[dict[str, Any]]] = None,
+    restflaeche_verteilen: bool = False,
 ) -> dict[str, Any]:
     """Die vollstaendige Bruecke: G1-Ergebnis -> Flaechen -> Wohnungen.
 
@@ -843,7 +940,8 @@ def berechne_flaechen_und_wohnungen(
             nwf.wert, nwf.herkunft,
         ))
 
-    wohnungen = berechne_wohnungen(nwf.wert, wohnungsmix, wohnungsmix_begruendung)
+    wohnungen = berechne_wohnungen(
+        nwf.wert, wohnungsmix, wohnungsmix_begruendung, restflaeche_verteilen)
     if wohnungen.get("anzahl_wohnungen"):
         rechenweg.append(_schritt(
             "wohnungen", nwf.wert, f"verteilt auf den Wohnungsmix ({wohnungen['eingabeart']})",

@@ -331,6 +331,7 @@ def _flaechen_fuer(
     wohnungsmix_begruendung: str,
     zusaetzliche_geschosse: Optional[list[dict[str, Any]]] = None,
     geschosszahl: Optional[int] = None,
+    restflaeche_verteilen: bool = False,
 ) -> Optional[dict[str, Any]]:
     """Faehrt die Flaechenkaskade fuer eine szenariospezifische GF.
 
@@ -349,6 +350,7 @@ def _flaechen_fuer(
         abgewandelt, zone=zone, profil=profil, benutzerwerte=benutzerwerte,
         wohnungsmix=wohnungsmix, wohnungsmix_begruendung=wohnungsmix_begruendung,
         zusaetzliche_geschosse=zusaetzliche_geschosse,
+        restflaeche_verteilen=restflaeche_verteilen,
     )
 
 
@@ -579,6 +581,7 @@ def szenario_anbau(
     szenario.geschossflaeche_herkunft = herkunft
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
         geschosszahl=geschosse,
     )
     if szenario.flaechen:
@@ -725,6 +728,7 @@ def szenario_aufstockung(
     ))
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
         geschosszahl=zusaetzliche,
     )
     if szenario.flaechen:
@@ -879,6 +883,7 @@ def szenario_ersatzneubau(
 
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
     )
     if szenario.flaechen:
         szenario.wohnungen = szenario.flaechen.get("wohnungen")
@@ -1045,6 +1050,7 @@ def szenario_bestand_plus_neubau(
     szenario.geschossflaeche_herkunft = herkunft
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
         geschosszahl=geschosse,
     )
     if szenario.flaechen:
@@ -1075,6 +1081,7 @@ def berechne_szenarien(
     attika_zulaessig: Optional[bool] = None,
     dachgeschoss_zulaessig: Optional[bool] = None,
     gebaeudeabstand_m: Optional[float] = None,
+    restflaeche_verteilen: bool = False,
 ) -> dict[str, Any]:
     """Rechnet alle (oder die gewaehlten) Entwicklungsszenarien.
 
@@ -1101,6 +1108,7 @@ def berechne_szenarien(
         profil=profil, benutzerwerte=benutzerwerte, wohnungsmix=wohnungsmix,
         wohnungsmix_begruendung=wohnungsmix_begruendung,
         geschosshoehe_m=geschosshoehe.wert, restriktionen=restriktionen,
+        restflaeche_verteilen=restflaeche_verteilen,
     )
     bauer = {
         "bestand": lambda: szenario_bestand(bestand, budget, **gemeinsam),

@@ -270,6 +270,11 @@ ul.plain li { margin-bottom: 4px; }
   cursor: pointer; font-size: 15px; line-height: 1; padding: 5px 9px; }
 .wmix-weg:hover { color: var(--ink); }
 .wmixfuss { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 11px; }
+.wbilanz { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;
+  padding: 8px 10px; border-radius: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.wbilanz.zu { background: rgba(31,122,77,.10); border: 1px solid rgba(31,122,77,.35); }
+.wbilanz.offen { background: rgba(179,50,74,.10); border: 1px solid rgba(179,50,74,.40); }
+.wschalter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); cursor: pointer; }
 .wok { color: #1f7a4d; } .wfehler { color: #b3324a; } .wlaeuft { color: var(--ink-3); }
 .wstatus { min-height: 18px; margin: 8px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
 .wergebnis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0; }
@@ -1870,6 +1875,7 @@ var wEingaben = {
   ausbaustandard: "rendite",
   kostenbasis: "gf",
   bkp: {},
+  restflaeche_verteilen: false,
   wohnungsmix: [
     { typ: "2.5 Zi", flaeche_m2: 62, anteil: 0.20 },
     { typ: "3.5 Zi", flaeche_m2: 88, anteil: 0.50 },
@@ -1940,7 +1946,18 @@ function marktBlock(erg) {
 
 function mixBlock() {
   var summe = wEingaben.wohnungsmix.reduce(function (s, t) { return s + (Number(t.anteil) || 0); }, 0);
-  return '<div class="wkarte"><h4>Wohnungsmix</h4>' +
+  var e = wErgebnis && wErgebnis.szenarien ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
+  var bilanz = e.flaechenbilanz || {};
+  var bilanzHtml = leer(bilanz.verfuegbar_m2) ? "" :
+    '<div class="wbilanz' + (bilanz.geschlossen ? " zu" : " offen") + '">' +
+      '<span><b>' + fmt(bilanz.verfuegbar_m2, 0) + ' m²</b> Wohnfläche</span>' +
+      '<span>→ <b>' + fmt(bilanz.belegt_m2, 0) + ' m²</b> Wohnungen</span>' +
+      '<span>→ <b>' + fmt(bilanz.nicht_zugeordnet_m2, 0) + ' m²</b> ' +
+        (bilanz.geschlossen ? "Rest" : "nicht zugeordnet") + "</span>" +
+    "</div>" +
+    (bilanz.geschlossen ? "" : '<div class="note warn">' + esc(bilanz.hinweis) + "</div>");
+
+  return '<div class="wkarte"><h4>Wohnungsmix</h4>' + bilanzHtml +
     '<div class="wmix">' + wEingaben.wohnungsmix.map(function (t, i) {
       return '<div class="wmixzeile">' +
         '<input type="text" class="wmix-typ" data-i="' + i + '" value="' + esc(t.typ) + '">' +
@@ -1953,6 +1970,9 @@ function mixBlock() {
     }).join("") + "</div>" +
     '<div class="wmixfuss">' +
       '<button class="szbtn" id="w-mix-plus">+ Wohnungstyp</button>' +
+      '<label class="wschalter"><input type="checkbox" id="w-verteilen"' +
+        (wEingaben.restflaeche_verteilen ? " checked" : "") +
+        '> Restfläche auf die Wohnungen verteilen</label>' +
       '<span class="' + (Math.abs(summe - 1) < 0.001 ? "wok" : "wfehler") + '">Summe ' +
         Math.round(summe * 100) + " %" + (Math.abs(summe - 1) < 0.001 ? "" : " — muss 100 % ergeben") +
       "</span></div>" +
@@ -1998,7 +2018,10 @@ function ergebnisBlock() {
   var g = e.ergebnis || {};
   var r = e.residualwert || {};
   var zielBadge = g.zielmarge_erreicht === true ? "ok" : (g.zielmarge_erreicht === false ? "stop" : "mute");
-  return '<div class="wergebnis">' +
+  var nz = (e.verkauf || {}).nicht_zugeordnet_m2;
+  return (leer(nz) ? "" :
+    '<div class="note stop"><b>' + fmt(nz, 0) + ' m² nicht zugeordnet.</b> Diese Fläche ist keiner Wohnung zugewiesen und fliesst weder in den Verkaufserlös noch in den Mietertrag ein. Wohnungsmix anpassen oder die Restfläche auf die Wohnungen verteilen.</div>') +
+  '<div class="wergebnis">' +
     '<div class="wgross"><span class="wlabel">Verkaufserlös</span><b>CHF ' + chf(g.verkaufserloes_chf, true) + "</b></div>" +
     '<div class="wgross"><span class="wlabel">Investition</span><b>CHF ' + chf(g.gesamtinvestition_chf, true) + "</b></div>" +
     '<div class="wgross"><span class="wlabel">Gewinn</span><b class="' +
@@ -2088,6 +2111,8 @@ function wSammleEingaben() {
     var land = document.getElementById("w-land");
     if (land) wEingaben.land_ansatz = land.value;
   }
+  var verteilen = document.getElementById("w-verteilen");
+  if (verteilen) wEingaben.restflaeche_verteilen = verteilen.checked;
   document.querySelectorAll(".wmix-typ").forEach(function (el) {
     wEingaben.wohnungsmix[Number(el.dataset.i)].typ = el.value;
   });
@@ -2148,6 +2173,7 @@ function wZeichneNeu() {
   setze("w-vergleich", wVergleichBlock());
   setze("w-bkp", bkpBlock());
   setze("w-markt", marktBlock(ergebnisAktuell || {}));
+  setze("w-mix", mixBlock());
   verdrahteWirtschaft();
   // Die Szenarien haben sich mitgeaendert -- Karte und 3D nachziehen.
   if (typeof zeichneSzenario === "function" && aktivesSzenario) zeichneSzenario(aktivesSzenario);

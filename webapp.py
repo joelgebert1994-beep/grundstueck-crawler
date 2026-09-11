@@ -113,6 +113,7 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         wohnungsmix_begruendung=daten.get("wohnungsmix_begruendung") or "Benutzereingabe",
         attika_zulaessig=daten.get("attika_zulaessig"),
         gebaeudeabstand_m=_zahl(daten.get("gebaeudeabstand_m")),
+        restflaeche_verteilen=bool(daten.get("restflaeche_verteilen")),
     )
 
     def referenzen(schluessel):

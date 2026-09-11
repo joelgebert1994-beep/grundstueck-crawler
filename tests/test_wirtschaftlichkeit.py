@@ -169,33 +169,79 @@ def test_verkauf() -> None:
 
 
 def test_restflaeche() -> None:
-    """Realfall Buchs AG: ein grosszuegigerer Mix halbierte die Wohnungszahl von
-    2 auf 1, Erloes und Gewinn blieben aber gleich -- 72 m2 wurden mitverkauft,
-    die keiner Wohnung zugeteilt sind. Das muss sichtbar sein."""
-    print("=== Nicht belegte Wohnflaeche wird ausgewiesen ===")
+    """Die Flaechenkette muss geschlossen sein.
+
+    Realfall Buchs AG: 197 m2 Wohnflaeche, ein Mix aus nur 3.5-/4.5-Zimmer-
+    wohnungen belegt davon 125 m2. Die restlichen 72 m2 wurden frueher voll
+    mitverkauft, obwohl sie keiner Wohnung zugeordnet sind. Genau das darf
+    nicht passieren.
+    """
+    print("=== Flaechenkette: nicht zugeordnete Flaeche wird NICHT verkauft ===")
+    from potenzial_engine.flaechenmodell import WohnungstypVorgabe, berechne_wohnungen
+
+    mix = [WohnungstypVorgabe("3.5 Zi", 88.0, anteil=0.4),
+           WohnungstypVorgabe("4.5 Zi", 125.0, anteil=0.6)]
+    whg = berechne_wohnungen(197.0, mix, "Realfall Buchs AG")
+    bilanz = whg["flaechenbilanz"]
+    pruefe(bilanz["verfuegbar_m2"] == 197.0, "verfuegbare Flaeche in der Bilanz")
+    pruefe(bilanz["belegt_m2"] == 125.0, f"belegt 125 m2 ({bilanz['belegt_m2']})")
+    pruefe(bilanz["nicht_zugeordnet_m2"] == 72.0, f"72 m2 nicht zugeordnet ({bilanz['nicht_zugeordnet_m2']})")
+    pruefe(bilanz["geschlossen"] is False, "die Kette ist damit nicht geschlossen")
+    pruefe("KEINER Wohnung zugeordnet" in bilanz["hinweis"], "und das steht im Klartext")
+
     fl = flaechen(nwf=197.0)
-    whg = {"anzahl_wohnungen": 1, "belegte_flaeche_m2": 125.0,
-           "typen": [{"typ": "4.5 Zi", "anzahl": 1, "flaeche_pro_einheit_m2": 125.0}]}
     voll = w.Verkaufsannahme(basis="nwf", preis_pro_m2=w.marktwert("v", "CHF/m2", benutzerannahme=9500))
     r = voll.berechne(fl, whg)
-    pruefe(r["erloes_chf"] == round(197.0 * 9500, 0), "auf der vollen Flaeche gerechnet")
-    pruefe(r["hinweis"] is not None, "aber mit ausdruecklichem Hinweis")
-    pruefe("72.0 m2" in r["hinweis"], f"die nicht belegte Flaeche ist beziffert ({r['hinweis'][:80]})")
-    pruefe("basis='belegt'" in r["hinweis"], "und der Ausweg genannt")
+    pruefe(r["erloes_chf"] == round(125.0 * 9500, 0),
+           f"verkauft werden nur die zugeordneten 125 m2 ({r['erloes_chf']:,.0f})")
+    pruefe(r["erloes_chf"] != round(197.0 * 9500, 0), "NICHT die vollen 197 m2")
+    pruefe(r["basis_flaeche_m2"] == 125.0, "die Basis ist die belegte Flaeche")
+    pruefe(r["nicht_zugeordnet_m2"] == 72.0, "die nicht zugeordnete Flaeche ist beziffert")
+    pruefe("NICHT in die Rechnung ein" in (r["hinweis"] or ""), "und ausdruecklich ausgeschlossen")
 
-    belegt = w.Verkaufsannahme(basis="belegt", preis_pro_m2=w.marktwert("v", "CHF/m2", benutzerannahme=9500))
-    r2 = belegt.berechne(fl, whg)
-    pruefe(r2["erloes_chf"] == round(125.0 * 9500, 0),
-           f"auf der belegten Flaeche gerechnet ({r2['erloes_chf']:,.0f})")
-    pruefe(r2["hinweis"] is None, "dort entfaellt der Hinweis")
+    miete = w.Mietannahme(miete_pro_m2_jahr=w.marktwert("m", "CHF/m2/Jahr", benutzerannahme=265))
+    m = miete.berechne(fl, whg)
+    pruefe(m["jahresertrag_chf"] == round(125.0 * 265, 0),
+           f"auch die Miete rechnet nur auf der zugeordneten Flaeche ({m['jahresertrag_chf']:,.0f})")
+    pruefe(m["nicht_zugeordnet_m2"] == 72.0, "mit derselben Bezifferung")
 
-    ohne_rest = voll.berechne(flaechen(nwf=125.0), whg)
-    pruefe(ohne_rest["hinweis"] is None, "ohne Restflaeche kein Hinweis")
+    # Weg 1: Restflaeche auf die Wohnungen verteilen -- die Kette schliesst.
+    verteilt = berechne_wohnungen(197.0, mix, "verteilt", restflaeche_verteilen=True)
+    b2 = verteilt["flaechenbilanz"]
+    pruefe(b2["geschlossen"] is True, "nach der Verteilung ist die Kette geschlossen")
+    pruefe(b2["nicht_zugeordnet_m2"] == 0.0, "nichts bleibt unzugeordnet")
+    pruefe(verteilt["anzahl_wohnungen"] == whg["anzahl_wohnungen"],
+           "die Anzahl Wohnungen bleibt gleich")
+    belegte = next(t for t in verteilt["typen"] if t["anzahl"])
+    pruefe(belegte["flaeche_pro_einheit_m2"] > belegte["flaeche_pro_einheit_urspruenglich_m2"],
+           f"die Wohnungen werden groesser ({belegte['flaeche_pro_einheit_urspruenglich_m2']} "
+           f"-> {belegte['flaeche_pro_einheit_m2']} m2)")
+    r2 = voll.berechne(fl, verteilt)
+    pruefe(r2["erloes_chf"] == round(197.0 * 9500, 0),
+           "jetzt DARF die volle Flaeche verkauft werden -- sie ist zugeordnet")
+    pruefe(r2["nicht_zugeordnet_m2"] is None, "und es bleibt nichts offen")
 
+    # Eine zu starke Streckung ist ein Warnsignal, kein stilles Ergebnis.
+    pruefe(verteilt.get("verteilung_unplausibel") is True,
+           f"58 % Wachstum wird als unplausibel gemeldet (Faktor {verteilt.get('verteilungsfaktor')})")
+    pruefe("passt nicht zur verfuegbaren Flaeche" in verteilt["hinweis"],
+           "mit dem Rat, lieber den Mix anzupassen")
+
+    # Weg 2: ein Mix, der ohnehin aufgeht.
+    guter_mix = [WohnungstypVorgabe("2.5 Zi", 62.0, anteil=0.2),
+                 WohnungstypVorgabe("3.5 Zi", 88.0, anteil=0.5),
+                 WohnungstypVorgabe("4.5 Zi", 112.0, anteil=0.3)]
+    passt = berechne_wohnungen(900.0, guter_mix, "passt", restflaeche_verteilen=True)
+    pruefe(passt["flaechenbilanz"]["geschlossen"] is True, "ein passender Mix schliesst die Kette")
+    pruefe(passt.get("verteilung_unplausibel") is not True, "ohne Unplausibilitaets-Warnung")
+
+    # Die Bilanz gehoert ins Szenario-Ergebnis.
     gesamt = w.berechne_fuer_szenario(
         szenario(flaechen={"flaechen": fl}, wohnungen=whg), 1200.0, markt())
-    pruefe(any("keiner Wohnung zugeteilt" in o for o in gesamt["offene_punkte"]),
-           "der Hinweis erscheint unter den offenen Punkten")
+    pruefe(gesamt["flaechenbilanz"]["nicht_zugeordnet_m2"] == 72.0,
+           "die Flaechenbilanz steht im Szenario-Ergebnis")
+    pruefe(any("KEINER Wohnung zugeordnet" in o for o in gesamt["offene_punkte"]),
+           "und unter den offenen Punkten")
     print()
 
 
