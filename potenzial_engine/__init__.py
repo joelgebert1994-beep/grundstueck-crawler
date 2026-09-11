@@ -19,7 +19,32 @@ Module:
     referenzprojekte               Referenzdaten fuer Flaechenverhaeltnisse
     entwicklungsszenarien          Szenario-Taxonomie (ohne Rechenlogik)
 
-Die oeffentliche Aufrufschnittstelle (analysiere_grundstueck,
-berechne_wirtschaftlichkeit) wird in Phase 0.4 hier ergaenzt; bis dahin werden
-die Module einzeln importiert.
+Oeffentliche Aufrufschnittstelle:
+
+    from potenzial_engine import analysiere_grundstueck, berechne_wirtschaftlichkeit
+
+    analyse = analysiere_grundstueck("Rosenweg 4, 5033 Buchs AG")
+    print(analyse.ergebnis["zonen_zuordnung"]["status"])
+
+    # optional und getrennt -- die baurechtliche Analyse braucht keinen Preis
+    w = berechne_wirtschaftlichkeit(analyse, verkaufspreis_chf_pro_m2=11000)
+
+Modul 2 braucht die Umgebungsvariable GEMINI_API_KEY. Die uebrigen Module
+kommen mit oeffentlichen Geodiensten aus.
 """
+
+from .pipeline import (
+    Analyse,
+    PreisEingabeFehler,
+    Wirtschaftlichkeit,
+    analysiere_grundstueck,
+    berechne_wirtschaftlichkeit,
+)
+
+__all__ = [
+    "Analyse",
+    "PreisEingabeFehler",
+    "Wirtschaftlichkeit",
+    "analysiere_grundstueck",
+    "berechne_wirtschaftlichkeit",
+]
