@@ -163,21 +163,50 @@ Gegen unsere Messwerte gehalten:
 **Alle drei Bedingungen wären erfüllt.** Unser Dienst wartet 96 % der Zeit —
 das ist genau das Profil, das Oracle als „idle" definiert.
 
-#### Gegenmassnahmen, nach Belastbarkeit geordnet
+#### Beweislage zur Pay-As-You-Go-Ausnahme — offen
 
-1. **Auf Pay As You Go hochstufen.** Laut Oracles eigener Community gilt die
-   Rückforderung *„from Always Free customers only"*, und nach dem Hochstufen
-   bleiben Always-Free-Ressourcen kostenlos — berechnet wird nur, was über die
-   Always-Free-Grenzen hinausgeht. **Achtung:** Das steht in Oracles
-   Community-Forum, **nicht** auf der Doku-Seite zu den Always-Free-Ressourcen.
-   Vor dem Verlassen auf diesen Punkt beim Oracle-Support bestätigen lassen.
-2. **VM kleiner schneiden.** 1 OCPU / 6 GB statt 2/12 halbiert den
-   Leerlauf-Fussabdruck und lässt immer noch das 15-fache unseres Bedarfs.
-   Löst das Problem nicht, verringert es.
-3. **Hinnehmen und vorbereiten.** Es heisst „may be reclaimed". Mit
-   `docker-compose` und einer dokumentierten Einrichtung ist eine neue
-   Instanz in ~15 Minuten wieder da, und die Datenbank liegt als
-   Projektdatei-Export ausserhalb.
+Die Frage lautet: **Sind Always-Free-Compute-Ressourcen nach einem Upgrade auf
+Pay As You Go von der automatischen Idle-Rückforderung ausgenommen?**
+
+Systematisch in der offiziellen Dokumentation gesucht. Ergebnis:
+
+| Quelle | Was sie sagt |
+|---|---|
+| [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) | Nennt die drei Idle-Kriterien. **Sagt NICHT**, ob gestoppt oder gelöscht wird, ob vorgewarnt wird, oder ob bezahlte Konten ausgenommen sind. |
+| [OCI Free Tier](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm) | Bei der *Über-Kontingent*-Rückforderung steht ausdrücklich *„unless you upgrade to a paid account"*. Bei der *Idle*-Rückforderung fehlt dieser Zusatz. |
+| [What Happens When the Promotion Expires](https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup_topic-What_Happens_When_the_Promotion_Expires.htm) | *„If you have a paid account, you will not be billed for any Always Free resources you are using."* Zur Idle-Rückforderung: nichts. |
+| Oracle Free Tier FAQ (oracle.com/cloud/free/faq) | Laut Suchtreffern: Idle-Instanzen werden **gestoppt, nicht gelöscht**, nach E-Mail-Vorwarnung, und können neu gestartet werden, sofern die Shape in der Region verfügbar ist. **Die Seite liefert HTTP 403 und liess sich nicht im Original nachlesen.** |
+| Oracle Customer Connect | Enthält die Aussage *„from Always Free customers only"*. Community-Forum, **keine offizielle Zusicherung**. |
+
+**Schlussfolgerung: Es gibt keine Aussage in Oracles technischer
+Dokumentation, die die PAYG-Ausnahme bestätigt.** Die Behauptung stammt
+ausschliesslich aus dem Community-Forum. Das genügt nicht als Grundlage für
+einen dauerhaft laufenden Dienst.
+
+Bemerkenswert ist die Formulierungslücke: Oracle schreibt bei der einen
+Rückforderungsart ausdrücklich „unless you upgrade to a paid account", bei
+der anderen nicht. Aus einem fehlenden Zusatz lässt sich nichts folgern —
+aber es ist der Grund, warum die Frage gestellt gehört, statt sie zu
+unterstellen.
+
+#### Was aus der Beweislage folgt
+
+* **Vor der Kontoeröffnung bei Oracle nachfragen.** Die fertige Frage steht
+  unten in Abschnitt 8.
+* **Der Schadensfall ist kleiner als zunächst angenommen** — sofern die
+  FAQ-Angabe stimmt: gestoppt statt gelöscht, mit Vorwarnung. Für einen
+  *dauerhaft erreichbaren* Dienst ist ein Stopp trotzdem ein Ausfall.
+* **Ein Kriterium reicht.** Die drei Bedingungen sind mit UND verknüpft: wird
+  **eine** davon verfehlt, gilt die Instanz nicht als idle. Der
+  Speicher-Grenzwert gilt nur für A1-Shapes — und eine kleiner geschnittene
+  VM hat naturgemäss eine höhere Speicherauslastung. Das ist keine
+  vorgetäuschte Last, sondern die richtige Dimensionierung: unser Bedarf
+  liegt bei ~0.4 GB, nicht bei 12 GB. Ob das als Ausnahme trägt, gehört
+  ebenfalls in die Rückfrage.
+
+> **Ausdrücklich nicht vorgesehen:** künstliche CPU-Last, um über 20 % zu
+> kommen. Das umgeht eine Regel, statt ein Problem zu lösen, und verbrennt
+> Strom für nichts.
 
 Was hier ausdrücklich **nicht** empfohlen wird: künstliche Last erzeugen, nur
 um über 20 % zu kommen. Das umgeht eine Regel, statt ein Problem zu lösen,
@@ -337,3 +366,55 @@ Betriebsstörung zu einem Befund über ein Grundstück.
 Zusätzlich prüft die Oberfläche beim Laden `GET /api/health` und zeigt an,
 wenn der Dienst zwar antwortet, aber nicht einsatzbereit ist (etwa ohne
 LLM-Schlüssel). Besser jetzt als nach drei Minuten Analyse.
+
+---
+
+## 8 Offene Rückfrage an Oracle (vor der Kontoeröffnung)
+
+**Status: unbeantwortet.** Bis zur Antwort keine Kontoeröffnung, kein
+Upgrade, kein Deployment.
+
+### Kanäle, die als belastbar gelten
+
+| Kanal | Braucht Konto? | Eignung |
+|---|---|---|
+| **Oracle Cloud Sales / Pre-Sales-Kontakt** (`oracle.com/cloud/contact`) | nein | **Bester Weg vor der Kontoeröffnung.** Schriftliche Antwort verlangen. |
+| Oracle Cloud Support Ticket (My Oracle Support) | ja, und voller Support erst ab PAYG | Genau die Hochstufung, die vermieden werden soll — Henne/Ei |
+| Oracle Customer Connect | nein | **Nicht ausreichend** — Community, keine Zusicherung |
+
+### Fertige Frage (englisch, zum Kopieren)
+
+> Subject: Idle reclamation policy for Always Free compute in a Pay As You Go account
+>
+> I plan to run a small Python API service on an Always Free Ampere A1
+> instance (VM.Standard.A1.Flex). The service is a web backend that spends
+> most of its time waiting on external HTTP APIs, so its CPU utilisation is
+> very low — typically well below 5 % — even though it is actively used and
+> must remain reachable 24/7.
+>
+> Your documentation states that idle Always Free compute instances may be
+> reclaimed when, over a 7-day period, CPU (95th percentile), network and
+> memory utilisation are all below 20 %.
+>
+> Please confirm in writing:
+>
+> 1. If I upgrade my account to Pay As You Go, are Always Free compute
+>    instances still subject to this idle reclamation policy, or are they
+>    exempt?
+> 2. If they are reclaimed, is the instance stopped or deleted? Is a warning
+>    sent beforehand, and can the instance be restarted?
+> 3. The three criteria appear to be combined with AND. If an instance
+>    exceeds 20 % memory utilisation — for example because it is sized at
+>    2 GB rather than 12 GB — but stays below 20 % CPU and network, is it
+>    still considered idle?
+> 4. Is a low-CPU, always-reachable web service an acceptable use of Always
+>    Free compute, or does Oracle consider this outside the intended use?
+
+### Antwort hier eintragen
+
+| Frage | Antwort | Datum | Quelle |
+|---|---|---|---|
+| 1 PAYG ausgenommen? | *offen* | | |
+| 2 gestoppt oder gelöscht? | *offen* | | |
+| 3 ein Kriterium genügt? | *offen* | | |
+| 4 Nutzung zulässig? | *offen* | | |
