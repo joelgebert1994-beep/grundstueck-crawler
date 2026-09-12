@@ -73,6 +73,40 @@ if _KERN_PFAD.exists() and str(_KERN_PFAD) not in sys.path:
     sys.path.insert(0, str(_KERN_PFAD))
 
 
+def _kern_projekt():
+    """Die Projektablage, oder None wenn die Datenschicht fehlt."""
+    try:
+        from kern import db as kern_db, projekt as kern_pj
+    except ImportError:
+        return None, None
+    return kern_db, kern_pj
+
+
+def _rechne_variante(analyse, variante: dict) -> dict:
+    """Eine Variante rechnen -- ueber denselben Weg wie jede andere Eingabe.
+
+    Die Variante liefert nur ihr Delta (Szenario plus Benutzerannahmen); die
+    Rechnung macht `_rechne_entwicklung`. Es gibt damit keine zweite
+    Rechenlogik fuer Varianten, und eine Aenderung an der Engine schlaegt
+    sofort durch.
+    """
+    daten = dict(variante.get("eingaben") or {})
+    ergebnis = _rechne_entwicklung(analyse, daten)
+    szenario_id = variante.get("szenario_id")
+    ergebnis["variante"] = {
+        "variante_id": variante.get("variante_id"),
+        "name": variante.get("name"),
+        "szenario_id": szenario_id,
+        "stand": variante.get("stand"),
+        # Was der Benutzer selbst gesetzt hat -- alles Uebrige ist
+        # Systemvorschlag. Die Oberflaeche kennzeichnet das entsprechend.
+        "benutzerwerte": variante.get("benutzerwerte") or [],
+        "eingaben": daten,
+    }
+    ergebnis["aktives_szenario"] = szenario_id
+    return ergebnis
+
+
 def _kern_marktdaten():
     """Die Marktdaten-Ablage, oder None wenn die Datenschicht fehlt."""
     try:
@@ -213,6 +247,43 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
     }
 
 
+def _variantenvergleich(varianten: list, ergebnisse: dict) -> list:
+    """Eine Zeile je Variante -- die Grundlage der Vergleichstabelle.
+
+    Bewusst flach und ohne Bewertung: welche Variante die beste ist, haengt
+    an Risiko und Machbarkeit, nicht am groessten Gewinn. Das entscheidet
+    spaeter Highest & Best Use, nicht diese Tabelle.
+    """
+    zeilen = []
+    for v in varianten:
+        e = ergebnisse.get(str(v["variante_id"])) or {}
+        w = ((e.get("wirtschaftlichkeit") or {}).get("szenarien") or {}).get(v["szenario_id"]) or {}
+        s = ((e.get("szenarien") or {}).get("szenarien") or {}).get(v["szenario_id"]) or {}
+        flaechen = ((s.get("flaechen") or {}).get("flaechen")) or {}
+        erg = w.get("ergebnis") or {}
+        res = w.get("residualwert") or {}
+        zeilen.append({
+            "variante_id": v["variante_id"],
+            "name": v["name"],
+            "szenario_id": v["szenario_id"],
+            "benutzerwerte": v.get("benutzerwerte") or [],
+            "machbarkeit": s.get("machbarkeit"),
+            "nwf_m2": (flaechen.get("wohnflaeche_nwf") or {}).get("wert"),
+            "geschossflaeche_m2": (flaechen.get("geschossflaeche_gf") or {}).get("wert"),
+            "wohnungen": (s.get("wohnungen") or {}).get("anzahl_wohnungen"),
+            "verkaufserloes_chf": erg.get("verkaufserloes_chf"),
+            "jahresmietertrag_chf": erg.get("jahresmietertrag_chf"),
+            "baukosten_chf": (w.get("kosten") or {}).get("baukosten_chf"),
+            "gesamtinvestition_chf": erg.get("gesamtinvestition_chf"),
+            "gewinn_chf": erg.get("gewinn_chf"),
+            "marge": erg.get("marge"),
+            "zielmarge_erreicht": erg.get("zielmarge_erreicht"),
+            "max_landwert_chf": res.get("max_landwert_chf"),
+            "fehler": e.get("fehler"),
+        })
+    return zeilen
+
+
 def _cleanup_alte_jobs() -> None:
     grenze = time.time() - _JOB_TTL_SECONDS
     with _JOBS_LOCK:
@@ -244,6 +315,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "service": "grundstueck-crawler-backend"})
         elif self.path.startswith("/status/"):
             self._handle_status(self.path[len("/status/"):])
+        elif self.path.startswith("/projekte") or self.path.startswith("/projekt"):
+            self._handle_projekte_lesen()
         elif self.path.startswith("/umgebung"):
             self._handle_umgebung()
         elif self.path.startswith("/marktdaten"):
@@ -404,6 +477,160 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"ok": True, **antwort})
 
+    def _projekt_antwort(self, fehler_status: int = 400):
+        """Gemeinsame Fehlerbehandlung der Projekt-Endpunkte."""
+        kern_db, kern_pj = _kern_projekt()
+        if kern_pj is None:
+            self._send_json(
+                {"ok": False, "fehler": "Datenschicht (kern) nicht verfuegbar -- "
+                                        "Projekte koennen nicht gespeichert werden."},
+                status=503)
+            return None, None
+        return kern_db, kern_pj
+
+    def _handle_projekte_lesen(self) -> None:
+        """Uebersicht 'Meine Projekte' oder ein einzelnes Projekt."""
+        kern_db, kern_pj = self._projekt_antwort()
+        if kern_pj is None:
+            return
+        query = parse_qs(urlparse(self.path).query)
+        con = kern_db.verbinde()
+        projekt_id = (query.get("id") or [None])[0]
+        try:
+            if projekt_id:
+                projekt = kern_pj.lade_projekt(con, int(projekt_id))
+                antwort = {"ok": True, "projekt": projekt}
+                if (query.get("verlauf") or [""])[0] and projekt["aktive_variante_id"]:
+                    antwort["verlauf"] = kern_pj.verlauf(con, projekt["aktive_variante_id"])
+                self._send_json(antwort)
+            else:
+                self._send_json({"ok": True, "projekte": kern_pj.liste_projekte(con),
+                                 "statistik": kern_pj.statistik(con)})
+        except (kern_pj.ProjektError, ValueError) as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=404)
+
+    def _handle_projekt_schreiben(self) -> None:
+        """Projekt anlegen, umbenennen, aktive Variante setzen, Variante
+        speichern, duplizieren, loeschen, Stand wiederherstellen.
+
+        Eine Aktion je Aufruf ueber das Feld `aktion` -- so bleibt die
+        Oberflaeche mit einem Endpunkt auskommend.
+        """
+        kern_db, kern_pj = self._projekt_antwort()
+        if kern_pj is None:
+            return
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        con = kern_db.verbinde()
+        aktion = (daten.get("aktion") or "").strip()
+
+        try:
+            if aktion == "projekt_anlegen":
+                projekt = kern_pj.erstelle_projekt(
+                    con, daten.get("name") or "", daten.get("egrid") or "",
+                    daten.get("adresse"), notiz=daten.get("notiz"))
+            elif aktion == "projekt_umbenennen":
+                projekt = kern_pj.benenne_projekt_um(
+                    con, int(daten["projekt_id"]), daten.get("name") or "")
+            elif aktion == "projekt_loeschen":
+                geloescht = kern_pj.loesche_projekt(con, int(daten["projekt_id"]))
+                self._send_json({"ok": geloescht, "geloescht": geloescht},
+                                status=200 if geloescht else 404)
+                return
+            elif aktion == "variante_aktiv":
+                projekt = kern_pj.setze_aktive_variante(
+                    con, int(daten["projekt_id"]), int(daten["variante_id"]))
+            elif aktion == "variante_anlegen":
+                v = kern_pj.erstelle_variante(
+                    con, int(daten["projekt_id"]), daten.get("name") or "",
+                    daten.get("szenario_id") or "", daten.get("eingaben"))
+                projekt = kern_pj.lade_projekt(con, v["projekt_id"])
+            elif aktion == "variante_speichern":
+                v = kern_pj.speichere_variante(
+                    con, int(daten["variante_id"]),
+                    name=daten.get("name"), szenario_id=daten.get("szenario_id"),
+                    eingaben=daten.get("eingaben"),
+                    eingaben_zusammenfuehren=daten.get("zusammenfuehren", True))
+                projekt = kern_pj.lade_projekt(con, v["projekt_id"])
+            elif aktion == "variante_duplizieren":
+                v = kern_pj.dupliziere_variante(
+                    con, int(daten["variante_id"]), daten.get("name"))
+                projekt = kern_pj.lade_projekt(con, v["projekt_id"])
+            elif aktion == "variante_loeschen":
+                v = kern_pj.lade_variante(con, int(daten["variante_id"]))
+                kern_pj.loesche_variante(con, int(daten["variante_id"]))
+                projekt = kern_pj.lade_projekt(con, v["projekt_id"])
+            elif aktion == "stand_wiederherstellen":
+                v = kern_pj.stelle_stand_wieder_her(
+                    con, int(daten["variante_id"]), int(daten["stand"]))
+                projekt = kern_pj.lade_projekt(con, v["projekt_id"])
+            else:
+                self._send_json(
+                    {"ok": False, "fehler": f"Unbekannte Aktion {aktion!r}."}, status=400)
+                return
+        except kern_pj.ProjektError as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=400)
+            return
+        except (KeyError, TypeError, ValueError) as exc:
+            self._send_json({"ok": False, "fehler": f"Ungueltige Eingabe: {exc}"}, status=400)
+            return
+
+        self._send_json({"ok": True, "projekt": projekt})
+
+    def _handle_variante_rechnen(self) -> None:
+        """Eine Variante rechnen -- oder alle fuer den Vergleich.
+
+        Braucht eine fertige Analyse (job_id): die Variante haelt bewusst
+        keine amtlichen Basisdaten, sie orchestriert nur.
+        """
+        kern_db, kern_pj = self._projekt_antwort()
+        if kern_pj is None:
+            return
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        job_id = (daten.get("job_id") or "").strip()
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            kontext = job.get("kontext") if job else None
+        if job is None or job["status"] != "done" or not kontext:
+            self._send_json(
+                {"ok": False, "fehler": "Keine abgeschlossene Analyse zu dieser job_id."},
+                status=404)
+            return
+
+        con = kern_db.verbinde()
+        analyse = Analyse(ergebnis=job["ergebnis"], kontext=kontext)
+        try:
+            if daten.get("variante_id"):
+                varianten = [kern_pj.lade_variante(con, int(daten["variante_id"]))]
+            else:
+                projekt = kern_pj.lade_projekt(con, int(daten["projekt_id"]))
+                varianten = projekt["varianten"]
+        except (kern_pj.ProjektError, KeyError, TypeError, ValueError) as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=400)
+            return
+
+        ergebnisse = {}
+        for v in varianten:
+            try:
+                ergebnisse[str(v["variante_id"])] = _rechne_variante(analyse, v)
+            except Exception as exc:  # noqa: BLE001 -- eine Variante darf die uebrigen nicht reissen
+                traceback.print_exc()
+                ergebnisse[str(v["variante_id"])] = {
+                    "variante": {"variante_id": v["variante_id"], "name": v["name"],
+                                 "szenario_id": v["szenario_id"]},
+                    "fehler": str(exc),
+                }
+
+        antwort = {"ok": True, "ergebnisse": ergebnisse}
+        if len(ergebnisse) == 1:
+            antwort["ergebnis"] = next(iter(ergebnisse.values()))
+        else:
+            antwort["vergleich"] = _variantenvergleich(varianten, ergebnisse)
+        self._send_json(antwort)
+
     def _handle_umgebung(self) -> None:
         """Raeumlicher Kontext fuer die 3D-Ansicht.
 
@@ -544,6 +771,12 @@ class Handler(BaseHTTPRequestHandler):
                         status=200 if geloescht else 404)
 
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/projekt":
+            self._handle_projekt_schreiben()
+            return
+        if self.path == "/projekt/rechnen":
+            self._handle_variante_rechnen()
+            return
         if self.path == "/marktdaten":
             self._handle_marktdaten_schreiben()
             return

@@ -308,6 +308,22 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .szbtn.aktiv { border-color: var(--ink); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--ink); }
 .szaktion { margin-top: 10px; }
 .card.szenario .szgrund { margin: 6px 0 10px; font-size: 13px; line-height: 1.5; }
+.pjleiste { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px;
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); }
+.pjname { font-weight: 700; font-size: 13px; }
+.pjmeta { font-size: 11px; color: var(--ink-3); }
+.pjhinweis { font-size: 12px; color: var(--ink-2); flex: 1 1 auto; }
+.pjtitel { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); font-weight: 600; margin: 10px 0 6px; }
+.pjeigen { display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--ink); color: var(--bg); font-size: 10px; font-weight: 700; }
+.pjplus { border-style: dashed; }
+.pjzeile { cursor: pointer; }
+.pjzeile:hover { background: var(--bg-2); }
+.pjtab th:first-child { text-align: left; color: var(--ink-3); font-weight: 600;
+  text-transform: none; letter-spacing: 0; font-size: 11px; }
+.pjtab td { font-variant-numeric: tabular-nums; }
 .d3steuer { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
   margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--bg-2); }
@@ -1542,6 +1558,106 @@ var BAUKOERPER_FARBE = {
 };
 var aktivesSzenario = null;
 
+// ---------------------------------------------------------------------------
+// Projekte und Varianten
+//
+// Eine Variante ist kein zweites Ergebnis, sondern ein Delta: Szenario plus
+// die Werte, die der Benutzer selbst gesetzt hat. Gerechnet wird sie ueber
+// denselben Weg wie jede andere Eingabe -- die Oberflaeche orchestriert nur.
+// ---------------------------------------------------------------------------
+// Welche Felder der Benutzer tatsaechlich angefasst hat. Ein Vorgabewert,
+// der nur im Formular steht, ist KEINE Benutzerannahme -- sonst waere in der
+// gespeicherten Variante nicht mehr unterscheidbar, was eigene Entscheidung
+// und was Systemvorschlag ist.
+var wBeruehrt = {};
+
+// Ordnet ein Formularfeld dem Schluessel zu, unter dem es gespeichert wird.
+var FELD_ZU_EINGABE = {
+  "w-verkauf": "verkauf_chf_pro_m2",
+  "w-miete": "miete_chf_pro_m2_jahr",
+  "w-boden": "bodenpreis_chf_pro_m2",
+  "w-zielmarge": "zielmarge",
+  "w-land": "land_ansatz",
+  "w-basis": "verkauf_basis",
+  "w-verteilen": "restflaeche_verteilen"
+};
+
+var projektAktuell = null;        // {projekt_id, name, varianten: [...], ...}
+var varianteErgebnisse = {};      // variante_id -> Rechenergebnis
+var variantenVergleich = null;
+
+function aktiveVariante() {
+  if (!projektAktuell) return null;
+  return (projektAktuell.varianten || []).find(function (v) {
+    return v.variante_id === projektAktuell.aktive_variante_id;
+  }) || (projektAktuell.varianten || [])[0] || null;
+}
+
+function projektAktion(daten) {
+  return fetch("/api/projekt", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(daten)
+  }).then(function (r) { return r.json(); });
+}
+
+function rechneVarianten(nurAktive) {
+  if (!projektAktuell || !jobIdAktuell) return Promise.resolve(null);
+  var koerper = { job_id: jobIdAktuell, projekt_id: projektAktuell.projekt_id };
+  var v = aktiveVariante();
+  if (nurAktive && v) koerper.variante_id = v.variante_id;
+  return fetch("/api/projekt/rechnen", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(koerper)
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok) return null;
+    Object.keys(d.ergebnisse || {}).forEach(function (k) { varianteErgebnisse[k] = d.ergebnisse[k]; });
+    if (d.vergleich) variantenVergleich = d.vergleich;
+    return d;
+  });
+}
+
+// Die aktive Variante bestimmt, was Szene, Kennzahlen und Wirtschaftlichkeit
+// zeigen. Ein Variantenwechsel laedt deshalb kein neues Projekt, sondern
+// setzt nur diesen Zeiger um und zeichnet neu.
+function wendeVarianteAn() {
+  var v = aktiveVariante();
+  if (!v) return;
+  var e = varianteErgebnisse[String(v.variante_id)];
+  if (e && !e.fehler) {
+    if (ergebnisAktuell) ergebnisAktuell.szenarien = e.szenarien;
+    wErgebnis = e.wirtschaftlichkeit || null;
+    if (wErgebnis) {
+      wErgebnis.marktlage = e.marktlage;
+      wErgebnis.marktlage_fehler = e.marktlage_fehler;
+    }
+    if (e.variante && e.variante.eingaben) {
+      uebernehmeVariantenEingaben(e.variante.eingaben);
+      // Die gespeicherten Werte dieser Variante sind ihre Benutzerannahmen;
+      // die einer anderen Variante gelten hier nicht.
+      wBeruehrt = {};
+      Object.keys(e.variante.eingaben).forEach(function (k) { wBeruehrt[k] = true; });
+    }
+  }
+  szenarioKarte(v.szenario_id);
+  zeichneProjektleiste();
+  if (typeof wZeichneNeu === "function") wZeichneNeu();
+}
+
+// Die gespeicherten Benutzerannahmen in die Eingabefelder zuruecklesen --
+// sonst zeigte die Oberflaeche nach dem Oeffnen eines Projekts andere Werte
+// als die, mit denen gerechnet wurde.
+function uebernehmeVariantenEingaben(eingaben) {
+  ["verkauf_chf_pro_m2", "miete_chf_pro_m2_jahr", "bodenpreis_chf_pro_m2",
+   "zielmarge", "land_ansatz", "verkauf_basis", "restflaeche_verteilen"].forEach(function (k) {
+    if (eingaben[k] !== undefined) wEingaben[k] = eingaben[k];
+  });
+  if (eingaben.wohnungsmix && eingaben.wohnungsmix.length) {
+    wEingaben.wohnungsmix = eingaben.wohnungsmix.map(function (t) {
+      return { typ: t.typ, flaeche_m2: t.flaeche_m2, anteil: t.anteil };
+    });
+  }
+}
+
 function szenarioKarte(id) {
   aktivesSzenario = id;
   zeichneSzenario(id);
@@ -1550,6 +1666,7 @@ function szenarioKarte(id) {
   });
   if (window.zeichne3D) window.zeichne3D(id);
   verdrahte3DSteuerung();
+  if (document.getElementById("projektleiste") && !projektAktuell) zeichneProjektleiste();
 }
 
 function zeichneSzenario(id) {
@@ -1615,6 +1732,176 @@ function szenarioKarteZeile(s) {
   "</div>";
 }
 
+// Die Projektleiste ersetzt die Szenarienwahl, sobald ein Projekt offen ist:
+// dann waehlt der Benutzer Varianten, nicht Szenarien. Ohne Projekt bleibt
+// alles wie bisher -- eine Analyse funktioniert auch ohne Projekt.
+function zeichneProjektleiste() {
+  var ziel = document.getElementById("projektleiste");
+  if (!ziel) return;
+  var szwahl = document.getElementById("szwahl");
+
+  if (!projektAktuell) {
+    if (szwahl) szwahl.style.display = "";
+    ziel.innerHTML =
+      '<div class="pjleiste">' +
+        '<span class="pjhinweis">Aus dieser Analyse ein Projekt machen, um Varianten zu speichern und zu vergleichen.</span>' +
+        '<button class="szbtn" id="pj-neu">Als Projekt speichern</button>' +
+        '<button class="szbtn" id="pj-oeffnen">Meine Projekte</button>' +
+      "</div><div id=\"pj-liste\"></div>";
+    verdrahteProjektleiste();
+    return;
+  }
+
+  if (szwahl) szwahl.style.display = "none";
+  var aktiv = aktiveVariante();
+  var knoepfe = (projektAktuell.varianten || []).map(function (v) {
+    var e = varianteErgebnisse[String(v.variante_id)];
+    var sz = e && e.szenarien ? ((e.szenarien.szenarien || {})[v.szenario_id] || {}) : {};
+    var badge = MACHBARKEIT_BADGE[sz.machbarkeit] || null;
+    var eigene = (v.benutzerwerte || []).length;
+    return '<button class="szbtn pjvariante' + (aktiv && v.variante_id === aktiv.variante_id ? " aktiv" : "") +
+      '" data-variante="' + v.variante_id + '">' + esc(v.name) +
+      (badge ? '<span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span>" : "") +
+      (eigene ? '<span class="pjeigen" title="' + eigene + ' eigene Annahme(n)">' + eigene + "</span>" : "") +
+      "</button>";
+  }).join("");
+
+  ziel.innerHTML =
+    '<div class="pjleiste">' +
+      '<span class="pjname">' + esc(projektAktuell.name) + "</span>" +
+      '<span class="pjmeta">' + esc(projektAktuell.adresse || projektAktuell.egrid) + "</span>" +
+      '<button class="szbtn" id="pj-schliessen">schliessen</button>' +
+      '<button class="szbtn" id="pj-oeffnen">wechseln</button>' +
+    "</div>" +
+    '<div class="pjtitel">Varianten</div>' +
+    '<div class="szwahl">' + knoepfe +
+      '<button class="szbtn pjplus" id="pj-dupl">+ Variante</button></div>' +
+    (aktiv && (aktiv.benutzerwerte || []).length
+      ? '<div class="note">Eigene Annahmen in dieser Variante: <b>' +
+        aktiv.benutzerwerte.map(esc).join(", ") + "</b>. Alles Übrige stammt vom System.</div>"
+      : '<div class="note">Diese Variante nutzt durchgehend die Systemvorschläge. Sobald du einen Wert änderst, wird er als eigene Annahme gespeichert.</div>') +
+    '<div id="pj-vergleich"></div><div id="pj-liste"></div>';
+
+  zeichneVariantenvergleich();
+  verdrahteProjektleiste();
+}
+
+function zeichneVariantenvergleich() {
+  var ziel = document.getElementById("pj-vergleich");
+  if (!ziel || !variantenVergleich || variantenVergleich.length < 2) return;
+  var z = variantenVergleich;
+  var zeile = function (titel, holen, formatierer) {
+    return "<tr><th>" + esc(titel) + "</th>" + z.map(function (v) {
+      var w = holen(v);
+      return "<td>" + (w === null || w === undefined ? "–" : formatierer(w)) + "</td>";
+    }).join("") + "</tr>";
+  };
+  ziel.innerHTML =
+    '<details class="more" open><summary>Varianten vergleichen</summary><div class="scroller">' +
+    '<table class="src pjtab"><thead><tr><th></th>' +
+    z.map(function (v) { return "<th>" + esc(v.name) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+    zeile("Machbarkeit", function (v) { return v.machbarkeit; }, function (w) {
+      var b = MACHBARKEIT_BADGE[w] || [w, "mute"];
+      return '<span class="badge ' + b[1] + '">' + esc(b[0]) + "</span>";
+    }) +
+    zeile("NWF", function (v) { return v.nwf_m2; }, function (w) { return fmt(w, 0) + " m²"; }) +
+    zeile("Wohnungen", function (v) { return v.wohnungen; }, function (w) { return esc(w); }) +
+    zeile("Verkaufserlös", function (v) { return v.verkaufserloes_chf; }, function (w) { return "CHF " + chf(w, true); }) +
+    zeile("Kosten", function (v) { return v.baukosten_chf; }, function (w) { return "CHF " + chf(w, true); }) +
+    zeile("Gewinn", function (v) { return v.gewinn_chf; }, function (w) { return "CHF " + chf(w, true); }) +
+    zeile("Marge", function (v) { return v.marge; }, function (w) { return (w * 100).toFixed(1) + " %"; }) +
+    zeile("Max. Landwert", function (v) { return v.max_landwert_chf; }, function (w) { return "CHF " + chf(w, true); }) +
+    zeile("eigene Annahmen", function (v) { return (v.benutzerwerte || []).length; }, function (w) { return esc(w); }) +
+    "</tbody></table></div></details>";
+}
+
+function verdrahteProjektleiste() {
+  var neu = document.getElementById("pj-neu");
+  if (neu) neu.onclick = function () {
+    var m1 = (ergebnisAktuell || {}).modul1_geodaten || {};
+    var egrid = (m1.kataster || {}).egrid;
+    if (!egrid) { alert("Ohne EGRID kann kein Projekt angelegt werden."); return; }
+    var name = prompt("Projektname:", (ergebnisAktuell || {}).adresse || "Neues Projekt");
+    if (!name) return;
+    projektAktion({ aktion: "projekt_anlegen", name: name, egrid: egrid,
+                    adresse: (ergebnisAktuell || {}).adresse })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return; }
+        projektAktuell = d.projekt;
+        return rechneVarianten(false);
+      }).then(function () { wendeVarianteAn(); });
+  };
+
+  var oeffnen = document.getElementById("pj-oeffnen");
+  if (oeffnen) oeffnen.onclick = function () {
+    fetch("/api/projekte").then(function (r) { return r.json(); }).then(function (d) {
+      var ziel = document.getElementById("pj-liste");
+      if (!ziel) return;
+      if (!d.ok || !(d.projekte || []).length) {
+        ziel.innerHTML = '<div class="note">Noch keine Projekte gespeichert.</div>';
+        return;
+      }
+      ziel.innerHTML = '<div class="pjtitel">Meine Projekte</div>' +
+        '<div class="scroller"><table class="src"><thead><tr><th>Projekt</th><th>Adresse</th>' +
+        "<th>aktive Variante</th><th>Varianten</th><th>zuletzt geändert</th></tr></thead><tbody>" +
+        d.projekte.map(function (p) {
+          return '<tr class="pjzeile" data-projekt="' + p.projekt_id + '"><td><b>' + esc(p.name) +
+            "</b></td><td>" + esc(p.adresse || p.egrid) + "</td><td>" +
+            esc(p.aktive_variante_name || "–") + "</td><td>" + esc(p.anzahl_varianten) +
+            "</td><td>" + esc((p.geaendert_am || "").slice(0, 16).replace("T", " ")) + "</td></tr>";
+        }).join("") + "</tbody></table></div>";
+      ziel.querySelectorAll(".pjzeile").forEach(function (tr) {
+        tr.onclick = function () {
+          fetch("/api/projekt?id=" + tr.dataset.projekt).then(function (r) { return r.json(); })
+            .then(function (d2) {
+              if (!d2.ok) { alert(d2.fehler); return; }
+              projektAktuell = d2.projekt;
+              varianteErgebnisse = {};
+              return rechneVarianten(false);
+            }).then(function () { wendeVarianteAn(); });
+        };
+      });
+    });
+  };
+
+  var schliessen = document.getElementById("pj-schliessen");
+  if (schliessen) schliessen.onclick = function () {
+    projektAktuell = null; varianteErgebnisse = {}; variantenVergleich = null;
+    zeichneProjektleiste();
+  };
+
+  var dupl = document.getElementById("pj-dupl");
+  if (dupl) dupl.onclick = function () {
+    var v = aktiveVariante();
+    if (!v) return;
+    var name = prompt("Name der neuen Variante:", v.name + " – angepasst");
+    if (!name) return;
+    projektAktion({ aktion: "variante_duplizieren", variante_id: v.variante_id, name: name })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return; }
+        projektAktuell = d.projekt;
+        var neueste = d.projekt.varianten[d.projekt.varianten.length - 1];
+        return projektAktion({ aktion: "variante_aktiv", projekt_id: d.projekt.projekt_id,
+                               variante_id: neueste.variante_id });
+      }).then(function (d) {
+        if (d && d.ok) projektAktuell = d.projekt;
+        return rechneVarianten(false);
+      }).then(function () { wendeVarianteAn(); });
+  };
+
+  document.querySelectorAll(".pjvariante").forEach(function (b) {
+    b.onclick = function () {
+      projektAktion({ aktion: "variante_aktiv", projekt_id: projektAktuell.projekt_id,
+                      variante_id: parseInt(b.dataset.variante, 10) })
+        .then(function (d) {
+          if (!d.ok) { alert(d.fehler); return; }
+          projektAktuell = d.projekt;
+          wendeVarianteAn();
+        });
+    };
+  });
+}
+
 function secSzenarien(erg) {
   var kopf = '<div class="sechead"><span class="num">07</span><h3>Entwicklungsszenarien</h3></div>';
   var sz = erg.szenarien;
@@ -1659,7 +1946,7 @@ function secSzenarien(erg) {
         "<td>" + (z.anzahl_konflikte ? '<span class="badge warn">' + z.anzahl_konflikte + "</span>" : "–") + "</td></tr>";
     }).join("") + "</tbody></table></div>";
 
-  var waehler = '<div class="szwahl">' +
+  var waehler = '<div id="projektleiste"></div><div class="szwahl" id="szwahl">' +
     vergleich.map(function (z) {
       var badge = MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit, "mute"];
       return '<button class="szbtn" data-szenario="' + esc(z.id) + '">' + esc(z.bezeichnung) +
@@ -2381,6 +2668,30 @@ function wVergleichBlock() {
 }
 
 var _wAktiv = null;
+// Nur die Werte, die der Benutzer wirklich gesetzt hat -- ein leeres Feld
+// bleibt leer und wird beim Speichern verworfen, damit der Systemvorschlag
+// wieder greift.
+function eingabenFuerVariante() {
+  var e = {};
+  Object.keys(wBeruehrt).forEach(function (k) {
+    if (!wBeruehrt[k]) return;
+    var wert = k === "wohnungsmix" ? wEingaben.wohnungsmix : wEingaben[k];
+    if (leer(wert)) return;
+    e[k] = wert;
+  });
+  // Der Wohnungsmix wird IMMER mitgespeichert, auch wenn er noch die
+  // Vorbelegung ist. Er steht sichtbar im Formular und bestimmt das Ergebnis
+  // massgeblich -- wuerde er fehlen, rechnete die wieder geoeffnete Variante
+  // auf der vollen Wohnflaeche statt auf der belegten und zeigte einen
+  // anderen Erloes als vor dem Schliessen (live beobachtet: 1.43 gegen
+  // 1.87 Mio.). Eine Anzeige, die nicht zur Rechnung passt, ist schlimmer
+  // als ein Mix, der als Annahme gefuehrt wird.
+  if (!e.wohnungsmix && wEingaben.wohnungsmix && wEingaben.wohnungsmix.length) {
+    e.wohnungsmix = wEingaben.wohnungsmix;
+  }
+  return e;
+}
+
 function wAktivesSzenario() {
   if (_wAktiv) return _wAktiv;
   var v = alsListe((wErgebnis || {}).vergleich);
@@ -2466,6 +2777,17 @@ function wRechne() {
       return;
     }
     wErgebnis = data.wirtschaftlichkeit;
+    // Ist ein Projekt offen, gehoert die Aenderung in die aktive Variante --
+    // sonst waere sie beim naechsten Oeffnen weg. Gespeichert wird nur, was
+    // der Benutzer tatsaechlich gesetzt hat.
+    var vAktiv = aktiveVariante();
+    if (vAktiv) {
+      projektAktion({ aktion: "variante_speichern", variante_id: vAktiv.variante_id,
+                      eingaben: eingabenFuerVariante(), zusammenfuehren: false })
+        .then(function (d) {
+          if (d && d.ok) { projektAktuell = d.projekt; zeichneProjektleiste(); }
+        });
+    }
     if (wErgebnis) {
       wErgebnis.marktlage = data.marktlage;
       wErgebnis.marktlage_fehler = data.marktlage_fehler;
@@ -2510,14 +2832,22 @@ function verdrahteWirtschaft() {
   document.querySelectorAll("#sec-wirtschaft input, #sec-wirtschaft select").forEach(function (el) {
     if (el.dataset.verdrahtet) return;
     el.dataset.verdrahtet = "1";
-    el.addEventListener("input", wAngestossen);
-    el.addEventListener("change", wAngestossen);
+    var merken = function () {
+      var schluessel = FELD_ZU_EINGABE[el.id];
+      if (schluessel) wBeruehrt[schluessel] = true;
+      if (el.className && el.className.indexOf("wmix") === 0) wBeruehrt.wohnungsmix = true;
+      if (el.className && el.className.indexOf("bkp-") === 0) wBeruehrt.bkp = true;
+      wAngestossen();
+    };
+    el.addEventListener("input", merken);
+    el.addEventListener("change", merken);
   });
   document.querySelectorAll(".wmix-weg").forEach(function (b) {
     if (b.dataset.verdrahtet) return;
     b.dataset.verdrahtet = "1";
     b.addEventListener("click", function () {
       wEingaben.wohnungsmix.splice(Number(b.dataset.i), 1);
+      wBeruehrt.wohnungsmix = true;
       var el = document.getElementById("w-mix");
       if (el) el.innerHTML = mixBlock();
       verdrahteWirtschaft();
@@ -2529,6 +2859,7 @@ function verdrahteWirtschaft() {
     plus.dataset.verdrahtet = "1";
     plus.addEventListener("click", function () {
       wEingaben.wohnungsmix.push({ typ: "neuer Typ", flaeche_m2: 90, anteil: 0 });
+      wBeruehrt.wohnungsmix = true;
       var el = document.getElementById("w-mix");
       if (el) el.innerHTML = mixBlock();
       verdrahteWirtschaft();
