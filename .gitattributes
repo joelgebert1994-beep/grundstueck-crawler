@@ -1,0 +1,23 @@
+# Zeilenenden.
+#
+# Auf Windows wandelt Git beim Auschecken standardmaessig in CRLF um. Fuer ein
+# Shell-Skript, das auf der Linux-VM laufen soll, ist das toedlich: bash liest
+# das \r als Teil des Befehls und meldet Dinge wie
+#   /bin/bash^M: bad interpreter
+# oder bricht mitten im Skript ab. Der Fehler sieht nach allem Moeglichen aus,
+# nur nicht nach Zeilenenden.
+#
+# Alles, was auf dem Server ausgefuehrt oder gelesen wird, bleibt deshalb LF.
+
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.service       text eol=lf
+*.timer         text eol=lf
+Caddyfile       text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+env.beispiel    text eol=lf
+.dockerignore   text eol=lf
+
+# Python laeuft mit beiden, aber einheitlich ist einheitlich.
+*.py            text eol=lf
