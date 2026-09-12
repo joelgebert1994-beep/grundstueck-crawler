@@ -315,6 +315,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "service": "grundstueck-crawler-backend"})
         elif self.path.startswith("/status/"):
             self._handle_status(self.path[len("/status/"):])
+        elif self.path.startswith("/projekt/export"):
+            self._handle_projekt_export()
         elif self.path.startswith("/projekte") or self.path.startswith("/projekt"):
             self._handle_projekte_lesen()
         elif self.path.startswith("/umgebung"):
@@ -487,6 +489,94 @@ class Handler(BaseHTTPRequestHandler):
                 status=503)
             return None, None
         return kern_db, kern_pj
+
+    def _send_datei(self, inhalt: str, dateiname: str, medientyp: str) -> None:
+        """Eine Datei zum Herunterladen ausliefern."""
+        roh = inhalt.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", f"{medientyp}; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{dateiname}"')
+        self.send_header("Content-Length", str(len(roh)))
+        self.end_headers()
+        self.wfile.write(roh)
+
+    def _handle_projekt_export(self) -> None:
+        """Projekt als JSON (wieder importierbar) oder Kennzahlen als CSV."""
+        kern_db, kern_pj = self._projekt_antwort()
+        if kern_pj is None:
+            return
+        query = parse_qs(urlparse(self.path).query)
+        projekt_id = (query.get("id") or [""])[0]
+        format_ = ((query.get("format") or ["json"])[0]).lower()
+        con = kern_db.verbinde()
+
+        try:
+            projekt = kern_pj.lade_projekt(con, int(projekt_id))
+        except (kern_pj.ProjektError, ValueError) as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=404)
+            return
+
+        stamm = "".join(
+            z if (z.isalnum() or z in "-_") else "_" for z in (projekt["name"] or "projekt")
+        )[:60] or "projekt"
+
+        if format_ == "json":
+            daten = kern_pj.exportiere_projekt(
+                con, projekt["projekt_id"],
+                mit_verlauf=bool((query.get("verlauf") or [""])[0]))
+            self._send_datei(json.dumps(daten, ensure_ascii=False, indent=2),
+                             f"{stamm}.json", "application/json")
+            return
+
+        if format_ == "csv":
+            # Die Kennzahlen kommen aus der laufenden Rechnung, nicht aus einer
+            # zweiten Quelle -- dafuer braucht es eine fertige Analyse.
+            job_id = (query.get("job_id") or [""])[0].strip()
+            with _JOBS_LOCK:
+                job = _JOBS.get(job_id)
+                kontext = job.get("kontext") if job else None
+            if job is None or job["status"] != "done" or not kontext:
+                self._send_json(
+                    {"ok": False, "fehler": "Fuer den CSV-Export ist eine abgeschlossene "
+                                            "Analyse noetig (job_id fehlt oder abgelaufen)."},
+                    status=400)
+                return
+            analyse = Analyse(ergebnis=job["ergebnis"], kontext=kontext)
+            ergebnisse = {}
+            for v in projekt["varianten"]:
+                try:
+                    ergebnisse[str(v["variante_id"])] = _rechne_variante(analyse, v)
+                except Exception:  # noqa: BLE001
+                    traceback.print_exc()
+                    ergebnisse[str(v["variante_id"])] = {}
+            zeilen = _variantenvergleich(projekt["varianten"], ergebnisse)
+            self._send_datei(kern_pj.kennzahlen_csv(zeilen), f"{stamm}.csv", "text/csv")
+            return
+
+        self._send_json(
+            {"ok": False, "fehler": f"Unbekanntes Format {format_!r} -- json oder csv."},
+            status=400)
+
+    def _handle_projekt_import(self) -> None:
+        """Ein exportiertes Projekt wiederherstellen.
+
+        Legt immer ein NEUES Projekt an -- ein Import darf keine vorhandene
+        Arbeit still verdraengen.
+        """
+        kern_db, kern_pj = self._projekt_antwort()
+        if kern_pj is None:
+            return
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        con = kern_db.verbinde()
+        try:
+            projekt = kern_pj.importiere_projekt(
+                con, daten.get("projektdatei") or daten, name=daten.get("name"))
+        except kern_pj.ProjektError as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=400)
+            return
+        self._send_json({"ok": True, "projekt": projekt})
 
     def _handle_projekte_lesen(self) -> None:
         """Uebersicht 'Meine Projekte' oder ein einzelnes Projekt."""
@@ -773,6 +863,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if self.path == "/projekt":
             self._handle_projekt_schreiben()
+            return
+        if self.path == "/projekt/import":
+            self._handle_projekt_import()
             return
         if self.path == "/projekt/rechnen":
             self._handle_variante_rechnen()

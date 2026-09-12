@@ -1780,6 +1780,13 @@ function zeichneProjektleiste() {
       ? '<div class="note">Eigene Annahmen in dieser Variante: <b>' +
         aktiv.benutzerwerte.map(esc).join(", ") + "</b>. Alles Übrige stammt vom System.</div>"
       : '<div class="note">Diese Variante nutzt durchgehend die Systemvorschläge. Sobald du einen Wert änderst, wird er als eigene Annahme gespeichert.</div>') +
+    '<div class="pjtitel">Export</div>' +
+    '<div class="szwahl">' +
+      '<button class="szbtn" id="dossier-pdf">Dossier PDF</button>' +
+      '<button class="szbtn" id="export-bild">Bild exportieren</button>' +
+      '<button class="szbtn" id="export-json">Projekt als JSON</button>' +
+      '<button class="szbtn" id="export-csv">Kennzahlen als CSV</button>' +
+    "</div>" +
     '<div id="pj-vergleich"></div><div id="pj-liste"></div>';
 
   zeichneVariantenvergleich();
@@ -1889,6 +1896,15 @@ function verdrahteProjektleiste() {
       }).then(function () { wendeVarianteAn(); });
   };
 
+  var pdf = document.getElementById("dossier-pdf");
+  if (pdf) pdf.onclick = dossierOeffnen;
+  var bild = document.getElementById("export-bild");
+  if (bild) bild.onclick = bildExportieren;
+  var json = document.getElementById("export-json");
+  if (json) json.onclick = function () { datenExportieren("json"); };
+  var csv = document.getElementById("export-csv");
+  if (csv) csv.onclick = function () { datenExportieren("csv"); };
+
   document.querySelectorAll(".pjvariante").forEach(function (b) {
     b.onclick = function () {
       projektAktion({ aktion: "variante_aktiv", projekt_id: projektAktuell.projekt_id,
@@ -1900,6 +1916,458 @@ function verdrahteProjektleiste() {
         });
     };
   });
+}
+
+
+// ---------------------------------------------------------------------------
+// Dossier
+//
+// Der Bericht rechnet NICHTS. Er liest die Ergebnisse, die Engine und
+// Wirtschaftlichkeit ohnehin geliefert haben, und ordnet sie so, wie ein
+// Entwickler oder Investor sie liest: Ergebnis zuerst, Herleitung danach,
+// Belege am Schluss.
+// ---------------------------------------------------------------------------
+
+// Bilder werden vor dem Aufbau eingesammelt, weil sie aus lebenden Elementen
+// stammen (WebGL-Puffer, Kartenkacheln) und im Bericht als feste Aufnahme
+// stehen muessen.
+function bild3D() {
+  var c = document.querySelector("#view3d canvas");
+  if (!c) return null;
+  try { return c.toDataURL("image/png"); } catch (e) { return null; }
+}
+
+// Die Karte wird aus den swisstopo-Kacheln zusammengesetzt, die der Browser
+// ohnehin schon geladen hat -- kein zusaetzlicher Dienst, keine Abhaengigkeit.
+function kartenbild(ebene, groesse) {
+  return new Promise(function (fertig) {
+    var m1 = (ergebnisAktuell || {}).modul1_geodaten || {};
+    var geo = m1.geocoding || {};
+    if (leer(geo.wgs84_lat) || leer(geo.wgs84_lon)) { fertig(null); return; }
+    var zoom = 18, kacheln = groesse || 3;
+    var n = Math.pow(2, zoom);
+    var x = Math.floor((geo.wgs84_lon + 180) / 360 * n);
+    var lat = geo.wgs84_lat * Math.PI / 180;
+    var y = Math.floor((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n);
+
+    var leinwand = document.createElement("canvas");
+    leinwand.width = kacheln * 256; leinwand.height = kacheln * 256;
+    var ctx = leinwand.getContext("2d");
+    var offen = kacheln * kacheln, halb = Math.floor(kacheln / 2);
+
+    for (var dx = -halb; dx <= halb; dx++) {
+      for (var dy = -halb; dy <= halb; dy++) {
+        (function (dx, dy) {
+          var bild = new Image();
+          bild.crossOrigin = "anonymous";
+          bild.onload = function () {
+            ctx.drawImage(bild, (dx + halb) * 256, (dy + halb) * 256);
+            if (--offen === 0) fertig(leinwand.toDataURL("image/jpeg", 0.85));
+          };
+          bild.onerror = function () { if (--offen === 0) fertig(leinwand.toDataURL("image/jpeg", 0.85)); };
+          bild.src = wmts(ebene).replace("{z}", zoom).replace("{x}", x + dx).replace("{y}", y + dy);
+        })(dx, dy);
+      }
+    }
+  });
+}
+
+function dossierKennzahl(titel, wert, einheit, unterzeile) {
+  return '<div class="dkz"><span class="dkzlab">' + esc(titel) + "</span>" +
+    '<span class="dkzwert">' + (leer(wert) ? '<em>nicht bestimmbar</em>' : esc(wert)) +
+    (einheit && !leer(wert) ? ' <span class="dkzein">' + esc(einheit) + "</span>" : "") + "</span>" +
+    (unterzeile ? '<span class="dkzsub">' + esc(unterzeile) + "</span>" : "") + "</div>";
+}
+
+// Ein Abschnitt, der nichts zu sagen hat, verschwindet nicht stillschweigend:
+// eine Nummernluecke (4, dann 6) liest sich als Fehler im Bericht, und das
+// Fehlen einer Rechnung ist selbst eine Aussage. Wo ein Grund angegeben ist,
+// steht der Abschnitt mit dem Grund da.
+function dossierAbschnitt(nummer, titel, inhalt, umbruch, grund) {
+  if (!inhalt && !grund) return "";
+  if (!inhalt) {
+    inhalt = '<p class="dhinweis">' + esc(grund) + "</p>";
+  }
+  return '<section class="dsec' + (umbruch ? " umbruch" : "") + '">' +
+    '<h2><span class="dnum">' + nummer + "</span>" + esc(titel) + "</h2>" + inhalt + "</section>";
+}
+
+function dossierTabelle(kopf, zeilen) {
+  if (!zeilen.length) return "";
+  return '<table class="dtab"><thead><tr>' +
+    kopf.map(function (k) { return "<th>" + esc(k) + "</th>"; }).join("") +
+    "</tr></thead><tbody>" +
+    zeilen.map(function (z) {
+      return "<tr>" + z.map(function (c) { return "<td>" + (c === null || c === undefined ? "–" : c) + "</td>"; }).join("") + "</tr>";
+    }).join("") + "</tbody></table>";
+}
+
+// Herkunft eines Werts in Klartext -- im Bericht darf nie der Eindruck
+// entstehen, eine eigene Annahme sei eine amtliche Tatsache.
+var DHERKUNFT = {
+  benutzerannahme: ["eigene Annahme", "dh-benutzer"],
+  systemannahme: ["Systemvorschlag", "dh-system"],
+  referenz: ["Marktreferenz", "dh-referenz"],
+  berechnet: ["berechnet", "dh-berechnet"],
+  amtliche_quelle: ["amtliche Quelle", "dh-amtlich"],
+  llm_extraktion: ["aus dem Reglement gelesen", "dh-doku"],
+  modellannahme: ["Modellannahme", "dh-system"],
+  geometrie_berechnung: ["aus der Geometrie berechnet", "dh-berechnet"],
+  nicht_bestimmbar: ["nicht bestimmbar", "dh-offen"]
+};
+
+function dherk(art) {
+  var h = DHERKUNFT[art] || [art || "–", "dh-system"];
+  return '<span class="dherk ' + h[1] + '">' + esc(h[0]) + "</span>";
+}
+
+function dossierBauen(bilder) {
+  var erg = ergebnisAktuell || {};
+  var m1 = erg.modul1_geodaten || {};
+  var kat = m1.kataster || {};
+  var zz = erg.zonen_zuordnung || {};
+  var v = aktiveVariante();
+  var szId = v ? v.szenario_id : wAktivesSzenario();
+  var sz = ((erg.szenarien || {}).szenarien || {})[szId] || {};
+  var w = ((wErgebnis || {}).szenarien || {})[szId] || {};
+  var flaechen = ((sz.flaechen || {}).flaechen) || {};
+  var werg = w.ergebnis || {};
+  var res = w.residualwert || {};
+  var wohn = sz.wohnungen || {};
+  var jetzt = new Date().toLocaleDateString("de-CH");
+
+  var titel = (projektAktuell && projektAktuell.name) || erg.adresse || "Potenzialanalyse";
+  var untertitel = (projektAktuell && projektAktuell.adresse) || erg.adresse || "";
+  var variantenName = v ? v.name : (SZ_LABEL[szId] || szId || "–");
+
+  // --- 1 Ergebnis ---------------------------------------------------------
+  var ergebnisseite =
+    '<div class="dkzgrid">' +
+      dossierKennzahl("Wohnfläche NWF", fmtOderNull(flaechen.wohnflaeche_nwf), "m²") +
+      dossierKennzahl("Wohnungen", wohn.anzahl_wohnungen, "") +
+      dossierKennzahl("Verkaufserlös", chf(werg.verkaufserloes_chf, true), "CHF") +
+      dossierKennzahl("Investition", chf(werg.gesamtinvestition_chf, true), "CHF") +
+      dossierKennzahl("Gewinn", chf(werg.gewinn_chf, true), "CHF") +
+      dossierKennzahl("Marge", leer(werg.marge) ? null : (werg.marge * 100).toFixed(1), "%",
+                      leer(werg.zielmarge) ? "" : "Ziel " + (werg.zielmarge * 100).toFixed(0) + " %") +
+      dossierKennzahl("Max. tragbarer Landwert", chf(res.max_landwert_chf, true), "CHF",
+                      leer(res.max_landwert_chf_pro_m2) ? "" : chf(res.max_landwert_chf_pro_m2) + " CHF/m² Grundstück") +
+      dossierKennzahl("Machbarkeit", (MACHBARKEIT_BADGE[sz.machbarkeit] || [sz.machbarkeit])[0], "") +
+    "</div>" +
+    (sz.begruendung ? '<p class="dtext">' + esc(sz.begruendung) + "</p>" : "") +
+    (bilder.d3 ? '<img class="dbild gross" src="' + bilder.d3 + '" alt="3D-Ansicht">' +
+      '<p class="dbu">3D-Ansicht: Gelände, Bestand und Nachbarschaft aus amtlichen Daten, ' +
+      'Projektvolumen aus der berechneten Geometrie.</p>' : "");
+
+  // --- 2 Ausgangslage -----------------------------------------------------
+  var bestand = (m1.bestand || {}).hauptgebaeude || {};
+  var ausgangslage =
+    dossierTabelle(["", ""], [
+      ["Adresse", esc(erg.adresse || "–")],
+      ["Gemeinde / Kanton", esc((m1.gemeinde || {}).gemeinde || "–") + " / " + esc((m1.gemeinde || {}).kanton || "–")],
+      ["EGRID", esc(kat.egrid || "–")],
+      ["Parzellennummer", esc(kat.parzellennummer || "–")],
+      ["Grundstücksfläche", leer(kat.flaeche_m2) ? "–" : fmt(kat.flaeche_m2, 1) + " m² <span class=\"dq\">amtliche Vermessung</span>"],
+      ["Bestand", bestand.egid
+        ? esc(bestand.geschosse || "–") + " Geschosse, Baujahr " + esc(bestand.baujahr || "unbekannt") +
+          ", " + (leer(bestand.grundriss_flaeche_m2) ? "–" : fmt(bestand.grundriss_flaeche_m2, 0) + " m² Grundriss")
+        : "kein Gebäude erfasst"]
+    ]) +
+    (bilder.kataster ? '<div class="dbildpaar">' +
+      '<figure><img class="dbild" src="' + bilder.kataster + '" alt="Katasterplan"><figcaption>Katasterplan</figcaption></figure>' +
+      (bilder.luftbild ? '<figure><img class="dbild" src="' + bilder.luftbild + '" alt="Luftbild"><figcaption>Luftbild</figcaption></figure>' : "") +
+      "</div>" : "");
+
+  // --- 3 Baurecht ---------------------------------------------------------
+  var zone = zz.zone || {};
+  var kennzahlZeilen = KENNZAHLEN.map(function (k) {
+    var kz = zone[k[0]];
+    if (!kz || typeof kz !== "object" || leer(kz.wert)) return null;
+    return [esc(k[1]), esc(kz.wert) + (k[2] ? " " + esc(k[2]) : ""),
+            esc(kz.artikel_referenz || "–"),
+            dherk(kz.confidence === "nicht_bestimmbar" ? "nicht_bestimmbar" : "llm_extraktion") +
+            (kz.confidence ? ' <span class="dq">Confidence ' + esc(kz.confidence) + "</span>" : "")];
+  }).filter(Boolean);
+
+  var baurecht =
+    dossierTabelle(["", ""], [
+      ["Zone", esc(zone.zonenbezeichnung || zz.amtliche_zonenbezeichnung || "–")],
+      ["Zuordnung", esc(zz.status || "–")],
+      ["Ausgewertetes Reglement", esc((erg.modul2_bzo_analyse || {}).dokument_titel || "–")]
+    ]) +
+    (kennzahlZeilen.length
+      ? '<h3 class="dsub">Kennzahlen der geltenden Zone</h3>' +
+        dossierTabelle(["Kennzahl", "Wert", "Fundstelle", "Herkunft"], kennzahlZeilen)
+      : '<p class="dtext">Für diese Zone konnten keine Kennzahlen belegt werden.</p>');
+
+  // --- 4 Geometrie --------------------------------------------------------
+  var g1 = erg.g1_ergebnis || {};
+  var kanten = alsListe(g1.kantenprotokoll).filter(function (k) { return k.art !== "nicht_relevant"; });
+  var geometrie =
+    dossierTabelle(["", ""], [
+      ["Baubereich", leer((g1.ergebnis || {}).baubereich_m2) ? "–" : fmt(g1.ergebnis.baubereich_m2, 1) + " m²"],
+      ["Fussabdruck", leer((g1.ergebnis || {}).fussabdruck_m2) ? "–" : fmt(g1.ergebnis.fussabdruck_m2, 1) + " m²"],
+      ["Geschosse", esc((g1.ergebnis || {}).geschosszahl || "–")],
+      ["Modus", esc(g1.modus || "–")]
+    ]) +
+    (kanten.length
+      ? '<h3 class="dsub">Kantenprotokoll</h3>' +
+        dossierTabelle(["Kante", "Länge", "Grenzt an", "Abstand", "Beleg"],
+          kanten.map(function (k) {
+            return [esc(k.nr), leer(k.laenge_m) ? "–" : esc(k.laenge_m) + " m",
+                    esc((KANTEN_ART_TEXT[k.art] || [k.art])[0]),
+                    leer(k.abstand_m) ? '<em>nicht bestimmbar</em>' : esc(k.abstand_m) + " m",
+                    esc(k.strassenname || k.nachbar_nummer || "–")];
+          }))
+      : "");
+
+  // --- 5 Flächen ----------------------------------------------------------
+  var rechenweg = alsListe((sz.flaechen || {}).rechenweg);
+  var flaechenAbschnitt = rechenweg.length
+    ? dossierTabelle(["Schritt", "Eingang", "Operation", "Ergebnis"],
+        rechenweg.map(function (r) {
+          return [esc(r.schritt), leer(r.eingang) ? "–" : fmt(r.eingang, 1),
+                  esc(r.operation), leer(r.ausgang) ? '<em>nicht bestimmbar</em>' :
+                    "<b>" + fmt(r.ausgang, 1) + "</b> " + esc(r.einheit)];
+        })) +
+      '<p class="dhinweis">Die Geschossfläche stammt aus der Geometrie- und Baurechtskaskade. ' +
+      'Alle Schritte danach beruhen auf den ausgewiesenen Annahmen — SIA 416 definiert Messgrössen, ' +
+      'keine Verhältnisse zwischen ihnen.</p>'
+    : "";
+
+  // --- 6 Wohnungen --------------------------------------------------------
+  var bilanz = sz.flaechenbilanz || (w.flaechenbilanz) || {};
+  var wohnungen = wohn.typen && wohn.typen.length
+    ? dossierTabelle(["Typ", "Anzahl", "Fläche je Einheit", "Fläche total"],
+        wohn.typen.map(function (t) {
+          return [esc(t.typ), esc(t.anzahl), fmt(t.flaeche_pro_einheit_m2, 0) + " m²",
+                  fmt(t.flaeche_total_m2, 0) + " m²"];
+        })) +
+      (leer(bilanz.verfuegbar_m2) ? "" :
+        '<p class="dhinweis' + (bilanz.geschlossen ? "" : " warn") + '">' +
+        fmt(bilanz.verfuegbar_m2, 0) + " m² Wohnfläche → " + fmt(bilanz.belegt_m2, 0) +
+        " m² Wohnungen → " + fmt(bilanz.nicht_zugeordnet_m2, 0) + " m² " +
+        (bilanz.geschlossen ? "Rest" : "<b>nicht zugeordnet</b> — diese Fläche geht weder in den Erlös noch in den Mietertrag ein") +
+        "</p>")
+    : '<p class="dtext">Ohne Wohnungsmix wird keine Wohnungsstruktur abgeleitet — die Wohnungsgrösse bestimmt das Ergebnis zu stark.</p>';
+
+  // --- 7 Markt ------------------------------------------------------------
+  var markt = ["verkauf", "miete", "boden"].map(function (g) {
+    var lage = ((wErgebnis || {}).marktlage || {})[g];
+    var mw = g === "verkauf" ? (w.verkauf || {}).preis
+           : g === "miete" ? (w.miete || {}).ansatz
+           : (w.land || {}).bodenpreis;
+    if (!mw) return null;
+    return [esc((lage && lage.bezeichnung) || g),
+            mw.referenzspanne ? chf(mw.referenzspanne[0]) + "–" + chf(mw.referenzspanne[1]) +
+              ' <span class="dq">' + (mw.anzahl_referenzen || 0) + " Objekte</span>" : "–",
+            leer(mw.systemvorschlag) ? "–" : chf(mw.systemvorschlag),
+            "<b>" + (leer(mw.wert) ? "–" : chf(mw.wert)) + "</b> " + dherk(mw.herkunft),
+            lage ? esc(lage.sicherheit || "–") : "–"];
+  }).filter(Boolean);
+  var marktAbschnitt = markt.length
+    ? dossierTabelle(["Grösse", "Marktreferenzen", "Systemvorschlag", "Gerechnet mit", "Sicherheit"], markt) +
+      '<p class="dhinweis">Marktreferenzen dienen der Orientierung. Gerechnet wird mit der Annahme ' +
+      'in der Spalte „Gerechnet mit“ — eine eigene Annahme ist keine amtliche oder externe Tatsache.</p>'
+    : "";
+
+  // --- 8 Kosten -----------------------------------------------------------
+  var posten = alsListe((w.kosten || {}).positionen);
+  var kosten = posten.length
+    ? dossierTabelle(["BKP", "Position", "Berechnung", "Betrag", "Herkunft"],
+        posten.map(function (p) {
+          return [esc(p.bkp), esc(p.bezeichnung), esc(p.rechnung || p.grund || "–"),
+                  leer(p.betrag_chf) ? '<em>nicht berechenbar</em>' : chf(p.betrag_chf),
+                  dherk(p.herkunft)];
+        }).concat([["", "<b>Baukosten total</b>", "",
+                    "<b>" + (leer((w.kosten || {}).baukosten_chf) ? "–" : chf(w.kosten.baukosten_chf)) + "</b>", ""]]))
+    : "";
+
+  // --- 9 Wirtschaftlichkeit ----------------------------------------------
+  var wirtschaft =
+    dossierTabelle(["", ""], [
+      ["Verkaufserlös", chf(werg.verkaufserloes_chf) + " CHF"],
+      ["Jahresmietertrag", leer(werg.jahresmietertrag_chf) ? "–" : chf(werg.jahresmietertrag_chf) + " CHF"],
+      ["Baukosten", leer((w.kosten || {}).baukosten_chf) ? "–" : chf(w.kosten.baukosten_chf) + " CHF"],
+      ["Land", leer((w.land || {}).wert_chf) ? "–" : chf(w.land.wert_chf) + " CHF " +
+        '<span class="dq">' + esc((w.land || {}).rechnung || "") + "</span>"],
+      ["Gesamtinvestition", chf(werg.gesamtinvestition_chf) + " CHF"],
+      ["Gewinn", chf(werg.gewinn_chf) + " CHF"],
+      ["Marge", leer(werg.marge) ? "–" : (werg.marge * 100).toFixed(1) + " %"],
+      ["Bruttorendite", leer(werg.bruttorendite) ? "–" : (werg.bruttorendite * 100).toFixed(2) + " %"]
+    ]) +
+    (leer(res.max_landwert_chf) ? "" :
+      '<h3 class="dsub">Maximal tragbarer Landpreis</h3>' +
+      '<p class="dtext">' + esc(res.rechnung || "") + "</p>" +
+      '<div class="dkzgrid zwei">' +
+        dossierKennzahl("Max. Landwert", chf(res.max_landwert_chf, true), "CHF") +
+        dossierKennzahl("je m² Grundstück", chf(res.max_landwert_chf_pro_m2), "CHF/m²") +
+      "</div>");
+
+  // --- 10 Szenarienvergleich ---------------------------------------------
+  var vergleichZeilen = (variantenVergleich || []).map(function (z) {
+    return [esc(z.name) + (v && z.variante_id === v.variante_id ? ' <span class="dq">gewählt</span>' : ""),
+            esc((MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit])[0]),
+            leer(z.nwf_m2) ? "–" : fmt(z.nwf_m2, 0),
+            leer(z.wohnungen) ? "–" : esc(z.wohnungen),
+            chf(z.verkaufserloes_chf, true), chf(z.baukosten_chf, true),
+            chf(z.gewinn_chf, true),
+            leer(z.marge) ? "–" : (z.marge * 100).toFixed(1) + " %",
+            chf(z.max_landwert_chf, true)];
+  });
+  var vergleich = vergleichZeilen.length
+    ? dossierTabelle(["Variante", "Machbarkeit", "NWF m²", "Whg", "Verkauf", "Kosten", "Gewinn", "Marge", "Landwert"],
+                     vergleichZeilen) +
+      '<p class="dhinweis">Welche Variante die beste ist, hängt an Risiko und Machbarkeit, ' +
+      'nicht am grössten Gewinn.</p>'
+    : "";
+
+  // --- 11 Risiken und Hinweise -------------------------------------------
+  var offen = []
+    .concat(alsListe(w.offene_punkte))
+    // Ein Konflikt traegt seine Aussage in "meldung". Wer hier das falsche
+    // Feld liest, verliert genau den Satz, der die Einschraenkung erklaert.
+    .concat(alsListe(sz.konflikte).map(function (k) {
+      return (k.art ? k.art.replace(/_/g, " ") + ": " : "") + dwert(k.meldung || k.text || k);
+    }))
+    .concat(alsListe((sz.flaechen || {}).datenpruefung).map(function (d) { return d.meldung; }))
+    .concat(alsListe((m1.kantenklassifikation || {}).hinweise));
+  var risiken = offen.length
+    ? '<ul class="dliste">' + offen.map(function (o) { return "<li>" + esc(o) + "</li>"; }).join("") + "</ul>"
+    : '<p class="dtext">Keine offenen Punkte gemeldet.</p>';
+
+  // --- 12 Quellen ---------------------------------------------------------
+  var quellen = alsListe(erg.quellen);
+  var quellenTab = quellen.length
+    ? dossierTabelle(["Wert", "Inhalt", "Quelle", "Datum", "Fundstelle", "Sicherheit"],
+        quellen.slice(0, 80).map(function (q) {
+          return [esc(q.feld), esc(dkurz(q.wert)),
+                  q.quelle_url
+                    ? '<a href="' + esc(q.quelle_url) + '">' + esc(String(q.quelle_bezeichnung || "").slice(0, 70)) + "</a>"
+                    : esc(String(q.quelle_bezeichnung || "–").slice(0, 70)),
+                  esc(q.abgerufen_am || "–"),
+                  esc(q.artikel_referenz || (q.zitat ? "„" + String(q.zitat).slice(0, 70) + "“" : "–")),
+                  esc(q.confidence || "–")];
+        })) +
+      (quellen.length > 80 ? '<p class="dhinweis">' + (quellen.length - 80) +
+        " weitere Belege im Datenexport.</p>" : "")
+    : '<p class="dtext">Keine Quellennachweise vorhanden.</p>';
+
+  // --- Zusammenbau --------------------------------------------------------
+  return '<div class="dossier">' +
+    '<header class="dkopf">' +
+      '<div class="dmarke">gebimo · Potenzialanalyse</div>' +
+      "<h1>" + esc(titel) + "</h1>" +
+      '<div class="dunter">' + esc(untertitel) + "</div>" +
+      '<div class="dmeta"><span>Variante: <b>' + esc(variantenName) + "</b></span>" +
+        "<span>Datenstand: " + esc(jetzt) + "</span>" +
+        (kat.egrid ? "<span>EGRID: " + esc(kat.egrid) + "</span>" : "") + "</div>" +
+    "</header>" +
+    dossierAbschnitt(1, "Ergebnis", ergebnisseite) +
+    dossierAbschnitt(2, "Ausgangslage", ausgangslage, true) +
+    dossierAbschnitt(3, "Baurecht", baurecht, true) +
+    dossierAbschnitt(4, "Geometrie und Baukörper", geometrie, true) +
+    dossierAbschnitt(5, "Flächen nach SIA 416", flaechenAbschnitt, true,
+      "Nicht berechnet — für dieses Grundstück liegt keine durchgerechnete Variante vor, aus der sich die Flächenkette ableiten liesse.") +
+    dossierAbschnitt(6, "Wohnungen und Wohnungsmix", wohnungen) +
+    dossierAbschnitt(7, "Markt", marktAbschnitt, true) +
+    dossierAbschnitt(8, "Kosten nach BKP", kosten) +
+    dossierAbschnitt(9, "Wirtschaftlichkeit", wirtschaft, true) +
+    dossierAbschnitt(10, "Szenarienvergleich", vergleich, true,
+      "Kein Vergleich — es wurde nur ein Szenario gerechnet. Ein Vergleich entsteht erst, wenn mehrere Varianten eines Projekts gerechnet sind.") +
+    dossierAbschnitt(11, "Risiken und Hinweise", risiken) +
+    dossierAbschnitt(12, "Quellen und Belege", quellenTab, true) +
+    '<footer class="dfuss">Erstellt mit der gebimo Potenzial-Engine am ' + esc(jetzt) +
+      ". Werte mit dem Vermerk „eigene Annahme“ sind Kalkulationsannahmen, keine amtlichen Tatsachen." +
+    "</footer></div>";
+}
+
+// Ein Quellenwert kann eine Zahl, ein Text, eine Liste oder ein Objekt sein.
+// Ohne eigene Behandlung landet "[object Object]" im Bericht -- in einem
+// Dokument, das an Eigentuemer und Investoren geht, nicht akzeptabel.
+function dwert(w, tiefe) {
+  tiefe = tiefe || 0;
+  if (w === null || w === undefined || w === "") return "–";
+  if (Array.isArray(w)) {
+    if (!w.length) return "keine";
+    if (tiefe >= 2) return w.length + " Einträge";
+    return w.map(function (x) { return dwert(x, tiefe + 1); }).join("; ");
+  }
+  if (typeof w === "object") {
+    // Ein ÖREB-Thema trägt seine Aussage im Feld "status" -- die gehört in
+    // den Bericht, nicht die Hülle darum.
+    if (typeof w.status === "string") return w.status.replace(/_/g, " ");
+    var schluessel = Object.keys(w);
+    if (!schluessel.length) return "–";
+    if (tiefe >= 2) return schluessel.length + " Angaben";
+    return schluessel.map(function (k) {
+      return k.replace(/_/g, " ") + ": " + dwert(w[k], tiefe + 1);
+    }).join(", ");
+  }
+  return String(w);
+}
+
+// Lange Werte werden gekürzt -- aber sichtbar, nie stillschweigend.
+// Die Grenze liegt bewusst über dem längsten real vorkommenden Wert (144
+// Zeichen, oereb.umweltrisiken): dort stand die einzige betroffene Auflage
+// am Ende, und genau die hätte eine engere Grenze abgeschnitten.
+function dkurz(w, laenge) {
+  var t = dwert(w);
+  laenge = laenge || 170;
+  return t.length > laenge ? t.slice(0, laenge - 1) + "…" : t;
+}
+
+function fmtOderNull(feld) {
+  return (feld && !leer(feld.wert)) ? fmt(feld.wert, 0) : null;
+}
+
+// Der Bericht wird in einem eigenen Fenster geoeffnet und dort gedruckt --
+// so bleibt die Arbeitsoberflaeche unberuehrt, und der Browser erzeugt ein
+// echtes PDF mit Vektortext statt eines Bildschirmfotos.
+function dossierOeffnen() {
+  var knopf = document.getElementById("dossier-pdf");
+  if (knopf) { knopf.disabled = true; knopf.textContent = "Dossier wird aufgebaut …"; }
+  Promise.all([kartenbild("ch.kantone.cadastralwebmap-farbe", 3),
+               kartenbild("ch.swisstopo.swissimage", 3)])
+    .then(function (bilder) {
+      var inhalt = dossierBauen({ d3: bild3D(), kataster: bilder[0], luftbild: bilder[1] });
+      var stil = document.getElementById("dossier-stil");
+      var fenster = window.open("", "_blank");
+      if (!fenster) { alert("Bitte Pop-ups für diese Seite erlauben."); return; }
+      // Bewusst OHNE schliessende Tags: der Browser ergaenzt sie bei close().
+      // Ein literal ausgeschriebenes Body-Endtag im Quelltext ist eine
+      // Stolperfalle fuer jedes
+      // Werkzeug, das die Seite per Textersetzung anfasst -- genau daran ist
+      // der Testserver zuerst gescheitert.
+      fenster.document.write("<!DOCTYPE html><html lang=\"de\"><head><meta charset=\"utf-8\">" +
+        "<title>Potenzialanalyse</title><style>" + (stil ? stil.textContent : "") + "</style>" +
+        "</head><body>" + inhalt);
+      fenster.document.close();
+      fenster.focus();
+      setTimeout(function () { fenster.print(); }, 900);
+    })
+    .catch(function (e) { alert("Dossier konnte nicht erstellt werden: " + e); })
+    .finally(function () {
+      if (knopf) { knopf.disabled = false; knopf.textContent = "Dossier PDF"; }
+    });
+}
+
+function bildExportieren() {
+  var daten = bild3D();
+  if (!daten) { alert("Keine 3D-Ansicht vorhanden."); return; }
+  var a = document.createElement("a");
+  a.href = daten;
+  a.download = "3d-ansicht.png";
+  a.click();
+}
+
+function datenExportieren(format) {
+  if (!projektAktuell) { alert("Bitte zuerst ein Projekt anlegen oder öffnen."); return; }
+  var url = "/api/projekt/export?id=" + projektAktuell.projekt_id + "&format=" + format;
+  // Der CSV-Export rechnet die Kennzahlen aus der laufenden Analyse -- ohne
+  // job_id gaebe es keine Zahlen, nur leere Spalten.
+  if (format === "csv" && jobIdAktuell) url += "&job_id=" + encodeURIComponent(jobIdAktuell);
+  window.open(url, "_blank");
 }
 
 function secSzenarien(erg) {
@@ -1998,7 +2466,10 @@ function secSzenarien(erg) {
     szene.background = new THREE.Color(
       getComputedStyle(document.body).getPropertyValue("--bg-2").trim() || "#f2f0ec");
     kamera = new THREE.PerspectiveCamera(45, el.clientWidth / el.clientHeight, 0.5, 4000);
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    // preserveDrawingBuffer: ohne das liefert toDataURL() ein leeres Bild --
+    // der Puffer ist nach dem Zeichnen sonst schon verworfen. Das kostet
+    // etwas Leistung, ist aber die Voraussetzung fuer den Bildexport.
+    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setSize(el.clientWidth, el.clientHeight);
     el.appendChild(renderer.domElement);
@@ -2925,5 +3396,131 @@ function verdrahteDossier() {
   }
 }
 </script>
+
+<script type="text/plain" id="dossier-stil">
+/* Dossier -- eigenes Stylesheet fuer das Berichtsfenster.
+   Bewusst getrennt von der Arbeitsoberflaeche: der Bericht soll auf Papier
+   funktionieren, nicht auf einem dunklen Bildschirm. */
+
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-right { content: counter(page) " / " counter(pages); }
+}
+
+:root {
+  --d-ink: #14181d;
+  --d-ink-2: #4a545f;
+  --d-ink-3: #7d8894;
+  --d-linie: #d6dbe0;
+  --d-linie-2: #eef1f4;
+  --d-akzent: #1f7a4d;
+  --d-warn: #b3324a;
+  --d-flaeche: #f6f8f9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.5;
+  color: var(--d-ink);
+  background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.dossier { max-width: 178mm; margin: 0 auto; }
+
+/* --- Kopf --------------------------------------------------------------- */
+.dkopf { border-bottom: 2.5pt solid var(--d-ink); padding-bottom: 10pt; margin-bottom: 16pt; }
+.dmarke { font-size: 8pt; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--d-ink-3); font-weight: 600; margin-bottom: 6pt; }
+.dkopf h1 { font-size: 22pt; line-height: 1.15; margin: 0 0 3pt; font-weight: 700;
+  letter-spacing: -.01em; text-wrap: balance; }
+.dunter { font-size: 11pt; color: var(--d-ink-2); margin-bottom: 8pt; }
+.dmeta { display: flex; flex-wrap: wrap; gap: 4pt 18pt; font-size: 8.5pt; color: var(--d-ink-3); }
+.dmeta b { color: var(--d-ink); }
+
+/* --- Abschnitte --------------------------------------------------------- */
+.dsec { margin-bottom: 16pt; break-inside: auto; }
+.dsec.umbruch { break-before: page; }
+.dsec h2 { font-size: 13pt; margin: 0 0 8pt; padding-bottom: 4pt;
+  border-bottom: 1pt solid var(--d-linie); font-weight: 700;
+  display: flex; align-items: baseline; gap: 8pt; break-after: avoid; }
+.dnum { font-size: 9pt; color: var(--d-ink-3); font-variant-numeric: tabular-nums;
+  min-width: 14pt; }
+.dsub { font-size: 10.5pt; margin: 12pt 0 5pt; font-weight: 650; break-after: avoid; }
+.dtext { margin: 0 0 8pt; color: var(--d-ink-2); }
+.dhinweis { font-size: 8.5pt; color: var(--d-ink-3); margin: 6pt 0 0;
+  padding-left: 8pt; border-left: 2pt solid var(--d-linie); }
+.dhinweis.warn { border-left-color: var(--d-warn); color: var(--d-warn); }
+.dliste { margin: 0; padding-left: 14pt; color: var(--d-ink-2); }
+.dliste li { margin-bottom: 3pt; break-inside: avoid; }
+
+/* --- Kennzahlen --------------------------------------------------------- */
+.dkzgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8pt; margin-bottom: 12pt; }
+.dkzgrid.zwei { grid-template-columns: repeat(2, 1fr); max-width: 100mm; }
+.dkz { border: 1pt solid var(--d-linie); border-radius: 3pt; padding: 7pt 8pt;
+  background: var(--d-flaeche); break-inside: avoid; }
+.dkzlab { display: block; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--d-ink-3); font-weight: 600; margin-bottom: 3pt; }
+.dkzwert { display: block; font-size: 14pt; font-weight: 700; line-height: 1.15;
+  font-variant-numeric: tabular-nums; }
+.dkzwert em { font-size: 9pt; font-weight: 500; font-style: normal; color: var(--d-ink-3); }
+.dkzein { font-size: 9pt; font-weight: 500; color: var(--d-ink-2); }
+.dkzsub { display: block; font-size: 7.5pt; color: var(--d-ink-3); margin-top: 2pt; }
+
+/* --- Tabellen ----------------------------------------------------------- */
+.dtab { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 8pt; }
+.dtab thead { display: table-header-group; }   /* Kopfzeile auf jeder Seite */
+.dtab tr { break-inside: avoid; }
+.dtab th { text-align: left; font-size: 7.5pt; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--d-ink-3); font-weight: 600;
+  padding: 4pt 5pt; border-bottom: 1pt solid var(--d-linie); }
+.dtab td { padding: 4pt 5pt; border-bottom: .5pt solid var(--d-linie-2);
+  vertical-align: top; font-variant-numeric: tabular-nums; }
+.dtab tr:last-child td { border-bottom: none; }
+.dtab a { color: var(--d-akzent); text-decoration: none; word-break: break-all; }
+.dq { color: var(--d-ink-3); font-size: 7.5pt; }
+
+/* --- Herkunft ----------------------------------------------------------- */
+.dherk { display: inline-block; font-size: 7pt; font-weight: 650; padding: 1pt 4pt;
+  border-radius: 2pt; letter-spacing: .02em; white-space: nowrap; }
+.dh-benutzer { background: #fde8ec; color: #8c1f36; }
+.dh-system   { background: #fff4e0; color: #8a5a12; }
+.dh-referenz { background: #e7f0fb; color: #1b4b82; }
+.dh-berechnet, .dh-amtlich { background: #e6f4ec; color: #155e38; }
+.dh-doku     { background: #eef0f3; color: #46505b; }
+.dh-offen    { background: #f0f1f3; color: #6b7480; }
+
+/* --- Bilder ------------------------------------------------------------- */
+.dbild { width: 100%; border: 1pt solid var(--d-linie); border-radius: 3pt;
+  display: block; break-inside: avoid; }
+.dbild.gross { max-height: 105mm; object-fit: cover; }
+.dbu { font-size: 8pt; color: var(--d-ink-3); margin: 4pt 0 0; }
+.dbildpaar { display: grid; grid-template-columns: 1fr 1fr; gap: 8pt; margin-top: 10pt;
+  break-inside: avoid; }
+.dbildpaar figure { margin: 0; }
+.dbildpaar figcaption { font-size: 8pt; color: var(--d-ink-3); margin-top: 3pt; }
+
+/* --- Fuss --------------------------------------------------------------- */
+.dfuss { margin-top: 18pt; padding-top: 8pt; border-top: 1pt solid var(--d-linie);
+  font-size: 7.5pt; color: var(--d-ink-3); }
+
+@media print {
+  .dsec { break-inside: auto; }
+  .dkzgrid, .dkz, .dbild, .dbildpaar { break-inside: avoid; }
+  a { text-decoration: none; color: var(--d-akzent); }
+}
+
+@media screen {
+  body { background: #e9ecef; padding: 20px 0; }
+  .dossier { background: #fff; padding: 18mm 16mm; box-shadow: 0 2px 18px rgba(0,0,0,.14); }
+}
+</script>
+
 </body>
 </html>
