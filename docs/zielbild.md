@@ -1,5 +1,8 @@
 # Zielbild (verbindliche Produktspezifikation)
 
+> **Was davon bereits gebaut ist, steht im [Funktionsregister](funktionsregister.md).** Dieses Dokument beschreibt das Ziel, das Register den Stand.
+
+
 **Festgelegt:** 11.09.2026 durch den Auftraggeber · **Status:** Master-Leitplanke
 
 Diese Datei ist die verbindliche Zieldefinition. Jeder Entwicklungsschritt wird

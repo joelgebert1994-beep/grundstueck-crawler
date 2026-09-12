@@ -1673,6 +1673,19 @@ function wendeVarianteAn() {
   szenarioKarte(v.szenario_id);
   zeichneProjektleiste();
   if (typeof wZeichneNeu === "function") wZeichneNeu();
+
+  // Der gespeicherte Arbeitsstand dieser Variante. Erst NACH szenarioKarte,
+  // weil dort die Szene neu aufgebaut wird -- vorher gesetzte Ebenen und
+  // Messungen waeren gleich wieder weg.
+  if (window.ansichtSetzen) {
+    if (v.hat_ansicht) {
+      window.ansichtSetzen(v.ansicht);
+    } else if (window.messZuruecksetzen) {
+      // Ohne gespeicherte Ansicht keine Messungen aus der Vorgaengervariante
+      // stehen lassen -- sie gehoerten zu einem anderen Entwurf.
+      window.messZuruecksetzen();
+    }
+  }
 }
 
 // Die gespeicherten Benutzerannahmen in die Eingabefelder zuruecklesen --
@@ -1779,6 +1792,7 @@ function zeichneProjektleiste() {
         '<span class="pjhinweis">Aus dieser Analyse ein Projekt machen, um Varianten zu speichern und zu vergleichen.</span>' +
         '<button class="szbtn" id="pj-neu">Als Projekt speichern</button>' +
         '<button class="szbtn" id="pj-oeffnen">Meine Projekte</button>' +
+        '<button class="szbtn" id="import-json">Projekt aus Datei</button>' +
       "</div><div id=\"pj-liste\"></div>";
     verdrahteProjektleiste();
     return;
@@ -1812,12 +1826,31 @@ function zeichneProjektleiste() {
       ? '<div class="note">Eigene Annahmen in dieser Variante: <b>' +
         aktiv.benutzerwerte.map(esc).join(", ") + "</b>. Alles Übrige stammt vom System.</div>"
       : '<div class="note">Diese Variante nutzt durchgehend die Systemvorschläge. Sobald du einen Wert änderst, wird er als eigene Annahme gespeichert.</div>') +
+    '<div class="pjtitel">Variante</div>' +
+    '<div class="szwahl">' +
+      '<button class="szbtn" id="var-umbenennen">Umbenennen</button>' +
+      '<button class="szbtn" id="var-loeschen">L\u00f6schen</button>' +
+      '<button class="szbtn" id="ansicht-speichern">Ansicht speichern</button>' +
+      (aktiv && aktiv.hat_ansicht
+        ? '<button class="szbtn" id="ansicht-zurueck">Ansicht zur\u00fcckholen</button>' +
+          '<button class="szbtn" id="ansicht-loeschen">Ansicht verwerfen</button>'
+        : "") +
+    "</div>" +
+    (aktiv && aktiv.hat_ansicht
+      ? '<div class="note">Diese Variante hat einen gespeicherten Arbeitsstand: Blickwinkel, ' +
+        'eingeblendete Ebenen, Sonnenstand und ' +
+        ((aktiv.ansicht || {}).messungen || []).length + ' Messung(en). ' +
+        'Er wird beim Wechsel auf diese Variante wiederhergestellt.</div>'
+      : '<div class="note">F\u00fcr diese Variante ist noch kein Arbeitsstand gespeichert. ' +
+        '\u201eAnsicht speichern\u201c h\u00e4lt Blickwinkel, Ebenen, Sonnenstand und Messungen fest ' +
+        '\u2014 sie \u00e4ndern keine Zahl und z\u00e4hlen deshalb nicht als eigene Annahme.</div>') +
     '<div class="pjtitel">Export</div>' +
     '<div class="szwahl">' +
       '<button class="szbtn" id="dossier-pdf">Dossier PDF</button>' +
       '<button class="szbtn" id="export-bild">Bild exportieren</button>' +
       '<button class="szbtn" id="export-json">Projekt als JSON</button>' +
       '<button class="szbtn" id="export-csv">Kennzahlen als CSV</button>' +
+      '<button class="szbtn" id="import-json">Projekt aus Datei</button>' +
     "</div>" +
     '<div id="pj-vergleich"></div><div id="pj-liste"></div>';
 
@@ -1869,6 +1902,103 @@ function verdrahteProjektleiste() {
         projektAktuell = d.projekt;
         return rechneVarianten(false);
       }).then(function () { wendeVarianteAn(); });
+  };
+
+  // --- Arbeitsstand der Ansicht ---------------------------------------
+  function ansichtSpeichernJetzt() {
+    var v = aktiveVariante();
+    if (!v || !window.ansichtLesen) return;
+    projektAktion({ aktion: "ansicht_speichern", variante_id: v.variante_id,
+                    ansicht: window.ansichtLesen() })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return; }
+        projektAktuell = d.projekt;
+        zeichneProjektleiste();
+      });
+  }
+
+  var ansSpeichern = document.getElementById("ansicht-speichern");
+  if (ansSpeichern) ansSpeichern.onclick = ansichtSpeichernJetzt;
+
+  var ansZurueck = document.getElementById("ansicht-zurueck");
+  if (ansZurueck) ansZurueck.onclick = function () {
+    var v = aktiveVariante();
+    if (v && v.ansicht && window.ansichtSetzen) window.ansichtSetzen(v.ansicht);
+  };
+
+  var ansWeg = document.getElementById("ansicht-loeschen");
+  if (ansWeg) ansWeg.onclick = function () {
+    var v = aktiveVariante();
+    if (!v) return;
+    projektAktion({ aktion: "ansicht_speichern", variante_id: v.variante_id, ansicht: null })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return; }
+        projektAktuell = d.projekt;
+        zeichneProjektleiste();
+      });
+  };
+
+  // --- Variante umbenennen und loeschen --------------------------------
+  var varName = document.getElementById("var-umbenennen");
+  if (varName) varName.onclick = function () {
+    var v = aktiveVariante();
+    if (!v) return;
+    var name = prompt("Name der Variante:", v.name);
+    if (!name || name === v.name) return;
+    projektAktion({ aktion: "variante_speichern", variante_id: v.variante_id, name: name })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return; }
+        projektAktuell = d.projekt;
+        return rechneVarianten(false);
+      }).then(function () { wendeVarianteAn(); });
+  };
+
+  var varWeg = document.getElementById("var-loeschen");
+  if (varWeg) varWeg.onclick = function () {
+    var v = aktiveVariante();
+    if (!v) return;
+    if (!confirm("Variante \u201e" + v.name + "\u201c mit allen Annahmen und dem " +
+                 "gespeicherten Arbeitsstand l\u00f6schen?")) return;
+    projektAktion({ aktion: "variante_loeschen", variante_id: v.variante_id })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return; }
+        projektAktuell = d.projekt;
+        return rechneVarianten(false);
+      }).then(function () { wendeVarianteAn(); });
+  };
+
+  // --- Projekt aus Datei -----------------------------------------------
+  var einlesen = document.getElementById("import-json");
+  if (einlesen) einlesen.onclick = function () {
+    var waehler = document.createElement("input");
+    waehler.type = "file";
+    waehler.accept = "application/json,.json";
+    waehler.onchange = function () {
+      var datei = waehler.files && waehler.files[0];
+      if (!datei) return;
+      var leser = new FileReader();
+      leser.onload = function () {
+        var daten;
+        try {
+          daten = JSON.parse(leser.result);
+        } catch (e) {
+          alert("Die Datei ist kein g\u00fcltiges JSON: " + e);
+          return;
+        }
+        fetch("/api/projekt/import", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projektdatei: daten })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          if (!d.ok) { alert(d.fehler || "Import fehlgeschlagen."); return; }
+          // Ein Import legt immer ein NEUES Projekt an -- vorhandene Arbeit
+          // wird nie still verdraengt.
+          projektAktuell = d.projekt;
+          return rechneVarianten(false).then(function () { wendeVarianteAn(); });
+        }).catch(function (e) { alert("Import fehlgeschlagen: " + e); });
+      };
+      leser.readAsText(datei);
+    };
+    waehler.click();
   };
 
   var oeffnen = document.getElementById("pj-oeffnen");
@@ -3197,6 +3327,130 @@ function secSzenarien(erg) {
     hoehe: "Unten und oben anklicken — gemessen wird der Höhenunterschied.",
     punkt: "Einen Punkt anklicken."
   };
+
+  // -------------------------------------------------------------------
+  // Arbeitsstand der Ansicht
+  //
+  // Die Ansicht ist, WIE der Nutzer auf das Ergebnis schaut: Kamera, Ebenen,
+  // Sonnenstand, Messungen. Sie aendert keine Zahl und ist deshalb keine
+  // Benutzerannahme -- sie wird getrennt gespeichert.
+  //
+  // Die Messpunkte liegen in lokalen Metern relativ zum Parzellenmittelpunkt.
+  // Das ist genau richtig zum Speichern: derselbe EGRID ergibt denselben
+  // Rahmen, also treffen die Punkte beim Wiederoeffnen wieder dieselbe Stelle.
+  // -------------------------------------------------------------------
+  window.ansichtLesen = function () {
+    var a = {
+      kamera: { drehung: runde(drehung), neigung: runde(neigung), zoom: runde(zoom) },
+      ebenen: {}
+    };
+    Object.keys(u3dSicht).forEach(function (k) { a.ebenen[k] = u3dSicht[k] !== false; });
+
+    if (sonneAn) {
+      var feld = document.getElementById("sonne-datum");
+      a.sonne = { an: true, datum: feld ? feld.value : null, schritt: sonneSchritt };
+    } else {
+      a.sonne = { an: false };
+    }
+
+    // Der Bezugsrahmen gehoert zu den Messpunkten. Sie liegen in lokalen
+    // Metern relativ zum Parzellenmittelpunkt und zur Terrainhoehe dort --
+    // verschiebt sich der Rahmen (etwa weil die Umgebung beim naechsten
+    // Oeffnen nicht geladen werden konnte und basis auf 0 faellt), lagen die
+    // Marken sonst stillschweigend an der falschen Stelle.
+    if (szeneRahmen) {
+      a.rahmen = { mx: szeneRahmen.mx, my: szeneRahmen.my, basis: runde(szeneRahmen.basis) };
+    }
+
+    a.messungen = messungen.map(function (m) {
+      return {
+        nr: m.nr, art: m.art, kurz: m.kurz, lang: m.lang,
+        punkte: m.punkte.map(function (p) {
+          return [runde(p.x), runde(p.y), runde(p.z)];
+        })
+      };
+    });
+    return a;
+  };
+
+  function runde(x) { return Math.round(x * 1000) / 1000; }
+
+  window.ansichtSetzen = function (a, danach) {
+    if (!a || typeof a !== "object") { if (danach) danach(); return; }
+
+    if (a.kamera) {
+      if (typeof a.kamera.drehung === "number") drehung = a.kamera.drehung;
+      if (typeof a.kamera.neigung === "number") neigung = a.kamera.neigung;
+      if (typeof a.kamera.zoom === "number") zoom = a.kamera.zoom;
+    }
+
+    if (a.ebenen) {
+      Object.keys(a.ebenen).forEach(function (k) {
+        if (!(k in u3dSicht)) return;          // unbekannte Ebene stillschweigend lassen
+        u3dSicht[k] = a.ebenen[k] !== false;
+        if (u3dGruppen[k]) u3dGruppen[k].visible = u3dSicht[k];
+        var box = document.querySelector('.d3box[data-ebene="' + k + '"]');
+        if (box) box.checked = u3dSicht[k];
+      });
+    }
+
+    // Messungen zurueckholen: die gespeicherten Zahlen werden uebernommen,
+    // NICHT neu gerechnet. Sonst haetten zwei Laeufe derselben Messung
+    // moeglicherweise zwei Ergebnisse.
+    messungen = (a.messungen || []).map(function (m) {
+      return {
+        nr: m.nr, art: m.art, kurz: m.kurz, lang: m.lang,
+        punkte: (m.punkte || []).map(function (p) {
+          return new THREE.Vector3(p[0], p[1], p[2]);
+        })
+      };
+    });
+    messPunkte = [];
+    messZaehler = messungen.reduce(function (m, x) { return Math.max(m, x.nr || 0); }, 0);
+    zeichneMessungen();
+    messTafel();
+    pruefeRahmen(a.rahmen);
+
+    var s = a.sonne || {};
+    var schalter = document.getElementById("sonne-an");
+    var datumfeld = document.getElementById("sonne-datum");
+    if (s.an) {
+      if (datumfeld && s.datum) datumfeld.value = s.datum;
+      if (schalter) schalter.checked = true;
+      sonneAn = true;
+      var kasten = document.getElementById("sonne-regler");
+      if (kasten) kasten.hidden = false;
+      ladeSonne(s.datum || heuteIso(), function () {
+        if (typeof s.schritt === "number") {
+          sonneSchritt = s.schritt;
+          var schieber = document.getElementById("sonne-zeit");
+          if (schieber) schieber.value = String(sonneSchritt);
+        }
+        sonneAnwenden(); sonneBeschriftung(); sonneZeiten();
+        if (danach) danach();
+      });
+      return;
+    }
+    if (schalter) schalter.checked = false;
+    window.sonneSchalten(false);
+    if (danach) danach();
+  };
+
+  // Stimmt der gespeicherte Bezugsrahmen noch mit der laufenden Szene
+  // ueberein? Wenn nicht, sind die Messwerte weiterhin richtig -- sie sind
+  // gespeichert, nicht neu gerechnet -- aber die Marken sitzen verschoben.
+  // Das gehoert gesagt, nicht verschwiegen.
+  function pruefeRahmen(rahmen) {
+    if (!rahmen || !szeneRahmen || !messungen.length) return;
+    var dx = Math.abs((rahmen.mx || 0) - szeneRahmen.mx);
+    var dy = Math.abs((rahmen.my || 0) - szeneRahmen.my);
+    var dh = Math.abs((rahmen.basis || 0) - szeneRahmen.basis);
+    if (dx < 0.5 && dy < 0.5 && dh < 0.5) return;
+    messHinweis("Achtung: Die gespeicherten Messungen beziehen sich auf einen anderen " +
+      "Geländebezug (Abweichung " + dx.toFixed(1) + " / " + dy.toFixed(1) + " m in der Lage, " +
+      dh.toFixed(1) + " m in der Höhe). Die gemessenen Werte stimmen weiterhin, " +
+      "die Marken in der Ansicht können verschoben sein.");
+  }
 
   window.setzeMessModus = function (art) {
     messModus = messModus === art ? null : art;

@@ -697,6 +697,12 @@ class Handler(BaseHTTPRequestHandler):
                 v = kern_pj.lade_variante(con, int(daten["variante_id"]))
                 kern_pj.loesche_variante(con, int(daten["variante_id"]))
                 projekt = kern_pj.lade_projekt(con, v["projekt_id"])
+            elif aktion == "ansicht_speichern":
+                # Kamera, Ebenen, Sonnenstand und Messungen. Bewusst kein
+                # neuer Stand: der Blick auf das Ergebnis ist keine Annahme.
+                v = kern_pj.speichere_ansicht(
+                    con, int(daten["variante_id"]), daten.get("ansicht"))
+                projekt = kern_pj.lade_projekt(con, v["projekt_id"])
             elif aktion == "stand_wiederherstellen":
                 v = kern_pj.stelle_stand_wieder_her(
                     con, int(daten["variante_id"]), int(daten["stand"]))

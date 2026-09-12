@@ -3,6 +3,8 @@
 **Stand:** 12.09.2026 · **Status:** Grundlage für alle weiteren UI-Entscheidungen
 **Vorgabe:** LUUCY = Mindeststandard, nicht Zielgrenze
 
+> **Der aktuelle Gesamtstand steht im [Funktionsregister](funktionsregister.md).** Dieses Dokument ist die Analyse von damals und wird nicht nachgefuehrt — die Einstufungen hier sind der Stand VOR Block 1.
+
 ## Wie diese Analyse zustande kam
 
 Recherchiert wurden Produktseiten, Release-Notes, Preisseite, Hilfe-Center-Struktur
