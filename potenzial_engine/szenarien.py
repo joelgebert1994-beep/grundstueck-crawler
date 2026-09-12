@@ -46,7 +46,8 @@ from .flaechenmodell import (
     WohnungstypVorgabe,
     annahmenprofil,
     berechne_flaechen_und_wohnungen,
-    HERKUNFT_SYSTEMANNAHME,)
+    HERKUNFT_SYSTEMANNAHME,
+    berechne_wohnungen, HERKUNFT_BENUTZERANNAHME,)
 
 MACHBARKEIT_MOEGLICH = "moeglich"
 MACHBARKEIT_EINGESCHRAENKT = "eingeschraenkt_moeglich"
@@ -437,6 +438,177 @@ def szenario_bestand(
         hoehe_m=_hoehe(haupt.get("geschosse"), geschosshoehe_m),
         geschossflaeche_m2=budget.bestand_gf_m2,
         geschossflaeche_herkunft=budget.bestand_herkunft,
+        unsicherheiten=unsicherheiten,
+        quellen=(bestand or {}).get("quellen_layer", []),
+    )
+
+
+def szenario_sanierung(
+    bestand: dict[str, Any], budget: Ausnuetzungsbudget, *,
+    restriktionen: Optional[dict[str, Any]] = None,
+    bestand_flaeche_nwf_m2: Optional[float] = None,
+    geschosshoehe_m: Optional[float] = None,
+    profil: str = PROFIL_WOHNUNGSBAU_MFH,
+    benutzerwerte: Optional[dict[str, float]] = None,
+    wohnungsmix: Optional[list[WohnungstypVorgabe]] = None,
+    wohnungsmix_begruendung: str = "",
+    wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
+    restflaeche_verteilen: bool = False,
+    **kw,
+) -> Szenario:
+    """Der Bestand bleibt, wird aber erneuert -- ohne neue Geschossflaeche.
+
+    Der fachliche Kern: das ist das EINZIGE Szenario, das die Ausnuetzung
+    nicht beruehrt. Anbau, Aufstockung, Dachausbau, Ersatzneubau und
+    Bestand+Neubau konkurrieren alle um dasselbe Budget; eine Sanierung
+    schafft keine Flaeche und verbraucht deshalb keines. Daraus folgt das
+    Wesentliche: sie ist auch dort moeglich, wo das Budget ausgeschoepft
+    oder UEBERSCHRITTEN ist -- und genau dann ist sie oft die einzige
+    Option, die bleibt.
+
+    Was hier bewusst NICHT geschieht:
+
+      * Keine geschaetzten Bestandsflaechen. Die Verhaeltnisse KF/GF,
+        VF+FF/NGF und HNF/NF des Annahmenprofils sind Erfahrungswerte fuer
+        NEUBAUTEN; ein Altbau hat andere Konstruktions- und
+        Erschliessungsanteile. Das steht so schon im Bestand-Szenario, und
+        die Sanierung darf nicht die Hintertuer sein, durch die solche
+        Zahlen doch hereinkommen.
+      * Keine Sanierungskosten. Sie streuen von der Pinselsanierung bis zur
+        Totalsanierung um ein Vielfaches und haengen am Zustand, den die
+        Engine nicht kennt.
+
+    Rechenbar wird das Szenario, sobald `bestand_flaeche_nwf_m2` aus Plaenen
+    oder einer Abrechnung vorliegt. Dann laeuft dieselbe Kette wie bei den
+    uebrigen Szenarien und es ist mit ihnen vergleichbar.
+    """
+    gebaeude = (bestand or {}).get("gebaeude") or []
+    haupt = (bestand or {}).get("hauptgebaeude") or {}
+
+    if not gebaeude:
+        return Szenario(
+            id="sanierung", typ=Szenariotyp.SANIERUNG.value, bezeichnung="Sanierung",
+            machbarkeit=MACHBARKEIT_NICHT_MOEGLICH,
+            begruendung=_fehlender_bestand_grund(bestand, "eine Sanierung"),
+            quellen=(bestand or {}).get("quellen_layer", []),
+        )
+
+    koerper = [
+        _baukoerper(
+            name=g.get("adresse") or f"EGID {g.get('egid')}" or "Gebaeude",
+            polygon=_polygon(g["grundriss"]),
+            geschosse=g.get("geschosse"),
+            hoehe_m=_hoehe(g.get("geschosse"), geschosshoehe_m),
+            herkunft="Unveraendertes Bestandsvolumen -- eine Sanierung aendert "
+                     "weder Grundriss noch Geschosszahl",
+            art="bestand",
+        )
+        for g in gebaeude if g.get("grundriss")
+    ]
+
+    konflikte: list[dict[str, Any]] = []
+    unsicherheiten = list((bestand or {}).get("hinweise", []))
+    for g in gebaeude:
+        unsicherheiten.extend(g.get("hinweise", []))
+
+    # --- Der Punkt, an dem sich die Sanierung von allem anderen abhebt ---
+    if budget.verbleibend_gf_m2 is not None and budget.verbleibend_gf_m2 < 0:
+        ausnuetzung_text = (
+            f"Der Bestand ueberschreitet die zulaessige Geschossflaeche um "
+            f"{abs(budget.verbleibend_gf_m2):,.0f} m2. Fuer eine Sanierung ist das "
+            "ohne Belang: sie schafft keine neue Geschossflaeche. Jede Erweiterung "
+            "waere dagegen ausgeschlossen."
+        )
+    elif budget.verbleibend_gf_m2 is not None:
+        ausnuetzung_text = (
+            f"Die Sanierung verbraucht keine Ausnuetzung -- die "
+            f"{budget.verbleibend_gf_m2:,.0f} m2 ungenutzte Geschossflaeche bleiben "
+            "vollstaendig fuer eine spaetere Erweiterung erhalten."
+        )
+    else:
+        ausnuetzung_text = (
+            "Die Sanierung verbraucht keine Ausnuetzung. Wie viel Geschossflaeche "
+            "ungenutzt bleibt, ist nicht bestimmbar."
+        )
+
+    baulinie = baulinien_konflikt(restriktionen)
+    if baulinie:
+        # Bei der Sanierung wirkt eine Baulinie anders als bei einem Neubau:
+        # sie verbietet das Bestehende nicht, kann aber einer spaeteren
+        # Erweiterung im Weg stehen. Das gehoert unterschieden.
+        konflikte.append(_konflikt(
+            "baulinie",
+            baulinie["meldung"] + " Fuer die Sanierung selbst ist sie ohne Belang, solange "
+            "das Volumen unveraendert bleibt.",
+            schwere="hinweis",
+        ))
+
+    # --- Flaechen: nur mit echter Angabe ---------------------------------
+    flaechen = None
+    wohnungen = None
+    if bestand_flaeche_nwf_m2 is not None and bestand_flaeche_nwf_m2 > 0:
+        wohnungen = berechne_wohnungen(
+            bestand_flaeche_nwf_m2, wohnungsmix, wohnungsmix_begruendung,
+            restflaeche_verteilen, herkunft=wohnungsmix_herkunft,
+        )
+        flaechen = {
+            "status": "benutzerangabe",
+            "nwf_m2": round(bestand_flaeche_nwf_m2, 1),
+            "herkunft": HERKUNFT_BENUTZERANNAHME,
+            "begruendung": (
+                "Wohnflaeche des Bestands als Benutzerangabe uebernommen. Die Engine "
+                "leitet sie NICHT aus der Geschossflaeche ab -- die Flaechenverhaeltnisse "
+                "des Annahmenprofils gelten fuer Neubauten."
+            ),
+            "wohnungen": wohnungen,
+        }
+        machbarkeit = MACHBARKEIT_MOEGLICH
+        begruendung = (
+            f"Sanierung des Bestands ohne Volumenaenderung, gerechnet auf "
+            f"{bestand_flaeche_nwf_m2:,.0f} m2 Wohnflaeche (Angabe des Benutzers). "
+            + ausnuetzung_text
+        )
+    else:
+        machbarkeit = MACHBARKEIT_NICHT_BESTIMMBAR
+        begruendung = (
+            "Baulich moeglich -- eine Sanierung setzt nur einen Bestand voraus, und der "
+            "ist da. " + ausnuetzung_text + " Wirtschaftlich noch nicht bestimmbar: dafuer "
+            "fehlt die tatsaechliche Wohnflaeche des Bestands."
+        )
+        unsicherheiten.append(
+            "Fuer eine Wirtschaftlichkeitsrechnung fehlt die Wohnflaeche des Bestands. "
+            "Sie wird bewusst NICHT aus der Geschossflaeche abgeleitet: die Verhaeltnisse "
+            "KF/GF, VF+FF/NGF und HNF/NF des Annahmenprofils sind Erfahrungswerte fuer "
+            "Neubauten, ein Altbau hat andere Konstruktions- und Erschliessungsanteile. "
+            "Belastbar ist sie nur aus Plaenen oder einer Abrechnung."
+        )
+
+    unsicherheiten.append(
+        "Sanierungskosten werden nicht vorgeschlagen. Sie reichen von der "
+        "Pinselsanierung bis zur Totalsanierung um ein Vielfaches auseinander und "
+        "haengen am Gebaeudezustand, den diese Analyse nicht kennt. Der Ansatz gehoert "
+        "als eigene Annahme gesetzt."
+    )
+    if haupt.get("baujahr"):
+        unsicherheiten.append(
+            f"Baujahr {haupt['baujahr']}: Bauteile, Schadstoffe und energetischer Zustand "
+            "bestimmen den Sanierungsumfang und sind hier nicht erhoben."
+        )
+
+    return Szenario(
+        id="sanierung", typ=Szenariotyp.SANIERUNG.value, bezeichnung="Sanierung",
+        machbarkeit=machbarkeit,
+        begruendung=begruendung,
+        baukoerper=koerper,
+        geschosse=haupt.get("geschosse"),
+        hoehe_m=_hoehe(haupt.get("geschosse"), geschosshoehe_m),
+        # Die Geschossflaeche bleibt die des Bestands -- unveraendert, mit
+        # derselben Herkunftsangabe wie dort.
+        geschossflaeche_m2=budget.bestand_gf_m2,
+        geschossflaeche_herkunft=budget.bestand_herkunft,
+        flaechen=flaechen,
+        wohnungen=wohnungen,
+        konflikte=konflikte,
         unsicherheiten=unsicherheiten,
         quellen=(bestand or {}).get("quellen_layer", []),
     )
@@ -1074,7 +1246,8 @@ def szenario_bestand_plus_neubau(
 # Orchestrierung
 # ---------------------------------------------------------------------------
 
-ALLE_SZENARIEN = ("bestand", "anbau", "aufstockung", "dachausbau", "ersatzneubau", "bestand_plus_neubau")
+ALLE_SZENARIEN = ("bestand", "sanierung", "anbau", "aufstockung", "dachausbau",
+                  "ersatzneubau", "bestand_plus_neubau")
 
 
 def berechne_szenarien(
@@ -1092,6 +1265,7 @@ def berechne_szenarien(
     dachgeschoss_zulaessig: Optional[bool] = None,
     gebaeudeabstand_m: Optional[float] = None,
     restflaeche_verteilen: bool = False,
+    bestand_flaeche_nwf_m2: Optional[float] = None,
 ) -> dict[str, Any]:
     """Rechnet alle (oder die gewaehlten) Entwicklungsszenarien.
 
@@ -1122,6 +1296,8 @@ def berechne_szenarien(
     )
     bauer = {
         "bestand": lambda: szenario_bestand(bestand, budget, **gemeinsam),
+        "sanierung": lambda: szenario_sanierung(
+            bestand, budget, bestand_flaeche_nwf_m2=bestand_flaeche_nwf_m2, **gemeinsam),
         "anbau": lambda: szenario_anbau(g1_ergebnis, bestand, budget, zone, **gemeinsam),
         "aufstockung": lambda: szenario_aufstockung(
             g1_ergebnis, bestand, budget, zone, attika_zulaessig=attika_zulaessig, **gemeinsam),

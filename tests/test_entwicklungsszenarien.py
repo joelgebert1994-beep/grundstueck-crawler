@@ -23,9 +23,16 @@ def pruefe(bedingung: bool, beschreibung: str) -> None:
 
 
 def test_1_alle_fuenf_geforderten_szenarien_vorhanden() -> None:
-    print("=== 1) Alle 5 vom Auftrag geforderten Szenarien sind als Enum-Werte vorhanden ===")
+    print("=== 1) Alle geforderten Szenarien sind als Enum-Werte vorhanden ===")
+    # Urspruenglich fuenf. "sanierung" kam als sechstes dazu -- der Bestand
+    # bleibt, wird aber erneuert. Bewusst ein eigener Typ und keine Spielart
+    # von "bestand": belassen heisst nichts tun, sanieren heisst investieren
+    # ohne zu erweitern, und das sind wirtschaftlich zwei verschiedene Faelle.
+    #
+    # Der Vergleich bleibt EXAKT: ein versehentlich zugefuegter Typ ohne
+    # Metadaten und ohne Rechenweg soll weiterhin auffallen.
     erwartet = {
-        "bestand", "anbau_erweiterung", "aufstockung_dachausbau",
+        "bestand", "sanierung", "anbau_erweiterung", "aufstockung_dachausbau",
         "ersatzneubau", "kombination_bestand_neubau",
     }
     tatsaechlich = {s.value for s in Szenariotyp}

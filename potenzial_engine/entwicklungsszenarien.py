@@ -36,6 +36,10 @@ from typing import Dict, List
 
 class Szenariotyp(str, Enum):
     BESTAND = "bestand"
+    # Sanierung ist bewusst ein eigener Typ und keine Spielart von BESTAND:
+    # "belassen" heisst nichts tun, "sanieren" heisst investieren ohne zu
+    # erweitern. Wirtschaftlich sind das zwei voellig verschiedene Faelle.
+    SANIERUNG = "sanierung"
     ANBAU_ERWEITERUNG = "anbau_erweiterung"
     AUFSTOCKUNG_DACHAUSBAU = "aufstockung_dachausbau"
     ERSATZNEUBAU = "ersatzneubau"
@@ -70,6 +74,33 @@ SZENARIO_ANFORDERUNGEN: Dict[Szenariotyp, SzenarioAnforderung] = {
         benoetigte_flaechendaten=[
             "bestehende_geschossflaeche_m2 (moeglichst aus Plan/Abrechnung, NICHT aus GWR-Energiebezugsflaeche)",
             "bestehende_geschosszahl (fuer Vergleich mit G1s baurechtlich zulaessiger Geschosszahl)",
+        ],
+    ),
+    Szenariotyp.SANIERUNG: SzenarioAnforderung(
+        szenario=Szenariotyp.SANIERUNG,
+        benoetigte_zusatzeingaben=[
+            "bestand_flaeche_nwf_m2 (aus Plan oder Abrechnung)",
+            "sanierungsumfang (Pinsel-, Teil- oder Totalsanierung)",
+            "sanierungskosten_chf_pro_m2",
+        ],
+        beschreibung="Der Bestand bleibt in Volumen und Grundriss unveraendert und wird "
+                     "erneuert. Das EINZIGE Szenario, das keine Ausnuetzung verbraucht -- "
+                     "es schafft keine neue Geschossflaeche. Deshalb bleibt es auch dort "
+                     "moeglich, wo das Ausnuetzungsbudget ausgeschoepft oder ueberschritten "
+                     "ist und jede Erweiterung ausscheidet.",
+        heute_bereits_abgedeckt_durch="Baukoerper, Geschosszahl und Ausnuetzungsbudget kommen "
+                                       "aus derselben Bestandsauswertung wie beim Szenario "
+                                       "'Bestand belassen'; die Flaeche muss der Benutzer "
+                                       "beisteuern.",
+        sia416_besonderheit="Die Flaechenkaskade wird NICHT gerechnet: die Verhaeltnisse "
+                             "KF/GF, VF+FF/NGF und HNF/NF des Annahmenprofils sind "
+                             "Erfahrungswerte fuer Neubauten. Ein Altbau hat andere "
+                             "Konstruktions- und Erschliessungsanteile. Die Sanierung darf "
+                             "nicht die Hintertuer sein, durch die geschaetzte "
+                             "Bestandsflaechen doch in die Rechnung kommen.",
+        benoetigte_flaechendaten=[
+            "bestehende_wohnflaeche_nwf_m2 (aus Plan/Abrechnung, NICHT aus GWR-Energiebezugsflaeche)",
+            "sanierungsumfang je Bauteil (Huelle, Haustechnik, Ausbau) fuer eine Kostenschaetzung",
         ],
     ),
     Szenariotyp.ANBAU_ERWEITERUNG: SzenarioAnforderung(

@@ -163,7 +163,7 @@ Die Spalte **Damals** ist die Einstufung der Erstanalyse (vor Block 1).
 | **Variante umbenennen** | – | ✅ | Block 5 |
 | **Variante löschen** | – | ✅ | Block 5, letzte Variante geschützt |
 | Baulich abgeleitete Szenarien | D | ✅ | unser Vorsprung |
-| **Sanierung als Szenario** | – | 📋 | Bestandsentwicklung ist der grössere Markt |
+| **Sanierung als Szenario** | – | ✅ | Block 8 · einziges Szenario ohne Ausnützungsverbrauch — bleibt möglich, wo das Budget überschritten ist |
 | Objekte zwischen Varianten kopieren | C | 🟡 | Ansicht und Annahmen ✅ beim Duplizieren |
 
 ### 6 Baurecht und Kennzahlen — durchgehend ✅ oder Vorsprung
@@ -263,7 +263,7 @@ Bei LUUCY durchweg **nicht gefunden**. Reihenfolge = Wirkung je Aufwand.
 | Anomalieprüfung | 🟡 | „AZ = 20.0" wurde real gemeldet — ohne systematische Prüfung 📋 |
 | **Rückwärtsrechnung** | 📋 | macht aus einer Absage eine Verhandlungsgrundlage |
 | **Highest & Best Use** | 📋 | verbindet alles zu einer Empfehlung |
-| **Sanierung als Szenario** | 📋 | der grössere Markt |
+| **Sanierung als Szenario** | ✅ | Block 8 |
 | **Parzellenkombination A vs. A+B** | 📋 | erkennt Zukaufschancen |
 | **Parzellenteilung** | 📋 | |
 | **Grundstückssuche** | 📋 | LUUCY analysiert Bekanntes, wir finden Unbekanntes |
@@ -325,6 +325,7 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 12.09.2026 | Block 8 | Sanierung als eigenes Szenario — ohne erfundene Bestandsflächen oder Sanierungskosten |
 | 12.09.2026 | Block 7 | Marktpreis: Vergleichsobjekte lassen sich erfassen — der Systemvorschlag entsteht jetzt aus echten Referenzen mit Sicherheitsgrad |
 | 12.09.2026 | Lokal | Ein Startbefehl (start.bat), Oberfläche vom Backend, unabhängig von Gerüsten |
 | 12.09.2026 | Betrieb | Oracle-Deployment: docker-compose, Caddy/TLS, systemd, taegliche Sicherung, Zugangsschluessel, Einrichtungsanleitung |

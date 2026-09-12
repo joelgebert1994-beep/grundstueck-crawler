@@ -264,6 +264,9 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         attika_zulaessig=daten.get("attika_zulaessig"),
         gebaeudeabstand_m=_zahl(daten.get("gebaeudeabstand_m")),
         restflaeche_verteilen=bool(daten.get("restflaeche_verteilen")),
+        # Tatsaechliche Wohnflaeche des Bestands fuer das Sanierungsszenario.
+        # Fehlt sie, bleibt die Sanierung bewusst unberechnet statt geschaetzt.
+        bestand_flaeche_nwf_m2=_zahl(daten.get("bestand_flaeche_nwf_m2")),
     )
 
     # Referenzlage aus den gespeicherten Vergleichsobjekten: gefiltert auf

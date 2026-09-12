@@ -349,6 +349,11 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   overflow: hidden; background: var(--bg-2); cursor: grab; touch-action: none; }
 #view3d:active { cursor: grabbing; }
 
+.wbestand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px;
+  margin: 8px 0 4px; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--bg-2); }
+.wbestand .f { flex: 1 1 100%; font-size: 11px; color: var(--ink-3); line-height: 1.45; }
+
 /* --- Vergleichsobjekte erfassen --- */
 .mktform { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
   margin-top: 8px; background: var(--bg-2); }
@@ -1621,6 +1626,7 @@ function secPotenzial(erg) {
 /* --- 06 Entwicklung --- */
 var SZ_LABEL = {
   bestand: "Bestand erhalten",
+  sanierung: "Sanierung",
   anbau_erweiterung: "Anbau / Erweiterung",
   aufstockung_dachausbau: "Aufstockung / Dachausbau",
   ersatzneubau: "Ersatzneubau",
@@ -1824,7 +1830,8 @@ var FELD_ZU_EINGABE = {
   "w-zielmarge": "zielmarge",
   "w-land": "land_ansatz",
   "w-basis": "verkauf_basis",
-  "w-verteilen": "restflaeche_verteilen"
+  "w-verteilen": "restflaeche_verteilen",
+  "w-bestandsflaeche": "bestand_flaeche_nwf_m2"
 };
 
 var projektAktuell = null;        // {projekt_id, name, varianten: [...], ...}
@@ -4004,6 +4011,9 @@ var wEingaben = {
   kostenbasis: "gf",
   bkp: {},
   restflaeche_verteilen: false,
+  // Tatsaechliche Wohnflaeche des Bestands, aus Plaenen oder Abrechnung.
+  // Bleibt leer: die Engine leitet sie NICHT aus der Geschossflaeche ab.
+  bestand_flaeche_nwf_m2: null,
   wohnungsmix: [
     { typ: "2.5 Zi", flaeche_m2: 62, anteil: 0.20 },
     { typ: "3.5 Zi", flaeche_m2: 88, anteil: 0.50 },
@@ -4272,6 +4282,12 @@ function mktNachAenderung() {
   });
 }
 
+// Das Eingabefeld nur zeigen, wenn die Sanierung ueberhaupt gerechnet wird.
+function wHatSanierung() {
+  var sz = (wErgebnis || {}).szenarien || {};
+  return Object.prototype.hasOwnProperty.call(sz, "sanierung");
+}
+
 function marktBlock(erg) {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
@@ -4411,6 +4427,19 @@ function mixBlock() {
         '<button class="wmix-weg" data-i="' + i + '" title="Typ entfernen">&times;</button>' +
       "</div>";
     }).join("") + "</div>" +
+    (wHatSanierung()
+      ? '<div class="wbestand">' +
+          '<label class="wschalter">Wohnfläche des Bestands ' +
+            '<span class="winput"><input type="number" id="w-bestandsflaeche" step="10" min="0" value="' +
+            (leer(wEingaben.bestand_flaeche_nwf_m2) ? "" : esc(wEingaben.bestand_flaeche_nwf_m2)) +
+            '"><em>m²</em></span></label>' +
+          '<span class="f">Für das Szenario <b>Sanierung</b>. Aus Plänen oder einer ' +
+          'Abrechnung — die Engine leitet sie bewusst nicht aus der Geschossfläche ab: ' +
+          'die Flächenverhältnisse des Annahmenprofils gelten für Neubauten, ein Altbau ' +
+          'hat andere Konstruktions- und Erschliessungsanteile. Ohne Angabe bleibt die ' +
+          'Sanierung baulich möglich, aber wirtschaftlich nicht bestimmbar.</span>' +
+        "</div>"
+      : "") +
     '<div class="wmixfuss">' +
       '<button class="szbtn" id="w-mix-plus">+ Wohnungstyp</button>' +
       '<label class="wschalter"><input type="checkbox" id="w-verteilen"' +

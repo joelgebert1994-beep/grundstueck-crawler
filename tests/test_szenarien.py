@@ -451,8 +451,119 @@ def test_baulinien() -> None:
     print()
 
 
+def test_sanierung() -> None:
+    """Sanierung: der Bestand bleibt, wird aber erneuert.
+
+    Der fachliche Kern und zugleich der Grund, warum es ein eigenes Szenario
+    ist: es beruehrt als EINZIGES die Ausnuetzung nicht. Alle uebrigen
+    Szenarien konkurrieren um dasselbe Geschossflaechenbudget; eine
+    Sanierung schafft keine Flaeche und verbraucht deshalb keine. Daraus
+    folgt das Wesentliche -- sie bleibt moeglich, wo das Budget
+    ausgeschoepft oder ueberschritten ist.
+
+    Und die Grenze, die sie nicht ueberschreiten darf: sie ist NICHT die
+    Hintertuer, durch die geschaetzte Bestandsflaechen doch noch in die
+    Rechnung kommen. Das Bestand-Szenario weist die Flaechenkaskade fuer
+    Altbauten ausdruecklich zurueck; hier gilt dasselbe.
+    """
+    print("=== Sanierung: eigenes Szenario, ohne erfundene Zahlen ===")
+
+    erg = _szenarien()
+    alle = erg["szenarien"]
+
+    pruefe("sanierung" in alle, "Sanierung wird gerechnet")
+    pruefe(set(alle) == set(sz.ALLE_SZENARIEN),
+           f"und die uebrigen bleiben vollstaendig ({len(alle)} Szenarien)")
+
+    san = alle["sanierung"]
+    pruefe(san["typ"] == "sanierung",
+           "Sie hat einen eigenen Typ -- 'belassen' und 'sanieren' sind nicht dasselbe")
+    pruefe(san["bezeichnung"] == "Sanierung", "und eine eigene Bezeichnung")
+
+    # --- Volumen unveraendert -------------------------------------------
+    bes = alle["bestand"]
+    pruefe(san["geschossflaeche_m2"] == bes["geschossflaeche_m2"],
+           f"Die Geschossflaeche bleibt die des Bestands ({san['geschossflaeche_m2']} m2)")
+    pruefe(san["geschosse"] == bes["geschosse"], "die Geschosszahl ebenso")
+    pruefe(len(san["baukoerper"]) == len(bes["baukoerper"]),
+           "und der Baukoerper ist derselbe -- eine Sanierung aendert kein Volumen")
+
+    # --- Ohne Flaechenangabe: keine erfundenen Zahlen --------------------
+    pruefe(san["machbarkeit"] == "nicht_bestimmbar",
+           f"Ohne Bestandsflaeche ist sie wirtschaftlich nicht bestimmbar ({san['machbarkeit']})")
+    pruefe(san["flaechen"] is None, "Es wird KEINE Flaechenkaskade gerechnet")
+    pruefe(san["wohnungen"] is None, "und keine Wohnungsstruktur abgeleitet")
+    pruefe(any("Neubauten" in u for u in san["unsicherheiten"]),
+           "Der Grund steht dabei: die Verhaeltnisse gelten fuer Neubauten")
+    pruefe(any("Sanierungskosten" in u for u in san["unsicherheiten"]),
+           "Auch fuer die Kosten wird kein Ansatz vorgeschlagen")
+    pruefe(any("1918" in u for u in san["unsicherheiten"]),
+           "Das Baujahr (1918) wird als Hinweis auf den Sanierungsumfang genannt")
+    pruefe("baulich moeglich" in san["begruendung"].lower(),
+           "Baulich ist sie trotzdem moeglich -- das wird gesagt, nicht verschwiegen")
+
+    # --- Der Kern: Ausnuetzung unberuehrt --------------------------------
+    pruefe("verbraucht keine Ausnuetzung" in san["begruendung"],
+           "Die Begruendung nennt den entscheidenden Punkt: keine Ausnuetzung verbraucht")
+
+    # --- Bei ausgeschoepftem Budget bleibt sie moeglich -------------------
+    # Budget knapp: der Bestand belegt fast alles, was zulaessig waere.
+    eng = _szenarien(g1_ergebnis=g1(geschossflaeche_m2=130.0))
+    san_eng = eng["szenarien"]["sanierung"]
+    anbau_eng = eng["szenarien"]["anbau"]
+    pruefe(san_eng["machbarkeit"] != "nicht_moeglich",
+           "Bei ueberschrittenem Budget bleibt die Sanierung moeglich")
+    pruefe("ueberschreitet" in san_eng["begruendung"]
+           or "ohne Belang" in san_eng["begruendung"],
+           "und nennt ausdruecklich, dass die Ueberschreitung sie nicht hindert")
+    pruefe(anbau_eng["machbarkeit"] in ("nicht_moeglich", "eingeschraenkt_moeglich"),
+           f"waehrend der Anbau daran scheitert ({anbau_eng['machbarkeit']}) -- "
+           "genau das ist der Unterschied")
+
+    # --- Mit echter Flaechenangabe wird sie vergleichbar ------------------
+    mit = sz.berechne_szenarien(
+        g1(), bestand_double(), zone={"zonenbezeichnung": "W3"},
+        bestand_flaeche_nwf_m2=420.0,
+        wohnungsmix=[WohnungstypVorgabe("3.5 Zi", 88.0, anteil=1.0)],
+        wohnungsmix_begruendung="Testmix",
+    )["szenarien"]["sanierung"]
+
+    pruefe(mit["machbarkeit"] == "moeglich",
+           "Mit angegebener Bestandsflaeche ist sie bestimmbar")
+    pruefe(mit["flaechen"] is not None and mit["flaechen"]["nwf_m2"] == 420.0,
+           "Die angegebene Flaeche wird unveraendert uebernommen")
+    pruefe(mit["flaechen"]["herkunft"] == "benutzerannahme",
+           f"und als Benutzerannahme gekennzeichnet ({mit['flaechen']['herkunft']})")
+    pruefe("NICHT aus der Geschossflaeche" in mit["flaechen"]["begruendung"],
+           "mit dem ausdruecklichen Hinweis, dass sie nicht abgeleitet wurde")
+    pruefe(mit["wohnungen"] is not None
+           and mit["wohnungen"]["anzahl_wohnungen"] == 4,
+           f"Daraus entstehen Wohnungen (420 / 88 = 4), "
+           f"{(mit['wohnungen'] or {}).get('anzahl_wohnungen')}")
+    pruefe("420" in mit["begruendung"],
+           "und die Begruendung nennt die verwendete Flaeche")
+
+    # Auch mit Flaeche bleibt der Kostenvorbehalt stehen.
+    pruefe(any("Sanierungskosten" in u for u in mit["unsicherheiten"]),
+           "Der Kostenvorbehalt bleibt auch dann bestehen")
+
+    # --- Ohne Gebaeude ---------------------------------------------------
+    leer = _szenarien(bestand={"gebaeude": [], "hauptgebaeude": None})
+    pruefe(leer["szenarien"]["sanierung"]["machbarkeit"] == "nicht_moeglich",
+           "Ohne Gebaeude gibt es nichts zu sanieren")
+    pruefe("Ersatzneubau" in leer["szenarien"]["sanierung"]["begruendung"],
+           "und der Hinweis zeigt auf das passende Szenario")
+
+    # --- Einzeln waehlbar -------------------------------------------------
+    nur = _szenarien(auswahl=["sanierung"])
+    pruefe(list(nur["szenarien"]) == ["sanierung"],
+           "Sie laesst sich einzeln rechnen wie jedes andere Szenario")
+    print()
+
+
 def main() -> None:
     test_bestand()
+    test_sanierung()
     test_budget()
     test_anbau()
     test_schmale_restflaeche()
