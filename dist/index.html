@@ -349,6 +349,21 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   overflow: hidden; background: var(--bg-2); cursor: grab; touch-action: none; }
 #view3d:active { cursor: grabbing; }
 
+/* --- Vergleichsobjekte erfassen --- */
+.mktform { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  margin-top: 8px; background: var(--bg-2); }
+.mktzeile { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 8px; }
+.mktzeile label { display: inline-flex; flex-direction: column; gap: 3px;
+  font-size: 11px; color: var(--ink-3); }
+.mktzeile input, .mktzeile select { font: inherit; font-size: 12px; padding: 3px 5px;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
+  color: var(--ink); min-width: 90px; }
+.mktzeile label em { font-size: 10px; font-style: normal; color: var(--ink-3); }
+.mktform textarea { width: 100%; font-family: var(--mono); font-size: 11.5px;
+  padding: 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--ink); margin-top: 6px; }
+.mkt-weg { color: var(--ink-3); }
+
 /* --- Sonne, Schatten und Messwerkzeuge (Block 4) --- */
 .v3rahmen { position: relative; }
 #view3d-schilder { position: absolute; inset: 0; pointer-events: none; }
@@ -4016,6 +4031,247 @@ function feld(id, label, wert, einheit, schritt) {
 function wLage(groesse) {
   return (wErgebnis && wErgebnis.marktlage) ? wErgebnis.marktlage[groesse] : null;
 }
+/* ===================== Vergleichsobjekte erfassen =====================
+
+   Das Backend kann Vergleichsobjekte seit Block A speichern, lesen und
+   loeschen, und die Engine wertet sie mit Sicherheitsgrad aus. Nur: die
+   Oberflaeche hat diese Endpunkte nie aufgerufen. Deshalb stand im
+   Marktblock dauerhaft "keine Vergleichsobjekte hinterlegt" -- nicht weil
+   Daten fehlten, sondern weil es keinen Weg gab, welche einzugeben.
+
+   Hier entsteht KEINE neue Logik: erfasst wird ueber /marktdaten, gerechnet
+   wird wie bisher in der Engine. Diese Datei ist reine Bedienung.
+   ==================================================================== */
+
+var mktObjekte = [];          // zuletzt geladene Vergleichsobjekte
+var mktOffen = false;         // Erfassungsbereich aufgeklappt?
+var mktMeldung = "";
+
+function mktGebiet() {
+  // Vorbelegung aus dem analysierten Grundstueck -- Vergleichsobjekte sind
+  // nur dann Referenzen, wenn sie zur Lage passen.
+  var m1 = (ergebnisAktuell || {}).modul1_geodaten || {};
+  var g = m1.gemeinde || {};
+  return { gemeinde: g.gemeinde || "", kanton: g.kanton || "" };
+}
+
+function mktLaden(danach) {
+  var g = mktGebiet();
+  var frage = [];
+  if (g.gemeinde) frage.push("gemeinde=" + encodeURIComponent(g.gemeinde));
+  if (g.kanton) frage.push("kanton=" + encodeURIComponent(g.kanton));
+  apiAbruf("/api/marktdaten" + (frage.length ? "?" + frage.join("&") : ""))
+    .then(function (a) {
+      mktObjekte = a.ok ? (a.daten.objekte || []) : [];
+      if (!a.ok) mktMeldung = a.fehler || "Vergleichsobjekte nicht ladbar.";
+      if (danach) danach();
+      else mktZeichne();
+    });
+}
+
+// Die Datenbankkennung liegt in merkmale._id, nicht als eigenes Feld --
+// to_dict() gibt das Vergleichsobjekt so aus, wie die Engine es kennt, und
+// die kennt keine Datenbankkennungen. Ohne diese Umleitung schickt der
+// Loeschknopf "undefined" und der Server antwortet mit 400.
+function mktKennung(o) {
+  return (o.merkmale || {})._id;
+}
+
+function mktZeichne() {
+  var ziel = document.getElementById("mkt-verwaltung");
+  if (!ziel) return;
+  var g = mktGebiet();
+
+  var liste = !mktObjekte.length
+    ? '<div class="note">Für ' + esc(g.gemeinde || "dieses Gebiet") +
+      ' sind noch keine Vergleichsobjekte erfasst. Ohne Referenzen bleibt jeder ' +
+      'Marktpreis eine reine Annahme — die Engine weist das als ' +
+      '<b>keine_daten</b> aus, statt eine Zahl zu erfinden.</div>'
+    : '<div class="scroller"><table class="src"><thead><tr>' +
+      "<th>Objekt</th><th>Gemeinde</th><th>Art</th><th>Stand</th>" +
+      "<th>Verkauf</th><th>Miete</th><th>Boden</th><th>Quelle</th><th></th>" +
+      "</tr></thead><tbody>" +
+      mktObjekte.map(function (o) {
+        return "<tr>" +
+          "<td><b>" + esc(o.bezeichnung || "–") + "</b>" +
+            (o.flaeche_m2 ? '<div class="f">' + esc(o.flaeche_m2) + " m²</div>" : "") + "</td>" +
+          "<td>" + esc(o.gemeinde || "–") + "</td>" +
+          "<td>" + esc(o.objektart || "–") + "</td>" +
+          "<td>" + esc((o.datenstand || "").slice(0, 10)) + "</td>" +
+          "<td>" + (leer(o.preis_chf_pro_m2) ? "–" : chf(o.preis_chf_pro_m2)) + "</td>" +
+          "<td>" + (leer(o.mietzins_chf_pro_m2_jahr) ? "–" : chf(o.mietzins_chf_pro_m2_jahr)) + "</td>" +
+          "<td>" + (leer(o.bodenpreis_chf_pro_m2) ? "–" : chf(o.bodenpreis_chf_pro_m2)) + "</td>" +
+          '<td><span class="f">' + esc(o.quelle || "–") + "</span></td>" +
+          '<td><button class="m3knopf mkt-weg" data-id="' + esc(mktKennung(o)) +
+            '" title="Entfernen">×</button></td>' +
+        "</tr>";
+      }).join("") + "</tbody></table></div>";
+
+  var formular = !mktOffen ? "" :
+    '<div class="mktform">' +
+      '<div class="mktzeile">' +
+        '<label>Bezeichnung<input id="mkt-bez" placeholder="MFH Musterstrasse 12"></label>' +
+        '<label>Gemeinde<input id="mkt-gem" value="' + esc(g.gemeinde) + '"></label>' +
+        '<label>Kanton<input id="mkt-kt" value="' + esc(g.kanton) + '" size="3"></label>' +
+        '<label>Objektart<select id="mkt-art">' +
+          ["MFH", "EFH", "ETW", "Bauland"].map(function (a) {
+            return '<option value="' + a + '">' + a + "</option>";
+          }).join("") + "</select></label>" +
+      "</div>" +
+      '<div class="mktzeile">' +
+        '<label>Verkauf<input id="mkt-verkauf" type="number" step="50"><em>CHF/m²</em></label>' +
+        '<label>Miete<input id="mkt-miete" type="number" step="5"><em>CHF/m²·Jahr</em></label>' +
+        '<label>Bodenpreis<input id="mkt-boden" type="number" step="10"><em>CHF/m²</em></label>' +
+        '<label>Fläche<input id="mkt-flaeche" type="number" step="1"><em>m²</em></label>' +
+        '<label>Baujahr<input id="mkt-bj" type="number" step="1" size="4"></label>' +
+      "</div>" +
+      '<div class="mktzeile">' +
+        '<label>Quelle <b>*</b><input id="mkt-quelle" placeholder="z. B. Homegate-Inserat, eigene Transaktion"></label>' +
+        '<label>Datenstand <b>*</b><input id="mkt-stand" type="date" value="' + heuteIso() + '"></label>' +
+        '<label>Qualität<select id="mkt-qual">' +
+          [["geprueft", "geprüft"], ["angegeben", "angegeben"], ["geschaetzt", "geschätzt"],
+           ["unbekannt", "unbekannt"]].map(function (q) {
+            return '<option value="' + q[0] + '">' + q[1] + "</option>";
+          }).join("") + "</select></label>" +
+      "</div>" +
+      '<div class="note">Quelle und Datenstand sind Pflicht. Ohne Herkunft und Datum ist ' +
+      'eine Referenz keine Referenz, sondern eine Behauptung — die Engine weist ein ' +
+      'Objekt ohne diese Angaben ab.</div>' +
+      '<div class="szwahl">' +
+        '<button class="szbtn" id="mkt-speichern">Objekt erfassen</button>' +
+        '<button class="szbtn" id="mkt-csv-zeigen">Mehrere aus CSV einfügen</button>' +
+        '<button class="szbtn" id="mkt-abbrechen">Abbrechen</button>' +
+      "</div>" +
+      '<div id="mkt-csv-bereich" hidden>' +
+        '<textarea id="mkt-csv" rows="6" placeholder="bezeichnung;gemeinde;objektart;flaeche_m2;preis_chf_pro_m2;datenstand&#10;MFH Beispielweg 3;Buchs (AG);MFH;620;8900;2026-05-14"></textarea>' +
+        '<div class="szwahl">' +
+          '<label class="d3opt">Quelle für alle <input id="mkt-csv-quelle" placeholder="z. B. Marktexport Q2/2026"></label>' +
+          '<button class="szbtn" id="mkt-csv-import">CSV einlesen</button>' +
+        "</div>" +
+      "</div>" +
+    "</div>";
+
+  ziel.innerHTML =
+    '<h4 class="subhead">Vergleichsobjekte' +
+      (mktObjekte.length ? ' <span class="badge mute">' + mktObjekte.length + "</span>" : "") +
+    "</h4>" +
+    (mktMeldung ? '<div class="note warn">' + esc(mktMeldung) + "</div>" : "") +
+    liste +
+    (mktOffen ? "" : '<div class="szwahl"><button class="szbtn" id="mkt-neu">+ Vergleichsobjekt</button>' +
+      (mktObjekte.length ? '<button class="szbtn" id="mkt-neu-laden">Neu laden</button>' : "") + "</div>") +
+    formular;
+
+  mktVerdrahten();
+}
+
+function mktVerdrahten() {
+  var an = function (id, was) {
+    var el = document.getElementById(id);
+    if (el) el.onclick = was;
+  };
+
+  an("mkt-neu", function () { mktOffen = true; mktMeldung = ""; mktZeichne(); });
+  an("mkt-abbrechen", function () { mktOffen = false; mktMeldung = ""; mktZeichne(); });
+  an("mkt-neu-laden", function () { mktLaden(); });
+  an("mkt-csv-zeigen", function () {
+    var b = document.getElementById("mkt-csv-bereich");
+    if (b) b.hidden = !b.hidden;
+  });
+
+  an("mkt-speichern", function () {
+    var wert = function (id) {
+      var el = document.getElementById(id);
+      return el ? el.value.trim() : "";
+    };
+    var zahl = function (id) {
+      var v = wert(id);
+      return v === "" ? null : Number(v);
+    };
+    var objekt = {
+      bezeichnung: wert("mkt-bez"),
+      quelle: wert("mkt-quelle"),
+      datenstand: wert("mkt-stand"),
+      gemeinde: wert("mkt-gem") || null,
+      kanton: wert("mkt-kt") || null,
+      objektart: wert("mkt-art") || null,
+      baujahr: zahl("mkt-bj"),
+      flaeche_m2: zahl("mkt-flaeche"),
+      preis_chf_pro_m2: zahl("mkt-verkauf"),
+      mietzins_chf_pro_m2_jahr: zahl("mkt-miete"),
+      bodenpreis_chf_pro_m2: zahl("mkt-boden"),
+      datenqualitaet: wert("mkt-qual") || "unbekannt"
+    };
+    if (!objekt.bezeichnung || !objekt.quelle || !objekt.datenstand) {
+      mktMeldung = "Bezeichnung, Quelle und Datenstand sind Pflicht.";
+      mktZeichne();
+      return;
+    }
+    if (objekt.preis_chf_pro_m2 === null && objekt.mietzins_chf_pro_m2_jahr === null
+        && objekt.bodenpreis_chf_pro_m2 === null) {
+      mktMeldung = "Mindestens einer der drei Werte (Verkauf, Miete, Bodenpreis) muss gesetzt sein.";
+      mktZeichne();
+      return;
+    }
+    // herkunftsart "manuell": von Hand erfasst, nicht aus einem Export. Das
+    // steht spaeter in der Referenzliste und im Dossier.
+    mktSenden({ objekt: objekt, herkunftsart: "manuell" });
+  });
+
+  an("mkt-csv-import", function () {
+    var csv = (document.getElementById("mkt-csv") || {}).value || "";
+    var quelle = ((document.getElementById("mkt-csv-quelle") || {}).value || "").trim();
+    if (!csv.trim()) { mktMeldung = "Kein CSV-Inhalt eingefügt."; mktZeichne(); return; }
+    if (!quelle) { mktMeldung = "Für einen CSV-Import ist eine Quelle nötig."; mktZeichne(); return; }
+    mktSenden({ csv: csv, quelle: quelle, herkunftsart: "extern" });
+  });
+
+  document.querySelectorAll(".mkt-weg").forEach(function (k) {
+    if (!k.dataset.id || k.dataset.id === "undefined") { k.disabled = true; return; }
+    k.onclick = function () {
+      apiAbruf("/api/marktdaten/loeschen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vergleichsobjekt_id: Number(k.dataset.id) })
+      }).then(function (a) {
+        if (!a.ok) { mktMeldung = a.fehler || "Nicht entfernbar."; mktZeichne(); return; }
+        mktNachAenderung();
+      });
+    };
+  });
+}
+
+function mktSenden(nutzlast) {
+  apiAbruf("/api/marktdaten", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(nutzlast)
+  }).then(function (a) {
+    if (!a.ok) {
+      mktMeldung = a.fehler || "Nicht gespeichert.";
+      var d = (a.daten || {}).details;
+      if (d && d.length) mktMeldung += " (" + d.slice(0, 3).map(function (x) {
+        return x.grund || x;
+      }).join("; ") + ")";
+      mktZeichne();
+      return;
+    }
+    var b = a.daten.gespeichert || {};
+    var abgelehnt = (a.daten.abgelehnt || []).length;
+    mktMeldung = "Erfasst: " + (b.neu || 0) + " neu, " + (b.aktualisiert || 0) +
+      " aktualisiert" + (abgelehnt ? ", " + abgelehnt + " abgelehnt" : "") + ".";
+    mktOffen = false;
+    mktNachAenderung();
+  });
+}
+
+function mktNachAenderung() {
+  // Neu laden UND neu rechnen: der Sicherheitsgrad haengt an der Zahl der
+  // Referenzen, also muss die Wirtschaftlichkeit nach jeder Aenderung neu
+  // durch die Engine -- nicht in der Oberflaeche nachgebildet werden.
+  mktLaden(function () {
+    mktZeichne();
+    if (typeof wZeichneNeu === "function") wZeichneNeu();
+  });
+}
+
 function marktBlock(erg) {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
@@ -4303,6 +4559,7 @@ function secWirtschaft(erg) {
     '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
     '<div class="wspalten">' +
       '<div id="w-markt">' + marktBlock(erg) + "</div>" +
+      '<div id="mkt-verwaltung"></div>' +
       '<div id="w-mix">' + mixBlock() + "</div>" +
     "</div>" +
     '<div id="w-bkp">' + bkpBlock() + "</div>" +
@@ -4411,6 +4668,9 @@ function wZeichneNeu() {
   setze("w-vergleich", wVergleichBlock());
   setze("w-bkp", bkpBlock());
   setze("w-markt", marktBlock(ergebnisAktuell || {}));
+  // Die Verwaltung wird NICHT aus wErgebnis gespeist, sondern aus
+  // /marktdaten -- sie zeigt, was erfasst ist, nicht was gerechnet wurde.
+  if (typeof mktZeichne === "function") mktZeichne();
   setze("w-mix", mixBlock());
   verdrahteWirtschaft();
   // Die Szenarien haben sich mitgeaendert -- Karte und 3D nachziehen.
@@ -4425,6 +4685,9 @@ function wAngestossen() {
 }
 
 function verdrahteWirtschaft() {
+  // Vergleichsobjekte einmal holen, sobald die Wirtschaftlichkeit steht.
+  if (typeof mktLaden === "function" && !mktObjekte.length) mktLaden();
+
   document.querySelectorAll("#sec-wirtschaft input, #sec-wirtschaft select").forEach(function (el) {
     if (el.dataset.verdrahtet) return;
     el.dataset.verdrahtet = "1";

@@ -21,3 +21,6 @@ env.beispiel    text eol=lf
 
 # Python laeuft mit beiden, aber einheitlich ist einheitlich.
 *.py            text eol=lf
+
+# Windows-Batch braucht CRLF -- mit LF verschluckt cmd.exe Zeilen.
+*.bat           text eol=crlf

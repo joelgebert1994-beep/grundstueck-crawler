@@ -87,6 +87,15 @@ UMGEBUNG = os.environ.get("UMGEBUNG", "entwicklung")
 # es aendert sich nichts.
 ZUGANGSSCHLUESSEL = os.environ.get("ZUGANGSSCHLUESSEL", "")
 
+# Die Oberflaeche. Im Betrieb liefert Cloudflare Pages sie aus und leitet
+# /api/* hierher weiter. Lokal gibt es kein Pages -- damit man das Werkzeug
+# ohne zweiten Server und ohne Tunnel benutzen kann, liefert der Dienst die
+# Datei dann selbst aus und nimmt /api/* genauso entgegen.
+#
+# Es entsteht dadurch KEINE zweite Anwendung: dieselbe Datei, dieselben
+# Endpunkte, nur ohne Pages davor.
+_OBERFLAECHE = Path(__file__).resolve().parent / "dist" / "index.html"
+
 # --- Analyse-Zwischenspeicher -------------------------------------------
 #
 # Eine Analyse dauert gemessen 129 Sekunden, davon ~115 Sekunden fuer den
@@ -403,7 +412,35 @@ class Handler(BaseHTTPRequestHandler):
              "fehler": "Kein gueltiger Zugangsschluessel."}, status=401)
         return False
 
+    def _pfad_ohne_api(self) -> None:
+        """Lokal kommt /api/... direkt hier an, im Betrieb ohne Praefix.
+
+        Beides muss funktionieren, damit die Oberflaeche unveraendert bleibt:
+        sie ruft immer /api/... auf, egal ob Pages davor steht oder nicht.
+        """
+        if self.path.startswith("/api/"):
+            self.path = self.path[4:] or "/"
+
+    def _sende_oberflaeche(self) -> bool:
+        """Liefert dist/index.html aus, wenn sie da ist."""
+        if not _OBERFLAECHE.exists():
+            return False
+        roh = _OBERFLAECHE.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(roh)))
+        # Waehrend der Entwicklung aendert sich die Datei staendig.
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(roh)
+        return True
+
     def do_GET(self) -> None:  # noqa: N802
+        self._pfad_ohne_api()
+        # Die Oberflaeche zuerst: wer die Wurzel im Browser oeffnet, will das
+        # Werkzeug sehen, nicht eine JSON-Statusmeldung.
+        if self.path in ("/", "/index.html") and self._sende_oberflaeche():
+            return
         if self.path in ("/", "/health"):
             # Der Health-Check bleibt offen: die Plattform muss den Dienst
             # pruefen koennen, ohne den Schluessel zu kennen. Er gibt nur
@@ -1011,6 +1048,7 @@ class Handler(BaseHTTPRequestHandler):
                         status=200 if geloescht else 404)
 
     def do_POST(self) -> None:  # noqa: N802
+        self._pfad_ohne_api()
         if not self._zugang_ok():
             return
         if self.path == "/projekt":

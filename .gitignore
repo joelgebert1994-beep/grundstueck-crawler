@@ -20,5 +20,6 @@ caps_wms.xml
 # Zugangsdaten -- NIEMALS committen. Der GEMINI_API_KEY kommt ausschliesslich
 # aus der Umgebungsvariable, nicht aus einer Datei im Repo.
 .env
+.env.lokal
 *.key
 token_cache.bin
