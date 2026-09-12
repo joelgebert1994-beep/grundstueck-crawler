@@ -65,8 +65,13 @@ if "%GEMINI_API_KEY%"=="" (
 )
 
 REM --- Port frei? ----------------------------------------------------
+REM  NICHT ueber netstat pruefen: die Zustandsbezeichnung ist uebersetzt.
+REM  Auf einem deutschen Windows steht dort ABHOEREN, nicht LISTENING --
+REM  eine Suche nach "LISTENING" findet nie etwas, start.bat wuerde einen
+REM  zweiten Server starten und Python mit "address already in use"
+REM  abbrechen. Python selbst zu fragen ist sprachunabhaengig und exakt.
 set PORT=8787
-netstat -ano | findstr /r /c:":%PORT% .*LISTENING" >nul 2>&1
+python -c "import socket,sys; s=socket.socket(); r=s.connect_ex(('127.0.0.1',%PORT%)); s.close(); sys.exit(0 if r==0 else 1)" >nul 2>&1
 if not errorlevel 1 (
     echo   Port %PORT% ist belegt -- laeuft das Werkzeug schon?
     echo   Browser oeffnen: http://localhost:%PORT%

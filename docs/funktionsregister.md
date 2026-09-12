@@ -188,8 +188,8 @@ Die Spalte **Damals** ist die Einstufung der Erstanalyse (vor Block 1).
 | Verkauf / Miete / Rendite | D | ✅ | Stufe 5 |
 | Gewinn, Marge, Zielmarge | D | ✅ | Stufe 5 |
 | **Residualwert** | D | ✅ | stärkstes Alleinstellungsmerkmal |
-| Marktmodell (3 Ebenen) | B/D | 🟡 | Struktur ✅ Block A · **Datenbasis fehlt** 📋 |
-| Eigene Vergleichsobjekte | – | ✅ | Block A, CSV-Import, anbieterneutral |
+| Marktmodell (3 Ebenen) | B/D | ✅ | Struktur Block A · **Erfassung in der Oberfläche (Block 7)** — die Endpunkte gab es seit Block A, sie wurden nie aufgerufen |
+| Eigene Vergleichsobjekte | – | ✅ | Block A + Block 7: Einzelerfassung, CSV-Einfügen, Liste, Löschen — Quelle und Datenstand Pflicht |
 | Lagerating | C | 📋 | |
 | Gemeindechecks | C | 📋 | |
 | **Rückwärtsrechnung** | – | 📋 | „Was müsste sich ändern?" |
@@ -325,6 +325,8 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 12.09.2026 | Block 7 | Marktpreis: Vergleichsobjekte lassen sich erfassen — der Systemvorschlag entsteht jetzt aus echten Referenzen mit Sicherheitsgrad |
+| 12.09.2026 | Lokal | Ein Startbefehl (start.bat), Oberfläche vom Backend, unabhängig von Gerüsten |
 | 12.09.2026 | Betrieb | Oracle-Deployment: docker-compose, Caddy/TLS, systemd, taegliche Sicherung, Zugangsschluessel, Einrichtungsanleitung |
 | 12.09.2026 | Block 6 | SIA 416 abgeschlossen: Wohnungsmix wird als Systemvorschlag oder Benutzerannahme gefuehrt statt pauschal als Annahme |
 | 12.09.2026 | Block 5 | Register angelegt · Ansicht/Messungen/Arbeitsstand speichern, Variante umbenennen/löschen, Projekt-Import in der Oberfläche |
