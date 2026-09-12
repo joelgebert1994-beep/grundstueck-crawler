@@ -244,6 +244,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "service": "grundstueck-crawler-backend"})
         elif self.path.startswith("/status/"):
             self._handle_status(self.path[len("/status/"):])
+        elif self.path.startswith("/umgebung"):
+            self._handle_umgebung()
         elif self.path.startswith("/marktdaten"):
             self._handle_marktdaten_lesen()
         elif self.path.startswith("/pick"):
@@ -401,6 +403,57 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self._send_json({"ok": True, **antwort})
+
+    def _handle_umgebung(self) -> None:
+        """Raeumlicher Kontext fuer die 3D-Ansicht.
+
+        Bewusst ein eigener Endpunkt statt Teil der Analyse: die Szene kostet
+        rund eine Sekunde und wird nur gebraucht, wenn jemand die 3D-Ansicht
+        oeffnet. Das Ergebnis wird am Job zwischengespeichert -- ein zweites
+        Oeffnen laedt nichts nach.
+        """
+        from potenzial_engine.umgebung import UmgebungError, hole_umgebung
+
+        query = parse_qs(urlparse(self.path).query)
+        job_id = (query.get("job_id") or [""])[0].strip()
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            fertig = bool(job and job["status"] == "done")
+            zwischenspeicher = job.get("umgebung") if job else None
+        if not fertig:
+            self._send_json(
+                {"ok": False, "fehler": "Keine abgeschlossene Analyse zu dieser job_id."},
+                status=404)
+            return
+        if zwischenspeicher is not None:
+            self._send_json({"ok": True, "umgebung": zwischenspeicher, "aus_zwischenspeicher": True})
+            return
+
+        m1 = (job["ergebnis"] or {}).get("modul1_geodaten") or {}
+        geo = m1.get("geocoding") or {}
+        kataster = m1.get("kataster") or {}
+        ring = kataster.get("parzellengeometrie")
+        e, n = geo.get("lv95_e"), geo.get("lv95_n")
+        if not ring or e is None or n is None:
+            self._send_json(
+                {"ok": False, "fehler": "Ohne Parzellengeometrie und Koordinaten keine Szene."},
+                status=422)
+            return
+
+        try:
+            umgebung = hole_umgebung(float(e), float(n), ring, eigenes_egrid=kataster.get("egrid"))
+        except UmgebungError as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=502)
+            return
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self._send_json({"ok": False, "fehler": f"Unerwarteter Fehler: {exc}"}, status=500)
+            return
+
+        with _JOBS_LOCK:
+            if job_id in _JOBS:
+                _JOBS[job_id]["umgebung"] = umgebung
+        self._send_json({"ok": True, "umgebung": umgebung, "aus_zwischenspeicher": False})
 
     def _handle_marktdaten_lesen(self) -> None:
         """Gespeicherte Vergleichsobjekte und ihre Auswertung."""

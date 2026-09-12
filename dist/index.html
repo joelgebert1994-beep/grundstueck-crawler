@@ -308,6 +308,15 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .szbtn.aktiv { border-color: var(--ink); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--ink); }
 .szaktion { margin-top: 10px; }
 .card.szenario .szgrund { margin: 6px 0 10px; font-size: 13px; line-height: 1.5; }
+.d3steuer { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+  margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--bg-2); }
+.d3gruppe { display: flex; align-items: center; gap: 10px; }
+.d3titel { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); font-weight: 600; }
+.d3opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+  color: var(--ink-2); cursor: pointer; }
+.d3spaeter .d3bald { font-size: 11px; color: var(--ink-3); font-style: italic; }
 #view3d { width: 100%; height: 380px; border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; background: var(--bg-2); cursor: grab; touch-action: none; }
 #view3d:active { cursor: grabbing; }
@@ -1540,6 +1549,7 @@ function szenarioKarte(id) {
     b.classList.toggle("aktiv", b.getAttribute("data-szenario") === id);
   });
   if (window.zeichne3D) window.zeichne3D(id);
+  verdrahte3DSteuerung();
 }
 
 function zeichneSzenario(id) {
@@ -1666,6 +1676,15 @@ function secSzenarien(erg) {
     '<div class="note">Jedes Szenario ist aus dem G1-Baubereich, dem Bestand und den Zonenkennzahlen abgeleitet — keine frei entworfene Architektur. Wähle ein Szenario, um seine Baukörper auf der Karte und in 3D zu sehen.</div>' +
     waehler +
     '<h4 class="subhead">3D &mdash; Baukörper aus den berechneten Geometrien</h4>' +
+    '<div class="d3steuer">' +
+      '<div class="d3gruppe"><span class="d3titel">Umgebung</span>' +
+        d3schalter("terrain", "Terrain") + d3schalter("gebaeude", "Gebäude") +
+        d3schalter("strassen", "Strassen") + "</div>" +
+      '<div class="d3gruppe"><span class="d3titel">Projekt</span>' +
+        d3schalter("grundstueck", "Grundstück") + d3schalter("projekt", "Baukörper") + "</div>" +
+      '<div class="d3gruppe d3spaeter"><span class="d3titel">Analyse</span>' +
+        '<span class="d3bald">Sonne · Schatten · Abstände · Sicht — folgen</span></div>' +
+    "</div>" +
     '<div id="view3d"></div><div id="view3d-legende"></div>' +
     '<div class="note">Ziehen dreht die Ansicht, Scrollen zoomt. Jedes Volumen ist das Extrudat eines real berechneten Polygons mit der berechneten Höhe &mdash; ist keine Höhe bekannt, wird der Körper flach dargestellt statt geraten.</div>' +
     budgetBlock + tabelle +
@@ -1756,11 +1775,147 @@ function secSzenarien(erg) {
     return g;
   }
 
+  // ---------------------------------------------------------------------
+  // Raeumlicher Kontext
+  //
+  // Die Szene rechnet in Metern in einem lokalen Rahmen: Nullpunkt ist der
+  // Parzellenmittelpunkt, Hoehe 0 ist die Terrainhoehe genau dort. Alles
+  // andere -- Terrain, Nachbargebaeude, Strassen, Projektkoerper -- sitzt
+  // relativ dazu. Damit passen reale Hoehenunterschiede und berechnete
+  // Bauhoehen ohne Umrechnung zusammen.
+  // ---------------------------------------------------------------------
+  var umgebung = null;          // Antwort von /umgebung
+  var umgebungLaeuft = false;
+  var u3dGruppen = {};          // Ebenengruppen, einzeln schaltbar
+  var u3dSicht = { terrain: true, gebaeude: true, strassen: true,
+                   grundstueck: true, projekt: true };
+
+  var FARBE = {
+    terrain:     "#8a9a86",
+    gebaeudeNeu: "#9aa3ad",   // Nachbarschaft: neutral, zurueckhaltend
+    gebaeudeEigen: "#6b7280", // Bestand auf der Parzelle: etwas kraeftiger
+    ohneHoehe:   "#b6bcc4",
+    strasse:     "#c8c2b4",
+    parzelle:    "#b3324a",
+    baubereich:  "#1f7a4d"
+  };
+
+  function terrainHoeheAn(t, x, y) {
+    if (!t || !t.hoehen || !t.hoehen.length) return null;
+    var n = t.hoehen.length, schritt = t.schrittweite_m;
+    var fx = Math.min(Math.max((x - t.ursprung_lv95[0]) / schritt, 0), n - 1);
+    var fy = Math.min(Math.max((y - t.ursprung_lv95[1]) / schritt, 0), n - 1);
+    var i0 = Math.floor(fy), j0 = Math.floor(fx);
+    var i1 = Math.min(i0 + 1, n - 1), j1 = Math.min(j0 + 1, n - 1);
+    var dy = fy - i0, dx = fx - j0;
+    var ecken = [t.hoehen[i0][j0], t.hoehen[i0][j1], t.hoehen[i1][j0], t.hoehen[i1][j1]];
+    var gew = [(1 - dx) * (1 - dy), dx * (1 - dy), (1 - dx) * dy, dx * dy];
+    var summe = 0, wert = 0;
+    for (var k = 0; k < 4; k++) {
+      if (ecken[k] === null || ecken[k] === undefined) continue;
+      summe += gew[k]; wert += ecken[k] * gew[k];
+    }
+    return summe > 0 ? wert / summe : null;
+  }
+
+  // Terrain als Gitternetz aus dem Hoehenraster.
+  function terrainMesh(t, mx, my, basis) {
+    var n = t.hoehen.length, schritt = t.schrittweite_m;
+    var breite = (n - 1) * schritt;
+    var geo = new THREE.PlaneGeometry(breite, breite, n - 1, n - 1);
+    var pos = geo.attributes.position;
+    var vorhanden = [];
+    for (var i = 0; i < n; i++) for (var j = 0; j < n; j++) {
+      if (t.hoehen[i][j] !== null && t.hoehen[i][j] !== undefined) vorhanden.push(t.hoehen[i][j]);
+    }
+    var mittel = vorhanden.length
+      ? vorhanden.reduce(function (a, b) { return a + b; }, 0) / vorhanden.length : basis;
+    for (var v = 0; v < pos.count; v++) {
+      var sp = v % n, ze = Math.floor(v / n);
+      // PlaneGeometry laeuft von oben nach unten -- Zeilen umdrehen.
+      var h = t.hoehen[n - 1 - ze] ? t.hoehen[n - 1 - ze][sp] : null;
+      pos.setZ(v, (h === null || h === undefined ? mittel : h) - basis);
+    }
+    geo.computeVertexNormals();
+    var mat = new THREE.MeshLambertMaterial({
+      color: new THREE.Color(FARBE.terrain), transparent: true, opacity: 0.55,
+      side: THREE.DoubleSide
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    var zx = t.ursprung_lv95[0] + breite / 2, zy = t.ursprung_lv95[1] + breite / 2;
+    mesh.position.set(zx - mx, 0, -(zy - my));
+
+    var netz = new THREE.LineSegments(
+      new THREE.WireframeGeometry(geo),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(FARBE.terrain),
+                                    transparent: true, opacity: 0.28 })
+    );
+    netz.rotation.x = -Math.PI / 2;
+    netz.position.copy(mesh.position);
+
+    var g = new THREE.Group();
+    g.add(mesh); g.add(netz);
+    return g;
+  }
+
+  // Ein Linienzug auf dem Terrain (Strassen, Parzellenumrisse).
+  function linie(koordinaten, hoehen, mx, my, basis, farbe, deckkraft, versatz) {
+    var punkte = [];
+    for (var i = 0; i < koordinaten.length; i++) {
+      var h = hoehen && hoehen[i] !== null && hoehen[i] !== undefined ? hoehen[i] : basis;
+      punkte.push(new THREE.Vector3(koordinaten[i][0] - mx,
+                                    h - basis + (versatz || 0.3),
+                                    -(koordinaten[i][1] - my)));
+    }
+    if (punkte.length < 2) return null;
+    return new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(punkte),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(farbe),
+                                    transparent: deckkraft < 1, opacity: deckkraft })
+    );
+  }
+
+  function ladeUmgebung(danach) {
+    if (umgebung || umgebungLaeuft || !jobIdAktuell) { danach(); return; }
+    umgebungLaeuft = true;
+    var hinweis = document.getElementById("view3d-legende");
+    if (hinweis) hinweis.innerHTML = '<span class="l3d">Umgebung wird geladen …</span>';
+    fetch("/api/umgebung?job_id=" + encodeURIComponent(jobIdAktuell))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        umgebungLaeuft = false;
+        if (d && d.ok) umgebung = d.umgebung;
+        else umgebung = { fehler: (d && d.fehler) || "Umgebung nicht verfügbar." };
+        danach();
+      })
+      .catch(function (e) {
+        umgebungLaeuft = false;
+        umgebung = { fehler: "Umgebung nicht ladbar: " + e };
+        danach();
+      });
+  }
+
   window.zeichne3D = function (szenarioId) {
     if (!bereitMachen()) return;
+    if (!ergebnisAktuell) return;
+    ladeUmgebung(function () { zeichneSzene(szenarioId); });
+  };
+
+  window.setze3DSicht = function (schluessel, an) {
+    u3dSicht[schluessel] = an;
+    if (u3dGruppen[schluessel]) u3dGruppen[schluessel].visible = an;
+  };
+
+  function zeichneSzene(szenarioId) {
     var erg = ergebnisAktuell;
-    if (!erg) return;
     while (gruppe3d.children.length) gruppe3d.remove(gruppe3d.children[0]);
+    u3dGruppen = {};
+    ["terrain", "gebaeude", "strassen", "grundstueck", "projekt"].forEach(function (k) {
+      u3dGruppen[k] = new THREE.Group();
+      u3dGruppen[k].visible = u3dSicht[k] !== false;
+      gruppe3d.add(u3dGruppen[k]);
+    });
 
     var m1 = erg.modul1_geodaten || {};
     var parzelle = (m1.kataster || {}).parzellengeometrie;
@@ -1770,44 +1925,102 @@ function secSzenarien(erg) {
     var ys = parzelle.map(function (p) { return p[1]; });
     var mx = (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2;
     var my = (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2;
-    var spanne = Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs),
-                          Math.max.apply(null, ys) - Math.min.apply(null, ys));
+    var parzellenSpanne = Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs),
+                                   Math.max.apply(null, ys) - Math.min.apply(null, ys));
 
-    gruppe3d.add(koerper(parzelle, mx, my, 0, "#b3324a", 0.22));
+    var u = umgebung && !umgebung.fehler ? umgebung : null;
+    var terrain = u ? u.terrain : null;
+    var basis = terrain ? (terrainHoeheAn(terrain, mx, my) || 0) : 0;
+    var spanne = u ? u.radius_m * 1.6 : parzellenSpanne;
+
+    // --- Umgebung -------------------------------------------------------
+    if (terrain) u3dGruppen.terrain.add(terrainMesh(terrain, mx, my, basis));
+
+    if (u) {
+      (u.nachbarparzellen || []).forEach(function (p) {
+        var h = p.ring.map(function () { return p.terrain_hoehe_m; });
+        var l = linie(p.ring, h, mx, my, basis, "#7e8a7a", 0.35, 0.15);
+        if (l) u3dGruppen.terrain.add(l);
+      });
+
+      (u.strassen || []).forEach(function (st) {
+        var l = linie(st.koordinaten, st.hoehen_m, mx, my, basis, FARBE.strasse, 0.9, 0.5);
+        if (l) { l.material.linewidth = 2; u3dGruppen.strassen.add(l); }
+      });
+
+      (u.gebaeude || []).forEach(function (g) {
+        if (g.eigen) return;   // eigener Bestand kommt aus dem Szenario
+        var hoehe = leer(g.hoehe_m) ? 0.4 : g.hoehe_m;
+        var farbe = leer(g.hoehe_m) ? FARBE.ohneHoehe : FARBE.gebaeudeNeu;
+        var k = koerper(g.ring, mx, my, hoehe, farbe, leer(g.hoehe_m) ? 0.45 : 0.75);
+        k.position.y = (g.terrain_hoehe_m || basis) - basis;
+        u3dGruppen.gebaeude.add(k);
+      });
+    }
+
+    // --- Grundstueck ----------------------------------------------------
+    var pHoehen = u ? u.parzelle.terrain_hoehen_m : null;
+    var flaeche = koerper(parzelle, mx, my, 0, FARBE.parzelle, 0.20);
+    flaeche.position.y = 0.05;
+    u3dGruppen.grundstueck.add(flaeche);
+    var umriss = linie(parzelle.concat([parzelle[0]]),
+                       pHoehen ? pHoehen.concat([pHoehen[0]]) : null,
+                       mx, my, basis, FARBE.parzelle, 0.95, 0.35);
+    if (umriss) u3dGruppen.grundstueck.add(umriss);
 
     var g1 = erg.g1_ergebnis || {};
     var e1 = g1.ergebnis || (g1.szenarien ? g1.szenarien[Object.keys(g1.szenarien)[0]] : null);
     if (e1 && e1.baubereich_koordinaten) {
       alsListe(e1.baubereich_koordinaten).forEach(function (r) {
-        gruppe3d.add(koerper(r, mx, my, 0.25, "#1f7a4d", 0.30));
+        var b = koerper(r, mx, my, 0.25, FARBE.baubereich, 0.30);
+        b.position.y = 0.1;
+        u3dGruppen.grundstueck.add(b);
       });
     }
 
-    var s = ((erg.szenarien || {}).szenarien || {})[szenarioId];
+    // --- Projekt --------------------------------------------------------
+    var sz = ((erg.szenarien || {}).szenarien || {})[szenarioId];
     var legende = [];
-    if (s) {
-      alsListe(s.baukoerper).forEach(function (k) {
+    if (sz) {
+      alsListe(sz.baukoerper).forEach(function (k) {
         var h = leer(k.hoehe_m) ? 0 : k.hoehe_m;
-        gruppe3d.add(koerper(k.ring, mx, my, h, BAUKOERPER_FARBE[k.art] || "#0369a1",
-                             k.art === "bestand" ? 0.85 : 0.6));
+        var koerperMesh = koerper(k.ring, mx, my, h, BAUKOERPER_FARBE[k.art] || "#0369a1",
+                                  k.art === "bestand" ? 0.9 : 0.62);
+        u3dGruppen.projekt.add(koerperMesh);
         legende.push({ name: k.name, art: k.art, hoehe: k.hoehe_m });
       });
     }
 
+    // --- Legende --------------------------------------------------------
     var info = document.getElementById("view3d-legende");
     if (info) {
-      info.innerHTML = legende.length
-        ? legende.map(function (l) {
-            return '<span class="l3d"><i style="background:' + (BAUKOERPER_FARBE[l.art] || "#0369a1") +
-              '"></i>' + esc(l.name) + (leer(l.hoehe) ? " (Höhe unbekannt — flach dargestellt)" : " · " + esc(l.hoehe) + " m") + "</span>";
-          }).join("")
-        : '<span class="l3d">Kein Baukörper für dieses Szenario.</span>';
+      var teile = legende.map(function (l) {
+        return '<span class="l3d"><i style="background:' + (BAUKOERPER_FARBE[l.art] || "#0369a1") +
+          '"></i>' + esc(l.name) +
+          (leer(l.hoehe) ? " (Höhe unbekannt — flach)" : " · " + esc(l.hoehe) + " m") + "</span>";
+      });
+      if (!legende.length) teile.push('<span class="l3d">Kein Baukörper für dieses Szenario.</span>');
+      if (u) {
+        var st = u.statistik || {};
+        teile.push('<span class="l3d"><i style="background:' + FARBE.gebaeudeNeu + '"></i>' +
+          st.gebaeude_eigen + " eigenes + " + ((st.gebaeude || 0) - (st.gebaeude_eigen || 0)) +
+          " Nachbargebäude</span>");
+        if (st.gebaeude_ohne_hoehe) {
+          teile.push('<span class="l3d"><i style="background:' + FARBE.ohneHoehe + '"></i>' +
+            st.gebaeude_ohne_hoehe + " ohne bekannte Höhe — flach dargestellt</span>");
+        }
+        teile.push('<span class="l3d"><i style="background:' + FARBE.terrain + '"></i>Terrain ' +
+          esc(terrain.min_hoehe_m) + "–" + esc(terrain.max_hoehe_m) + " m ü. M.</span>");
+      } else if (umgebung && umgebung.fehler) {
+        teile.push('<span class="l3d">' + esc(umgebung.fehler) + "</span>");
+      }
+      info.innerHTML = teile.join("");
     }
 
     if (animation) cancelAnimationFrame(animation);
     (function schleife() {
       animation = requestAnimationFrame(schleife);
-      var d = spanne * 1.8 * zoom;
+      var d = spanne * 1.15 * zoom;
       kamera.position.set(
         Math.sin(drehung) * Math.cos(neigung) * d,
         Math.sin(neigung) * d,
@@ -1816,8 +2029,25 @@ function secSzenarien(erg) {
       kamera.lookAt(0, 0, 0);
       renderer.render(szene, kamera);
     })();
-  };
+  }
 })();
+
+function d3schalter(schluessel, beschriftung) {
+  return '<label class="d3opt"><input type="checkbox" class="d3box" data-ebene="' +
+    schluessel + '" checked>' + beschriftung + "</label>";
+}
+
+// Die Schalter wirken direkt auf die Szenengruppen -- kein Neuaufbau, nur
+// Sichtbarkeit. Deshalb reagiert die Ansicht ohne Verzoegerung.
+function verdrahte3DSteuerung() {
+  document.querySelectorAll(".d3box").forEach(function (box) {
+    if (box._verdrahtet) return;
+    box._verdrahtet = true;
+    box.addEventListener("change", function () {
+      if (window.setze3DSicht) window.setze3DSicht(box.dataset.ebene, box.checked);
+    });
+  });
+}
 
 function secEntwicklung(erg) {
   return '<section class="sec" id="sec-entwicklung">' +
