@@ -1,17 +1,39 @@
-// Duenner, generischer Cloudflare-Pages-Function-Proxy: leitet JEDEN
-// Request unter /api/* unveraendert an den echten Python-Backend
-// (webapp.py, ruft ausschliesslich unveraenderte Modul-1/2/3-Fachlogik auf)
-// weiter. Keine Fachlogik hier -- reiner Proxy, damit
-// grundstueck-crawler.pages.dev die echte Analyse zeigen kann, obwohl
-// Cloudflare Pages selbst kein Python ausfuehren kann.
+// Duenner, generischer Cloudflare-Pages-Function-Proxy: leitet JEDEN Request
+// unter /api/* unveraendert an das Python-Backend weiter (webapp.py, ruft
+// ausschliesslich unveraenderte Modul-1/2/3-Fachlogik auf). Keine Fachlogik
+// hier -- reiner Proxy, damit grundstueck-crawler.pages.dev die echte Analyse
+// zeigen kann, obwohl Cloudflare Pages selbst kein Python ausfuehrt.
 //
-// BACKEND_URL ist eine Cloudflare-Pages-Umgebungsvariable (aktuell eine
-// Cloudflare-Quick-Tunnel-URL zum lokalen Python-Prozess -- aendert sich
-// bei jedem Neustart des Tunnels, siehe Betriebsanleitung).
+// BACKEND_URL ist eine Cloudflare-Pages-Umgebungsvariable und zeigt auf den
+// dauerhaft laufenden Dienst. Siehe docs/betrieb.md.
+//
+// Zwei Dinge, die dieser Proxy NICHT tun darf:
+//
+//   1. Antwort-Header wegwerfen. Das Backend liefert CSV und JSON zum
+//      Herunterladen mit eigenem Content-Type und Content-Disposition. Wer
+//      hier pauschal application/json setzt, macht aus jedem Export eine
+//      Datei mit falschem Typ und ohne Namen.
+//   2. Einen Verbindungsfehler wie einen Fachbefund aussehen lassen. "Der
+//      Server ist aus" und "die amtliche Grundlage fehlt" sind zwei voellig
+//      verschiedene Aussagen. Jede Fehlerantwort von hier traegt deshalb ein
+//      maschinenlesbares `art`-Feld, an dem die Oberflaeche sie
+//      auseinanderhaelt.
+
+const WEITERGEREICHTE_HEADER = [
+  "content-type",
+  "content-disposition",
+  "content-length",
+  "cache-control",
+];
+
 export async function onRequest({ request, env, params }) {
-  const backendUrl = env.BACKEND_URL;
+  const backendUrl = (env.BACKEND_URL || "").replace(/\/+$/, "");
   if (!backendUrl) {
-    return json({ ok: false, fehler: "Backend nicht konfiguriert (BACKEND_URL fehlt)." }, 503);
+    return fehler(
+      "nicht_konfiguriert",
+      "Für diese Seite ist kein Analyse-Server hinterlegt (BACKEND_URL fehlt).",
+      503
+    );
   }
 
   const segments = Array.isArray(params.path) ? params.path.join("/") : (params.path || "");
@@ -20,8 +42,9 @@ export async function onRequest({ request, env, params }) {
   const query = new URL(request.url).search;
   const target = `${backendUrl}/${segments}${query}`;
 
-  const init = { method: request.method, headers: { "Content-Type": "application/json" } };
+  const init = { method: request.method, headers: {} };
   if (request.method !== "GET" && request.method !== "HEAD") {
+    init.headers["Content-Type"] = request.headers.get("Content-Type") || "application/json";
     init.body = await request.text();
   }
 
@@ -29,19 +52,24 @@ export async function onRequest({ request, env, params }) {
   try {
     resp = await fetch(target, init);
   } catch (err) {
-    return json({ ok: false, fehler: "Der Analyse-Server ist gerade nicht erreichbar (Tunnel/Backend offline)." }, 502);
+    return fehler("backend_offline", "Der Analyse-Server ist gerade nicht erreichbar.", 502);
   }
 
-  const body = await resp.text();
-  return new Response(body, {
-    status: resp.status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
+  const headers = new Headers();
+  for (const name of WEITERGEREICHTE_HEADER) {
+    const wert = resp.headers.get(name);
+    if (wert) headers.set(name, wert);
+  }
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json; charset=utf-8");
+  }
+
+  return new Response(resp.body, { status: resp.status, headers });
 }
 
-function json(obj, status) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
+function fehler(art, text, status) {
+  return new Response(
+    JSON.stringify({ ok: false, art: art, technisch: true, fehler: text }),
+    { status, headers: { "Content-Type": "application/json; charset=utf-8" } }
+  );
 }

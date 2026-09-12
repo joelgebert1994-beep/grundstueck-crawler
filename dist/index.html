@@ -324,6 +324,14 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .pjtab th:first-child { text-align: left; color: var(--ink-3); font-weight: 600;
   text-transform: none; letter-spacing: 0; font-size: 11px; }
 .pjtab td { font-variant-numeric: tabular-nums; }
+/* Zustand des Analyse-Dienstes. Bewusst getrennte Farben: eine technische
+   Stoerung darf nicht wie ein fachlicher Befund aussehen. */
+.dzustand { font-size: 11.5px; line-height: 1.45; margin-top: 6px; }
+.dzustand:empty { display: none; }
+.dzustand.aus { color: #8c1f36; background: #fde8ec; border-radius: 6px; padding: 6px 9px; }
+.dzustand.halb { color: #8a5a12; background: #fff4e0; border-radius: 6px; padding: 6px 9px; }
+.dzustand.entw { color: var(--ink-3); }
+
 .d3steuer { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
   margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--bg-2); }
@@ -411,6 +419,7 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
         <button class="btn" id="go-btn" disabled>Grundst&uuml;ck analysieren</button>
       </div>
       <div class="suggest" id="suggest"></div>
+      <div class="dzustand" id="dienstzustand"></div>
     </div>
 
     <details class="layercard" id="layercard" open>
@@ -646,6 +655,10 @@ var GEOADMIN_SEARCH = "https://api3.geo.admin.ch/rest/services/api/SearchServer"
 var inputEl = document.getElementById("adresse");
 var suggestEl = document.getElementById("suggest");
 var goBtn = document.getElementById("go-btn");
+
+// Beim Laden einmal fragen, ob der Dienst ueberhaupt da ist. Besser jetzt
+// als nach drei Minuten Analyse.
+setTimeout(function () { if (window.pruefeBackend) pruefeBackend(); }, 300);
 var gewaehlteAdresse = null, sucheTimer = null;
 
 inputEl.addEventListener("input", function () {
@@ -692,6 +705,100 @@ inputEl.addEventListener("keydown", function (ev) {
 var ergebnisAktuell = null, aktuelleJobId = null;
 var inner = document.getElementById("dossier-inner");
 
+/* ===================== Abruf und Fehlerzustaende =====================
+
+   Drei Zustaende, die nie vermischt werden duerfen:
+
+     TECHNISCH  Der Dienst antwortet nicht (aus, Netz weg, falsch
+                konfiguriert). Ueber das Grundstueck ist damit NICHTS
+                gesagt.
+     FACHLICH   Der Dienst antwortet und sagt: fuer dieses Grundstueck
+                fehlt eine amtliche Grundlage. Das IST ein Ergebnis.
+     ERGEBNIS   Die Analyse ist durchgelaufen.
+
+   Vorher stand unter jeder Fehlermeldung derselbe Satz ueber die fehlende
+   amtliche Grundlage -- auch wenn nur der Server aus war. Das ist die
+   schlimmste Verwechslung, die dieses Werkzeug machen kann: sie erklaert
+   eine Betriebsstoerung zu einem Befund ueber ein Grundstueck.
+   ==================================================================== */
+
+function apiAbruf(pfad, optionen) {
+  return fetch(pfad, optionen).then(function (r) {
+    var typ = r.headers.get("Content-Type") || "";
+    if (typ.indexOf("application/json") < 0) {
+      // Kein JSON heisst: da antwortet etwas anderes als unser Dienst --
+      // eine Fehlerseite des Hosters etwa. Technisch, nicht fachlich.
+      return r.text().then(function (t) {
+        return { ok: false, technisch: true, art: "keine_json_antwort", status: r.status,
+                 fehler: "Der Analyse-Server hat keine verwertbare Antwort geliefert (HTTP " +
+                         r.status + ")." };
+      });
+    }
+    return r.json().then(function (d) {
+      if (d && d.technisch) {
+        return { ok: false, technisch: true, art: d.art || "backend_offline",
+                 status: r.status, fehler: d.fehler };
+      }
+      if (r.status >= 500) {
+        return { ok: false, technisch: true, art: "serverfehler", status: r.status,
+                 fehler: (d && d.fehler) || "Der Analyse-Server meldet einen internen Fehler." };
+      }
+      // Ab hier hat der Dienst geantwortet: alles Weitere ist fachlich.
+      if (d && d.ok === false) {
+        return { ok: false, technisch: false, art: "fachlich", status: r.status,
+                 fehler: d.fehler || "Unbekannter Fehler.", daten: d };
+      }
+      return { ok: true, technisch: false, daten: d, status: r.status };
+    });
+  }).catch(function (e) {
+    return { ok: false, technisch: true, art: "netzwerk", status: 0,
+             fehler: "Keine Verbindung zum Analyse-Server." };
+  });
+}
+
+// --- Zustandsanzeige des Dienstes -----------------------------------
+var backendZustand = null;
+
+window.pruefeBackend = pruefeBackend;
+function pruefeBackend() {
+  return apiAbruf("/api/health").then(function (a) {
+    backendZustand = a.ok ? a.daten : { ok: false, art: a.art, fehler: a.fehler };
+    zeichneBackendZustand();
+    return backendZustand;
+  });
+}
+
+function zeichneBackendZustand() {
+  var ziel = document.getElementById("dienstzustand");
+  if (!ziel) return;
+  var z = backendZustand;
+  if (!z) { ziel.innerHTML = ""; return; }
+
+  if (z.ok === false) {
+    ziel.className = "dzustand aus";
+    ziel.innerHTML = "<b>Analyse-Server nicht erreichbar.</b> " + esc(z.fehler || "") +
+      " Eine Analyse ist derzeit nicht m\u00f6glich. \u00dcber Grundst\u00fccke sagt das nichts.";
+    return;
+  }
+  if (z.bereit === false) {
+    var fehlend = Object.keys(z.pruefungen || {}).filter(function (k) { return !z.pruefungen[k]; });
+    ziel.className = "dzustand halb";
+    ziel.innerHTML = "<b>Analyse-Server erreichbar, aber nicht einsatzbereit.</b> " +
+      "Nicht verf\u00fcgbar: " + esc(fehlend.join(", ")) + ".";
+    return;
+  }
+  // Im Normalbetrieb keine Meldung -- nur die Umgebung, wenn es nicht die
+  // Produktion ist. Sonst arbeitet jemand versehentlich auf der
+  // Entwicklungsumgebung und wundert sich ueber fehlende Projekte.
+  if (z.umgebung && z.umgebung !== "produktion") {
+    ziel.className = "dzustand entw";
+    ziel.innerHTML = "Umgebung: <b>" + esc(z.umgebung) + "</b>";
+    return;
+  }
+  ziel.className = "dzustand";
+  ziel.innerHTML = "";
+}
+
 goBtn.addEventListener("click", function () {
   if (!gewaehlteAdresse) return;
   goBtn.disabled = true;
@@ -700,17 +807,15 @@ goBtn.addEventListener("click", function () {
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
   ["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
   renderLoading();
-  fetch("/api/analyze", {
+  apiAbruf("/api/analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ adresse: gewaehlteAdresse })
   })
-  .then(function (r) { return r.json(); })
-  .then(function (data) {
-    if (!data.ok) { renderFehler(data.fehler || "Unbekannter Fehler."); return; }
-    aktuelleJobId = data.job_id;
-    return pollStatus(data.job_id);
+  .then(function (a) {
+    if (!a.ok) { renderFehler(a.fehler, a.technisch ? "technisch" : "fachlich", a.art); return; }
+    aktuelleJobId = a.daten.job_id;
+    return pollStatus(a.daten.job_id);
   })
-  .catch(function () { renderFehler("Verbindung zum Analyse-Server fehlgeschlagen. Läuft das Backend samt Tunnel?"); })
   .then(function () {
     goBtn.disabled = false;
     goBtn.textContent = "Grundstück analysieren";
@@ -754,13 +859,47 @@ function stopLoading() { clearInterval(ladeTimer); ladeTimer = null; }
 var jobIdAktuell = null;
 function pollStatus(jobId) {
   jobIdAktuell = jobId;
-  var versuch = 0;
+  var versuch = 0, netzFehlerInFolge = 0;
+  // Ein einzelner verlorener Abruf ist normal -- eine Reihe davon heisst,
+  // der Dienst ist weg. Das als "Zeitueberschreitung der Analyse" zu
+  // melden waere falsch: die Analyse ist nicht zu langsam, sie laeuft gar
+  // nicht mehr.
+  var MAX_NETZFEHLER = 5;
+
   return new Promise(function (resolve) {
     function tick() {
-      if (versuch++ > 120) { stopLoading(); renderFehler("Zeitüberschreitung — die Analyse hat zu lange gedauert."); resolve(); return; }
-      fetch("/api/status/" + jobId).then(function (r) { return r.json(); }).then(function (data) {
-        if (!data.ok) { stopLoading(); renderFehler(data.fehler || "Job nicht gefunden."); resolve(); return; }
-        if (data.status === "error") { stopLoading(); renderFehler(data.fehler); resolve(); return; }
+      if (versuch++ > 120) {
+        stopLoading();
+        renderFehler("Die Analyse hat l\u00e4nger gedauert als erwartet und wurde abgebrochen.",
+                     "technisch", "zeitueberschreitung");
+        resolve(); return;
+      }
+      apiAbruf("/api/status/" + jobId).then(function (a) {
+        if (a.technisch) {
+          netzFehlerInFolge += 1;
+          if (netzFehlerInFolge >= MAX_NETZFEHLER) {
+            stopLoading();
+            renderFehler("Die Verbindung zum Analyse-Server ist w\u00e4hrend der Analyse " +
+                         "abgerissen (" + netzFehlerInFolge + " Versuche ohne Antwort).",
+                         "technisch", a.art);
+            pruefeBackend();
+            resolve(); return;
+          }
+          setTimeout(tick, 3000); return;
+        }
+        netzFehlerInFolge = 0;
+
+        if (!a.ok) {
+          stopLoading();
+          renderFehler(a.fehler, "fachlich");
+          resolve(); return;
+        }
+        var data = a.daten;
+        if (data.status === "error") {
+          stopLoading();
+          renderFehler(data.fehler, "fachlich");
+          resolve(); return;
+        }
         if (data.status === "done") {
           stopLoading();
           var bal = document.getElementById("ladebalken");
@@ -772,14 +911,45 @@ function pollStatus(jobId) {
           return;
         }
         setTimeout(tick, 3000);
-      }).catch(function () { setTimeout(tick, 3000); });
+      });
     }
     setTimeout(tick, 3000);
   });
 }
-function renderFehler(msg) {
+function renderFehler(msg, art, unterart) {
   stopLoading();
-  inner.innerHTML = '<div class="empty"><h2>Analyse nicht möglich</h2><div class="note stop">' + esc(msg) + "</div>" +
+  if (art === "technisch") {
+    // Ausdruecklich KEIN Satz ueber fehlende amtliche Grundlagen. Ueber das
+    // Grundstueck ist hier nichts gesagt worden.
+    var rat = {
+      nicht_konfiguriert: "F\u00fcr diese Seite ist kein Analyse-Server hinterlegt. " +
+        "Das ist eine Einstellung der Seite, kein Problem des Grundst\u00fccks.",
+      backend_offline: "Der Dienst l\u00e4uft gerade nicht oder startet noch. " +
+        "In einer Minute noch einmal versuchen.",
+      netzwerk: "Keine Verbindung. Internetverbindung pr\u00fcfen und noch einmal versuchen.",
+      zeitueberschreitung: "Die Auswertung der Bau- und Nutzungsordnung dauert " +
+        "\u00fcblicherweise 1\u20133 Minuten. Dauerte es l\u00e4nger, war der Dienst " +
+        "wahrscheinlich \u00fcberlastet."
+    }[unterart] || "Bitte sp\u00e4ter noch einmal versuchen.";
+
+    inner.innerHTML =
+      '<div class="empty"><h2>Analyse-Server nicht erreichbar</h2>' +
+      '<div class="note warn">' + esc(msg) + "</div>" +
+      '<p style="font-size:12.5px;color:var(--ink-2);margin-top:14px">' + esc(rat) + "</p>" +
+      '<p style="font-size:12.5px;color:var(--ink-3);margin-top:10px">' +
+      '<b>Das ist eine technische St\u00f6rung, kein Befund.</b> \u00dcber dieses ' +
+      'Grundst\u00fcck ist damit nichts gesagt \u2014 weder dass Daten fehlen, ' +
+      'noch dass etwas nicht zul\u00e4ssig w\u00e4re.</p>' +
+      '<p style="margin-top:14px"><button class="szbtn" id="nochmal">Erneut versuchen</button></p>' +
+      "</div>";
+    var k = document.getElementById("nochmal");
+    if (k) k.onclick = function () { pruefeBackend().then(function () { goBtn.click(); }); };
+    return;
+  }
+
+  // Fachlich: der Dienst hat geantwortet und sagt, warum es nicht geht.
+  inner.innerHTML = '<div class="empty"><h2>Analyse nicht möglich</h2><div class="note stop">' +
+    esc(msg) + "</div>" +
     '<p style="font-size:12.5px;color:var(--ink-3);margin-top:14px">Die Engine gibt bewusst keinen Wert aus, wenn die amtliche Grundlage fehlt — das ist ein Ergebnis, keine Oberflächenstörung.</p></div>';
 }
 

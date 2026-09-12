@@ -1,0 +1,6 @@
+# Laufzeitabhaengigkeiten des Backends. Deckungsgleich mit pyproject.toml --
+# als eigene Datei, weil Container-Builds sie vor dem Quellcode installieren
+# und dadurch die Paket-Ebene zwischenspeichern koennen.
+requests>=2.31
+shapely>=2.0
+google-genai>=1.0

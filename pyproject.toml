@@ -10,6 +10,10 @@ requires-python = ">=3.11"
 dependencies = [
     "requests",
     "shapely",
+    # Modul 2 wertet die Bau- und Nutzungsordnung per LLM aus. Ohne dieses
+    # Paket startet der Dienst zwar, aber JEDE Analyse scheitert an derselben
+    # Stelle -- im Container faellt das sonst erst beim ersten Nutzer auf.
+    "google-genai",
 ]
 
 [tool.setuptools]

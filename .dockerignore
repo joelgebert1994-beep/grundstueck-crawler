@@ -1,0 +1,15 @@
+# Nichts in das Abbild, was dort nicht hingehoert.
+**/__pycache__/
+**/*.pyc
+**/.git/
+**/.venv/
+**/venv/
+**/.wrangler/
+**/node_modules/
+**/*.log
+**/data/*.db
+**/data/*.db-journal
+caps_wfs.xml
+caps_wms.xml
+baseline/
+.env

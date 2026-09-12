@@ -58,6 +58,24 @@ from potenzial_engine.modul3_financial import Modul3Error
 
 DEFAULT_PORT = 8787
 
+# Im Betrieb gibt die Plattform den Port vor (PORT), lokal bleibt es 8787.
+# Ohne das startet der Dienst im Container am falschen Port und die
+# Plattform haelt ihn fuer tot.
+def _port() -> int:
+    for quelle in (sys.argv[1] if len(sys.argv) > 1 else None, os.environ.get("PORT")):
+        if quelle:
+            try:
+                return int(quelle)
+            except ValueError:
+                pass
+    return DEFAULT_PORT
+
+
+# Wo das Werkzeug laeuft. "entwicklung" lokal, "produktion" im Betrieb --
+# die Oberflaeche zeigt es an, damit niemand versehentlich auf der
+# Entwicklungsumgebung arbeitet und sich ueber fehlende Projekte wundert.
+UMGEBUNG = os.environ.get("UMGEBUNG", "entwicklung")
+
 # In-Memory-Job-Speicher -- reicht fuer einen einzelnen lokalen Prozess mit
 # einem Nutzer; ueberlebt keinen Neustart, braucht aber auch keinen (Jobs
 # sind pro Analyse-Anfrage kurzlebig).
@@ -314,7 +332,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path in ("/", "/health"):
-            self._send_json({"ok": True, "service": "grundstueck-crawler-backend"})
+            self._send_json(_bereitschaft())
         elif self.path.startswith("/status/"):
             self._handle_status(self.path[len("/status/"):])
         elif self.path.startswith("/projekt/export"):
@@ -999,12 +1017,76 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write(f"{self.address_string()} - {format % args}\n")
 
 
+def _bereitschaft() -> dict[str, Any]:
+    """Was der Dienst ueber sich selbst sagen kann.
+
+    Die Unterscheidung, um die es geht: ERREICHBAR heisst nicht
+    EINSATZBEREIT. Ein Dienst ohne LLM-Schluessel antwortet auf jeden
+    Aufruf -- und scheitert dann bei jeder Analyse an derselben Stelle.
+    Das gehoert hier gemeldet und nicht erst im Fehlertext einer Analyse,
+    die drei Minuten gelaufen ist.
+    """
+    pruefungen: dict[str, Any] = {}
+
+    # Modul 2 braucht einen Schluessel. Geprueft wird NUR, ob einer gesetzt
+    # ist -- der Wert selbst wird nie ausgegeben.
+    pruefungen["llm_schluessel"] = bool(
+        os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+
+    try:
+        import shapely  # noqa: F401
+        pruefungen["geometrie"] = True
+    except ImportError:
+        pruefungen["geometrie"] = False
+
+    try:
+        from google import genai  # noqa: F401
+        pruefungen["llm_bibliothek"] = True
+    except ImportError:
+        pruefungen["llm_bibliothek"] = False
+
+    kern_db, kern_pj = _kern_projekt()
+    if kern_pj is None:
+        pruefungen["datenschicht"] = False
+    else:
+        try:
+            con = kern_db.verbinde()
+            con.execute("SELECT 1").fetchone()
+            pruefungen["datenschicht"] = True
+        except Exception:  # noqa: BLE001 -- jede Ursache heisst hier "nicht bereit"
+            pruefungen["datenschicht"] = False
+
+    with _JOBS_LOCK:
+        laufend = sum(1 for j in _JOBS.values() if j.get("status") == "laeuft")
+        gesamt = len(_JOBS)
+
+    bereit = all(pruefungen.values())
+    return {
+        "ok": True,                      # der Dienst antwortet
+        "bereit": bereit,                # und kann auch arbeiten
+        "service": "grundstueck-crawler-backend",
+        "umgebung": UMGEBUNG,
+        "pruefungen": pruefungen,
+        "jobs": {"laufend": laufend, "bekannt": gesamt},
+    }
+
+
 def main() -> None:
-    if not os.environ.get("GEMINI_API_KEY"):
-        print("WARNUNG: GEMINI_API_KEY ist nicht gesetzt -- Modul 2 wird fehlschlagen.", file=sys.stderr)
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
+    port = _port()
+    zustand = _bereitschaft()
+
+    # Beim Start einmal sagen, was fehlt. Im Betrieb ist das die einzige
+    # Gelegenheit, einen Konfigurationsfehler zu bemerken, bevor der erste
+    # Nutzer darueber stolpert.
+    for name, ok in zustand["pruefungen"].items():
+        if not ok:
+            print(f"WARNUNG: {name} nicht verfuegbar -- betroffene Funktionen schlagen fehl.",
+                  file=sys.stderr)
+    if zustand["bereit"]:
+        print(f"Bereitschaft vollstaendig ({UMGEBUNG}).", file=sys.stderr)
+
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"Grundstueck-Crawler-Backend laeuft auf http://localhost:{port}")
+    print(f"Grundstueck-Crawler-Backend ({UMGEBUNG}) laeuft auf Port {port}", flush=True)
     server.serve_forever()
 
 
