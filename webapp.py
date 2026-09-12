@@ -47,12 +47,14 @@ from pathlib import Path
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
-from datetime import date
+import hashlib
+from datetime import date, datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
 from potenzial_engine import Analyse, analysiere_grundstueck, berechne_wirtschaftlichkeit
 from potenzial_engine import sonnenstand
-from potenzial_engine.modul1_geodata import Modul1Error, get_gwr_data, get_parcel_data
+from potenzial_engine.modul1_geodata import (
+    Modul1Error, geocode_address, get_gwr_data, get_parcel_data)
 from potenzial_engine.modul2_bzo_analysis import Modul2Error
 from potenzial_engine.modul3_financial import Modul3Error
 
@@ -75,6 +77,44 @@ def _port() -> int:
 # die Oberflaeche zeigt es an, damit niemand versehentlich auf der
 # Entwicklungsumgebung arbeitet und sich ueber fehlende Projekte wundert.
 UMGEBUNG = os.environ.get("UMGEBUNG", "entwicklung")
+
+# --- Analyse-Zwischenspeicher -------------------------------------------
+#
+# Eine Analyse dauert gemessen 129 Sekunden, davon ~115 Sekunden fuer den
+# einen Gemini-Aufruf, der das kommunale Reglement liest. Dieselbe Parzelle
+# ein zweites Mal zu rechnen kostet dasselbe noch einmal -- ohne dass sich
+# am Ergebnis etwas aendert. Die Tabelle dafuer steht seit Phase 1 in der
+# Datenschicht (`analyse`, mit egrid/engine_version/eingaben_hash) und war
+# bis jetzt nie angeschlossen.
+#
+# Wie lange ein Eintrag gilt. Amtliche Grundlagen aendern sich selten, aber
+# sie aendern sich: eine revidierte BZO nach einem Jahr stillschweigend
+# weiterzuverwenden waere schlimmer als 129 Sekunden zu warten.
+ANALYSE_CACHE_TAGE = float(os.environ.get("ANALYSE_CACHE_TAGE", "30"))
+
+
+def _engine_fingerabdruck() -> str:
+    """Inhaltsabdruck des Engine-Codes als Versionsschluessel.
+
+    Eine von Hand gepflegte Versionsnummer wird vergessen -- und dann
+    liefert der Zwischenspeicher Ergebnisse einer Rechnung, die es nicht
+    mehr gibt. Ein Abdruck des Quellcodes kann nicht vergessen werden:
+    aendert sich die Engine, aendert sich der Schluessel, und kein alter
+    Eintrag wird je wieder getroffen.
+
+    Der Preis ist eine niedrigere Trefferquote nach jeder Codeaenderung.
+    Das ist der richtige Preis: lieber ein Treffer zu wenig als ein
+    Ergebnis, das nicht mehr zur Rechnung passt.
+    """
+    h = hashlib.sha256()
+    verzeichnis = Path(__file__).resolve().parent / "potenzial_engine"
+    for pfad in sorted(verzeichnis.glob("*.py")):
+        h.update(pfad.name.encode("utf-8"))
+        h.update(pfad.read_bytes())
+    return h.hexdigest()[:16]
+
+
+ENGINE_VERSION = _engine_fingerabdruck()
 
 # In-Memory-Job-Speicher -- reicht fuer einen einzelnen lokalen Prozess mit
 # einem Nutzer; ueberlebt keinen Neustart, braucht aber auch keinen (Jobs
@@ -981,17 +1021,134 @@ class Handler(BaseHTTPRequestHandler):
             }
 
         thread = threading.Thread(
-            target=self._job_ausfuehren, args=(job_id, adresse, verkaufspreis, verkaufspreis_total), daemon=True
+            target=self._job_ausfuehren,
+            args=(job_id, adresse, verkaufspreis, verkaufspreis_total,
+                  bool(daten.get("neu_rechnen"))),
+            daemon=True,
         )
         thread.start()
 
         self._send_json({"ok": True, "job_id": job_id})
 
-    def _job_ausfuehren(
-        self, job_id: str, adresse: str, verkaufspreis: Optional[float], verkaufspreis_total: Optional[float] = None
-    ) -> None:
+    def _zwischenspeicher_suchen(self, adresse: str) -> tuple[Optional[dict], Optional[str]]:
+        """Sucht eine bereits gerechnete, noch gueltige Analyse.
+
+        Der Schluessel ist der EGRID, nicht die Adresse: "Rosenweg 4, Buchs"
+        und "Rosenweg 4, 5033 Buchs AG" sind dasselbe Grundstueck. Um ihn zu
+        bekommen, kosten Geocoding und Parzellenabfrage rund eine Sekunde --
+        gegen 129 Sekunden fuer die volle Analyse.
+
+        Gibt (ergebnis, egrid) zurueck. Beides kann None sein; ein Fehler
+        beim Nachschlagen fuehrt IMMER zur vollen Analyse und nie zum
+        Abbruch -- ein defekter Zwischenspeicher darf das Werkzeug nicht
+        unbenutzbar machen.
+        """
+        kern_db, _ = _kern_projekt()
+        if kern_db is None:
+            return None, None
         try:
+            geo = geocode_address(adresse)
+            if not geo or geo.get("lv95_e") is None:
+                return None, None
+            parzelle = get_parcel_data(geo["lv95_e"], geo["lv95_n"])
+            egrid = (parzelle or {}).get("egrid")
+            if not egrid:
+                return None, None
+
+            con = kern_db.verbinde()
+            zeile = kern_db.juengste_analyse(con, egrid, ENGINE_VERSION, _EINGABEN_HASH)
+            if zeile is None:
+                return None, egrid
+
+            alter_tage = _alter_in_tagen(zeile["erstellt_am"])
+            if alter_tage is None or alter_tage > ANALYSE_CACHE_TAGE:
+                return None, egrid
+
+            ergebnis = json.loads(zeile["ergebnis_json"])
+            # Der Benutzer muss SEHEN, dass dies eine gespeicherte Rechnung
+            # ist und von wann. Ein Ergebnis ohne Datum waere eine Behauptung
+            # ueber den heutigen Stand der amtlichen Grundlagen.
+            ergebnis["zwischenspeicher"] = {
+                "aus_zwischenspeicher": True,
+                "gerechnet_am": zeile["erstellt_am"],
+                "alter_tage": round(alter_tage, 2),
+                "gueltig_bis_tage": ANALYSE_CACHE_TAGE,
+            }
+            return ergebnis, egrid
+        except Exception:  # noqa: BLE001 -- nie am Zwischenspeicher scheitern
+            traceback.print_exc()
+            return None, None
+
+    def _zwischenspeicher_ablegen(self, egrid: Optional[str], ergebnis: dict) -> None:
+        """Legt eine erfolgreiche Analyse ab. Fehler bleiben draussen."""
+        if not egrid:
+            return
+        kern_db, _ = _kern_projekt()
+        if kern_db is None:
+            return
+        try:
+            con = kern_db.verbinde()
+            m1 = ergebnis.get("modul1_geodaten") or {}
+            kataster = m1.get("kataster") or {}
+            gemeinde = m1.get("gemeinde") or {}
+            geo = m1.get("geocoding") or {}
+            # Der Fremdschluessel verlangt das Grundstueck zuerst.
+            kern_db.speichere_grundstueck(con, {
+                "egrid": egrid,
+                "parzellennummer": kataster.get("parzellennummer"),
+                "flaeche_m2": kataster.get("flaeche_m2"),
+                "flaeche_quelle": kataster.get("flaeche_quelle"),
+                "gemeinde": gemeinde.get("gemeinde"),
+                "bfs_nummer": gemeinde.get("bfs_nummer"),
+                "kanton": gemeinde.get("kanton"),
+                "lv95_e": (geo.get("lv95_koordinaten") or {}).get("lv95_e") or geo.get("lv95_e"),
+                "lv95_n": (geo.get("lv95_koordinaten") or {}).get("lv95_n") or geo.get("lv95_n"),
+            })
+            kern_db.speichere_analyse(
+                con, egrid, ENGINE_VERSION, _EINGABEN_HASH, "erfolgreich", ergebnis)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+
+    def _job_ausfuehren(
+        self, job_id: str, adresse: str, verkaufspreis: Optional[float],
+        verkaufspreis_total: Optional[float] = None, neu_rechnen: bool = False
+    ) -> None:
+        egrid = None
+        try:
+            if not neu_rechnen:
+                gespeichert, egrid = self._zwischenspeicher_suchen(adresse)
+                if gespeichert is not None:
+                    # Der Kontext wird aus dem Ergebnis zurueckgebaut statt
+                    # mitgespeichert. Das ist geprueft gleichwertig, nicht
+                    # angenommen: kontext["modul2"] IST
+                    # ergebnis["modul2_bzo_analyse"], und kontext["modul1"]
+                    # unterscheidet sich von ergebnis["modul1_geodaten"] nur
+                    # um die rohen API-Blobs (raw_attributes, raw,
+                    # raw_extract). Die Quellenobjekte entstehen VOR dem
+                    # Trimmen, und keine nachgelagerte Rechnung liest diese
+                    # Felder. Das spart je Eintrag mehrere Megabyte.
+                    #
+                    # Wer spaeter einen Verbraucher fuer die Rohdaten baut,
+                    # muss sie hier mitspeichern -- sonst rechnet eine
+                    # gespeicherte Analyse anders als eine frische.
+                    with _JOBS_LOCK:
+                        _JOBS[job_id].update(
+                            status="done", ergebnis=gespeichert,
+                            kontext={"modul1": gespeichert.get("modul1_geodaten"),
+                                     "modul2": gespeichert.get("modul2_bzo_analyse")})
+                    return
+
             analyse = analysiere_grundstueck(adresse)
+            analyse.ergebnis["zwischenspeicher"] = {
+                "aus_zwischenspeicher": False,
+                "gerechnet_am": _jetzt_iso(),
+                "alter_tage": 0.0,
+                "gueltig_bis_tage": ANALYSE_CACHE_TAGE,
+            }
+            if egrid is None:
+                egrid = ((analyse.ergebnis.get("modul1_geodaten") or {})
+                         .get("kataster") or {}).get("egrid")
+            self._zwischenspeicher_ablegen(egrid, analyse.ergebnis)
             # Ein bei /analyze mitgegebener Preis ist optional und aendert die
             # baurechtliche Analyse nicht -- er wird nur zusaetzlich gerechnet.
             if verkaufspreis is not None or verkaufspreis_total is not None:
@@ -1015,6 +1172,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 -- http.server API
         sys.stderr.write(f"{self.address_string()} - {format % args}\n")
+
+
+# Die Analyse haengt heute nur an der Adresse -- weitere Eingaben wuerden
+# hier einfliessen. Konstant, damit der Schluessel stabil bleibt.
+_EINGABEN_HASH = "adresse"
+
+
+def _jetzt_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _alter_in_tagen(zeitpunkt: str) -> Optional[float]:
+    """Alter eines gespeicherten Eintrags in Tagen, oder None wenn unlesbar."""
+    try:
+        gespeichert = datetime.fromisoformat(zeitpunkt)
+    except (TypeError, ValueError):
+        return None
+    if gespeichert.tzinfo is None:
+        gespeichert = gespeichert.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - gespeichert).total_seconds() / 86400.0
 
 
 def _bereitschaft() -> dict[str, Any]:
@@ -1057,7 +1234,9 @@ def _bereitschaft() -> dict[str, Any]:
             pruefungen["datenschicht"] = False
 
     with _JOBS_LOCK:
-        laufend = sum(1 for j in _JOBS.values() if j.get("status") == "laeuft")
+        # Der Status heisst "running" -- hier stand vorher "laeuft", und der
+        # Health-Check meldete dadurch immer null laufende Jobs.
+        laufend = sum(1 for j in _JOBS.values() if j.get("status") == "running")
         gesamt = len(_JOBS)
 
     bereit = all(pruefungen.values())

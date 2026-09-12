@@ -324,6 +324,10 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .pjtab th:first-child { text-align: left; color: var(--ink-3); font-weight: 600;
   text-transform: none; letter-spacing: 0; font-size: 11px; }
 .pjtab td { font-variant-numeric: tabular-nums; }
+.zshinweis { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  font-size: 12px; line-height: 1.5; color: #8a5a12; background: #fff4e0;
+  border: 1px solid #f0d9a8; border-radius: 8px; padding: 8px 11px; margin-bottom: 12px; }
+
 /* Zustand des Analyse-Dienstes. Bewusst getrennte Farben: eine technische
    Stoerung darf nicht wie ein fachlicher Befund aussehen. */
 .dzustand { font-size: 11.5px; line-height: 1.45; margin-top: 6px; }
@@ -799,7 +803,11 @@ function zeichneBackendZustand() {
   ziel.innerHTML = "";
 }
 
-goBtn.addEventListener("click", function () {
+goBtn.addEventListener("click", function () { starteAnalyse(false); });
+
+// `neuRechnen` umgeht den Zwischenspeicher. Nur auf ausdrueckliche Anweisung
+// -- sonst kostet jeder Klick wieder zwei Minuten und einen LLM-Aufruf.
+function starteAnalyse(neuRechnen) {
   if (!gewaehlteAdresse) return;
   goBtn.disabled = true;
   goBtn.textContent = "Analyse läuft …";
@@ -809,7 +817,7 @@ goBtn.addEventListener("click", function () {
   renderLoading();
   apiAbruf("/api/analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adresse: gewaehlteAdresse })
+    body: JSON.stringify({ adresse: gewaehlteAdresse, neu_rechnen: !!neuRechnen })
   })
   .then(function (a) {
     if (!a.ok) { renderFehler(a.fehler, a.technisch ? "technisch" : "fachlich", a.art); return; }
@@ -820,7 +828,7 @@ goBtn.addEventListener("click", function () {
     goBtn.disabled = false;
     goBtn.textContent = "Grundstück analysieren";
   });
-});
+}
 
 var LADESCHRITTE = [
   [0,  "Adresse geocodieren (geo.admin.ch)"],
@@ -943,7 +951,7 @@ function renderFehler(msg, art, unterart) {
       '<p style="margin-top:14px"><button class="szbtn" id="nochmal">Erneut versuchen</button></p>' +
       "</div>";
     var k = document.getElementById("nochmal");
-    if (k) k.onclick = function () { pruefeBackend().then(function () { goBtn.click(); }); };
+    if (k) k.onclick = function () { pruefeBackend().then(function () { starteAnalyse(false); }); };
     return;
   }
 
@@ -1104,10 +1112,28 @@ function mapBtn(gruppeName, label) {
   return '<button class="maplink" data-zoom="' + gruppeName + '">▣ ' + esc(label) + "</button>";
 }
 
+// Ein gespeichertes Ergebnis ist ein Ergebnis von einem BESTIMMTEN TAG.
+// Es ohne Datum zu zeigen waere eine Behauptung ueber den heutigen Stand der
+// amtlichen Grundlagen -- und genau das darf dieses Werkzeug nicht.
+function zwischenspeicherHinweis(erg) {
+  var z = erg.zwischenspeicher || {};
+  if (!z.aus_zwischenspeicher) return "";
+  var tage = z.alter_tage || 0;
+  var alter = tage < 1
+    ? Math.max(1, Math.round(tage * 24)) + " Stunde(n)"
+    : Math.round(tage) + " Tag(e)";
+  return '<div class="zshinweis">Dieses Ergebnis stammt aus einer <b>gespeicherten ' +
+    'Analyse vom ' + esc((z.gerechnet_am || "").slice(0, 10)) + '</b> (' + esc(alter) +
+    ' alt) und wurde nicht neu gerechnet. Amtliche Grundlagen können sich seither ' +
+    'geändert haben.' +
+    '<button class="szbtn" id="zs-neu">Jetzt neu rechnen</button></div>';
+}
+
 function renderDossier(erg) {
   var m1 = erg.modul1_geodaten || {};
   var zz = erg.zonen_zuordnung || {};
   inner.innerHTML =
+    zwischenspeicherHinweis(erg) +
     headHtml(erg, m1, zz) +
     '<nav class="navbar" id="navbar">' + SEKTIONEN.map(function (s) {
       return '<button data-sec="' + s[0] + '">' + s[1] + "</button>";
@@ -1115,6 +1141,8 @@ function renderDossier(erg) {
     secGrundstueck(m1) + secStandort(m1) + secBaurecht(erg, m1, zz) +
     secRestriktionen(m1) + secPotenzial(erg) + secFlaechen(erg) + secSzenarien(erg) + secEntwicklung(erg) +
     secQuellen(erg) + secWirtschaft(erg);
+  var zsNeu = document.getElementById("zs-neu");
+  if (zsNeu) zsNeu.onclick = function () { starteAnalyse(true); };
   verdrahteDossier();
   verdrahteSzenarien();
   verdrahteWirtschaft();

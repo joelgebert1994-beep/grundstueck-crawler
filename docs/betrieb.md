@@ -123,8 +123,65 @@ Rechnung bei 0.5 vCPU, synchron: 64.5 vCPU-s je Analyse.
 
 ### Oracle Cloud Always Free — **kostenlos und geeignet (Option A)**
 
-2 OCPU (ARM) / 12 GB RAM / 200 GB Blockspeicher, **dauerhaft frei**, kein
-Ablaufdatum. (Im Juni 2026 von 4/24 auf 2/12 reduziert — ohne Ankündigung.)
+**Gegen die offizielle Oracle-Dokumentation verifiziert**, nicht gegen
+Drittartikel (docs.oracle.com, Stand 12.09.2026):
+
+| Zusage laut Oracle-Doku | Wert | Wir brauchen |
+|---|---|---|
+| Ampere A1 (VM.Standard.A1.Flex) | 1'500 OCPU-Std. + 9'000 GB-Std./Monat = **2 OCPU + 12 GB durchgehend** | 1 OCPU, 0.4 GB |
+| Blockspeicher | **200 GB** (Boot + Block kombiniert) | < 1 GB |
+| Objektspeicher | 20 GB, 50'000 API-Aufrufe/Monat | nicht nötig |
+| **Ausgehender Verkehr** | **10 TB/Monat** | 2.1 GB bei 100/Tag |
+| Load Balancer | 1 flexibler, 10 Mbps | optional |
+| Laufzeit | *„free of charge in the home region of the tenancy, **for the life of the account**"* | — |
+| Kreditkarte | erforderlich zur Prüfung: *„You might see a small, temporary charge … This is a verification hold that will be removed automatically. Note that your credit card won't be charged unless you elect to upgrade your cloud account."* | — |
+
+(Im Juni 2026 wurde A1 von 4 OCPU/24 GB auf 2/12 reduziert — ohne
+Ankündigung. Die Doku führt heute 2/12.)
+
+#### Der Fund, der im Drittartikel fehlte
+
+Die offizielle Dokumentation enthält eine Klausel, die **genau unser Profil
+trifft**:
+
+> **Reclamation of Idle Compute Instances**
+> Idle Always Free compute instances may be reclaimed by Oracle. Oracle will
+> deem virtual machine and bare metal compute instances as idle if, during a
+> 7-day period, the following are true:
+> * CPU utilization for the 95th percentile is less than 20%
+> * Network utilization is less than 20%
+> * Memory utilization is less than 20% *(A1 shapes only)*
+
+Gegen unsere Messwerte gehalten:
+
+| Kriterium | Grenze | Unser Wert bei 30 Analysen/Tag | Ausgelöst? |
+|---|---|---|---|
+| CPU (95. Perzentil) | < 20 % | ~0.2 % | **ja** |
+| Speicher | < 20 % | 0.4 GB von 12 GB = 3 % | **ja** |
+| Netz | < 20 % | vernachlässigbar | **ja** |
+
+**Alle drei Bedingungen wären erfüllt.** Unser Dienst wartet 96 % der Zeit —
+das ist genau das Profil, das Oracle als „idle" definiert.
+
+#### Gegenmassnahmen, nach Belastbarkeit geordnet
+
+1. **Auf Pay As You Go hochstufen.** Laut Oracles eigener Community gilt die
+   Rückforderung *„from Always Free customers only"*, und nach dem Hochstufen
+   bleiben Always-Free-Ressourcen kostenlos — berechnet wird nur, was über die
+   Always-Free-Grenzen hinausgeht. **Achtung:** Das steht in Oracles
+   Community-Forum, **nicht** auf der Doku-Seite zu den Always-Free-Ressourcen.
+   Vor dem Verlassen auf diesen Punkt beim Oracle-Support bestätigen lassen.
+2. **VM kleiner schneiden.** 1 OCPU / 6 GB statt 2/12 halbiert den
+   Leerlauf-Fussabdruck und lässt immer noch das 15-fache unseres Bedarfs.
+   Löst das Problem nicht, verringert es.
+3. **Hinnehmen und vorbereiten.** Es heisst „may be reclaimed". Mit
+   `docker-compose` und einer dokumentierten Einrichtung ist eine neue
+   Instanz in ~15 Minuten wieder da, und die Datenbank liegt als
+   Projektdatei-Export ausserhalb.
+
+Was hier ausdrücklich **nicht** empfohlen wird: künstliche Last erzeugen, nur
+um über 20 % zu kommen. Das umgeht eine Regel, statt ein Problem zu lösen,
+und verbrennt Strom für nichts.
 
 | Anforderung | Erfüllt |
 |---|---|
@@ -138,6 +195,7 @@ Ablaufdatum. (Im Juni 2026 von 4/24 auf 2/12 reduziert — ohne Ankündigung.)
 
 **Risiken, ehrlich benannt:**
 
+* **Rückforderung im Leerlauf** — siehe oben, der wichtigste Punkt
 * Kreditkarte zur Identitätsprüfung nötig (Always Free wird nicht belastet)
 * ARM-Kapazität ist je nach Region zeitweise nicht verfügbar
 * Betriebssystem, TLS und Neustarts pflegst du selbst
@@ -154,18 +212,65 @@ Ablaufdatum. (Im Juni 2026 von 4/24 auf 2/12 reduziert — ohne Ankündigung.)
 
 ---
 
-## 4 Der grösste Hebel ist nicht die Plattform
+## 4 Der grösste Hebel war nicht die Plattform — umgesetzt
 
-`kern/db.py` hat `speichere_analyse()` mit `engine_version` und
-`eingaben_hash` — offensichtlich als Zwischenspeicher gedacht. **`webapp.py`
-ruft es nie auf.**
+`kern/db.py` hatte `speichere_analyse()` und `juengste_analyse()` mit
+`engine_version` und `eingaben_hash`; der Docstring nannte sogar den Zweck
+(*„eine Gemeinde-BZO 50-mal von Gemini lesen zu lassen wäre reine
+Verschwendung"*). **`webapp.py` rief beides nie auf.**
 
-Jede Analyse desselben Grundstücks kostet erneut 129 Sekunden und einen
-Gemini-Aufruf. Ein Zwischenspeicher auf dem EGRID senkt jede Wiederholung auf
-Millisekunden — und die Tabelle dafür steht schon.
+Jetzt angeschlossen. Gemessen am laufenden Dienst:
 
-Das wirkt auf **jeder** Plattform und macht den Unterschied zwischen
-Optionen A und B deutlich kleiner.
+| | |
+|---|---|
+| Erste Analyse | 129 s |
+| Wiederholung | **1.08 s** |
+| Nachgelagerte Wirtschaftlichkeit aus dem Speicher | **6 ms** |
+
+### Wie der Schlüssel gebildet wird
+
+`EGRID + Engine-Fingerabdruck + Eingaben`
+
+* **EGRID statt Adresstext.** „Rosenweg 4, Buchs" und „Rosenweg 4, 5033
+  Buchs AG" sind dasselbe Grundstück — geprüft, beide treffen. Den EGRID zu
+  ermitteln kostet 1.4 s (Geocoding + Parzelle) gegen 129 s für die volle
+  Analyse.
+* **Fingerabdruck statt Versionsnummer.** `ENGINE_VERSION` ist ein
+  SHA-256 über `potenzial_engine/*.py`. Eine von Hand gepflegte Nummer wird
+  vergessen — und dann liefert der Speicher Ergebnisse einer Rechnung, die es
+  nicht mehr gibt. Der Preis ist eine niedrigere Trefferquote nach jeder
+  Codeänderung; das ist der richtige Preis.
+* **Gültigkeit 30 Tage** (`ANALYSE_CACHE_TAGE`). Amtliche Grundlagen ändern
+  sich selten, aber sie ändern sich.
+
+### Was der Speicher nicht darf
+
+* **Einen Fehlschlag festsetzen** — nur erfolgreiche Analysen werden abgelegt.
+* **Unsichtbar bleiben.** Ein gespeichertes Ergebnis trägt Datum und Alter
+  und zeigt in der Oberfläche einen Hinweis mit „Jetzt neu rechnen". Ein
+  Ergebnis ohne Datum wäre eine Behauptung über den heutigen Stand der
+  amtlichen Grundlagen.
+* **Das Werkzeug lahmlegen.** Fällt die Datenschicht aus, wird gerechnet —
+  nicht abgebrochen. Getestet mit fehlender und mit defekter Datenbank.
+
+### Eine geprüfte Gleichwertigkeit
+
+Der `kontext` (Rohergebnisse für Folgerechnungen) wird beim Treffer aus dem
+Ergebnis zurückgebaut statt mitgespeichert. Das spart je Eintrag mehrere
+Megabyte und ist **geprüft** gleichwertig: `kontext["modul2"]` *ist*
+`ergebnis["modul2_bzo_analyse"]`, und `kontext["modul1"]` unterscheidet sich
+nur um die rohen API-Blobs (`raw_attributes`, `raw`, `raw_extract`), die
+nichts Nachgelagertes liest — die Quellenobjekte entstehen vor dem Trimmen.
+
+Nachgewiesen am laufenden Dienst: aus einem Treffer heraus liefern
+`/umgebung` 91 Gebäude mit Terrain und `/entwicklung` eine vollständige
+Wirtschaftlichkeit (Investition 1'654'381, Erlös 1'672'000, Gewinn 17'619,
+Marge 1.05 %, Residualwert 395'664) — samt der Restflächen-Warnung aus
+Block 3.
+
+**Wirkung auf die Plattformwahl:** Bei wiederholten Abfragen sinkt der
+Verbrauch um Grössenordnungen. Das macht den Abstand zwischen Option A und B
+kleiner, ändert aber nichts daran, dass B einen Architekturumbau verlangt.
 
 ---
 
