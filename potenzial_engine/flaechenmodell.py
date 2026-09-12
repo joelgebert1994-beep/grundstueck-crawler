@@ -659,6 +659,7 @@ def berechne_wohnungen(
     typen: Optional[list[WohnungstypVorgabe]],
     begruendung: str = "",
     restflaeche_verteilen: bool = False,
+    herkunft: str = HERKUNFT_SYSTEMANNAHME,
 ) -> dict[str, Any]:
     """Leitet aus der Wohnflaeche eine Wohnungsstruktur ab.
 
@@ -727,6 +728,7 @@ def berechne_wohnungen(
                 + f"{abs(differenz):.1f} m2. Es wird weder auf- noch abgerundet."
             )
             + (f" Mix-Begruendung: {begruendung}" if begruendung else ""),
+            "herkunft": herkunft,
         }
 
     summe = sum(t.anteil for t in nach_anteil)
@@ -772,6 +774,11 @@ def berechne_wohnungen(
 
     ergebnis = {
         "status": STATUS_MODELLANNAHME_BASIERT,
+        # Woher der Mix kommt. Ein vom System vorgeschlagener Mix ist KEINE
+        # Benutzerannahme -- er sieht im Formular nur so aus, weil er dort
+        # schon steht. Wer das nicht unterscheidet, weist im Dossier einen
+        # Vorschlag als Entscheidung des Eigentuemers aus.
+        "herkunft": herkunft,
         "eingabeart": "anteile",
         "typen": zeilen,
         "anzahl_wohnungen": roh.gesamtanzahl_ganze_einheiten,
@@ -830,6 +837,7 @@ def berechne_flaechen_und_wohnungen(
     benutzerwerte: Optional[dict[str, float]] = None,
     wohnungsmix: Optional[list[WohnungstypVorgabe]] = None,
     wohnungsmix_begruendung: str = "",
+    wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
     zusaetzliche_geschosse: Optional[list[dict[str, Any]]] = None,
     restflaeche_verteilen: bool = False,
 ) -> dict[str, Any]:
@@ -941,7 +949,8 @@ def berechne_flaechen_und_wohnungen(
         ))
 
     wohnungen = berechne_wohnungen(
-        nwf.wert, wohnungsmix, wohnungsmix_begruendung, restflaeche_verteilen)
+        nwf.wert, wohnungsmix, wohnungsmix_begruendung, restflaeche_verteilen,
+        herkunft=wohnungsmix_herkunft)
     if wohnungen.get("anzahl_wohnungen"):
         rechenweg.append(_schritt(
             "wohnungen", nwf.wert, f"verteilt auf den Wohnungsmix ({wohnungen['eingabeart']})",

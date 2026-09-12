@@ -184,7 +184,7 @@ Die Spalte **Damals** ist die Einstufung der Erstanalyse (vor Block 1).
 | Funktion | Damals | Heute | Bemerkung |
 |---|---|---|---|
 | Kostenrechner BKP 1–6 | A | ✅ | Stufe 5 |
-| Wohnungsmix, Wohnungszahl | D | ✅ | Stufe 3, ohne Bruchteilwohnungen |
+| Wohnungsmix, Wohnungszahl | D | ✅ | Stufe 3, ohne Bruchteilwohnungen · Herkunft Vorschlag/Annahme getrennt (Block 6) |
 | Verkauf / Miete / Rendite | D | ✅ | Stufe 5 |
 | Gewinn, Marge, Zielmarge | D | ✅ | Stufe 5 |
 | **Residualwert** | D | ✅ | stärkstes Alleinstellungsmerkmal |
@@ -325,6 +325,7 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 12.09.2026 | Block 6 | SIA 416 abgeschlossen: Wohnungsmix wird als Systemvorschlag oder Benutzerannahme gefuehrt statt pauschal als Annahme |
 | 12.09.2026 | Block 5 | Register angelegt · Ansicht/Messungen/Arbeitsstand speichern, Variante umbenennen/löschen, Projekt-Import in der Oberfläche |
 | 12.09.2026 | Block 4 | Sonne, Schatten, Messwerkzeuge |
 | 12.09.2026 | Block 3 | Dossier-PDF, Export PDF/PNG/CSV/JSON |

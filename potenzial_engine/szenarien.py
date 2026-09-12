@@ -46,7 +46,7 @@ from .flaechenmodell import (
     WohnungstypVorgabe,
     annahmenprofil,
     berechne_flaechen_und_wohnungen,
-)
+    HERKUNFT_SYSTEMANNAHME,)
 
 MACHBARKEIT_MOEGLICH = "moeglich"
 MACHBARKEIT_EINGESCHRAENKT = "eingeschraenkt_moeglich"
@@ -329,6 +329,7 @@ def _flaechen_fuer(
     benutzerwerte: Optional[dict[str, float]],
     wohnungsmix: Optional[list[WohnungstypVorgabe]],
     wohnungsmix_begruendung: str,
+    wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
     zusaetzliche_geschosse: Optional[list[dict[str, Any]]] = None,
     geschosszahl: Optional[int] = None,
     restflaeche_verteilen: bool = False,
@@ -349,6 +350,7 @@ def _flaechen_fuer(
     return berechne_flaechen_und_wohnungen(
         abgewandelt, zone=zone, profil=profil, benutzerwerte=benutzerwerte,
         wohnungsmix=wohnungsmix, wohnungsmix_begruendung=wohnungsmix_begruendung,
+        wohnungsmix_herkunft=wohnungsmix_herkunft,
         zusaetzliche_geschosse=zusaetzliche_geschosse,
         restflaeche_verteilen=restflaeche_verteilen,
     )
@@ -443,7 +445,8 @@ def szenario_bestand(
 def szenario_anbau(
     g1_ergebnis: dict[str, Any], bestand: dict[str, Any], budget: Ausnuetzungsbudget,
     zone: Optional[dict[str, Any]], *, profil: str, benutzerwerte, wohnungsmix,
-    wohnungsmix_begruendung: str, geschosshoehe_m: Optional[float] = None,
+    wohnungsmix_begruendung: str, wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
+    geschosshoehe_m: Optional[float] = None,
     restriktionen: Optional[dict[str, Any]] = None, **kw
 ) -> Szenario:
     baubereich = _als_flaeche(g1_ergebnis.get("baubereich_koordinaten"))
@@ -581,6 +584,7 @@ def szenario_anbau(
     szenario.geschossflaeche_herkunft = herkunft
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        wohnungsmix_herkunft,
         restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
         geschosszahl=geschosse,
     )
@@ -600,7 +604,8 @@ def szenario_anbau(
 def szenario_aufstockung(
     g1_ergebnis: dict[str, Any], bestand: dict[str, Any], budget: Ausnuetzungsbudget,
     zone: Optional[dict[str, Any]], *, profil: str, benutzerwerte, wohnungsmix,
-    wohnungsmix_begruendung: str, attika_zulaessig: Optional[bool] = None,
+    wohnungsmix_begruendung: str, wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
+    attika_zulaessig: Optional[bool] = None,
     geschosshoehe_m: Optional[float] = None, **kw
 ) -> Szenario:
     haupt = (bestand or {}).get("hauptgebaeude") or {}
@@ -728,6 +733,7 @@ def szenario_aufstockung(
     ))
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        wohnungsmix_herkunft,
         restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
         geschosszahl=zusaetzliche,
     )
@@ -801,6 +807,7 @@ def szenario_dachausbau(
 def szenario_ersatzneubau(
     g1_ergebnis: dict[str, Any], bestand: dict[str, Any], zone: Optional[dict[str, Any]],
     *, profil: str, benutzerwerte, wohnungsmix, wohnungsmix_begruendung: str,
+    wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
     geschosshoehe_m: Optional[float] = None, restriktionen: Optional[dict[str, Any]] = None,
     budget: Optional[Ausnuetzungsbudget] = None, **kw
 ) -> Szenario:
@@ -883,6 +890,7 @@ def szenario_ersatzneubau(
 
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        wohnungsmix_herkunft,
         restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
     )
     if szenario.flaechen:
@@ -914,7 +922,8 @@ def szenario_ersatzneubau(
 def szenario_bestand_plus_neubau(
     g1_ergebnis: dict[str, Any], bestand: dict[str, Any], budget: Ausnuetzungsbudget,
     zone: Optional[dict[str, Any]], *, profil: str, benutzerwerte, wohnungsmix,
-    wohnungsmix_begruendung: str, gebaeudeabstand_m: Optional[float] = None,
+    wohnungsmix_begruendung: str, wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
+    gebaeudeabstand_m: Optional[float] = None,
     geschosshoehe_m: Optional[float] = None, restriktionen: Optional[dict[str, Any]] = None,
     **kw
 ) -> Szenario:
@@ -1050,6 +1059,7 @@ def szenario_bestand_plus_neubau(
     szenario.geschossflaeche_herkunft = herkunft
     szenario.flaechen = _flaechen_fuer(
         gf, g1_ergebnis, zone, profil, benutzerwerte, wohnungsmix, wohnungsmix_begruendung,
+        wohnungsmix_herkunft,
         restflaeche_verteilen=kw.get("restflaeche_verteilen", False),
         geschosszahl=geschosse,
     )

@@ -234,7 +234,15 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         analyse,
         benutzerwerte=annahmen or None,
         wohnungsmix=mix,
-        wohnungsmix_begruendung=daten.get("wohnungsmix_begruendung") or "Benutzereingabe",
+        # Die Oberflaeche belegt den Mix vor und schickt ihn IMMER mit, damit
+        # eine wieder geoeffnete Variante dasselbe rechnet. Ob der Benutzer
+        # ihn angefasst hat, sagt aber nur er selbst -- hier pauschal
+        # "Benutzereingabe" einzutragen machte aus einem Systemvorschlag eine
+        # Entscheidung des Eigentuemers, im Dossier wie im Variantenvergleich.
+        wohnungsmix_begruendung=daten.get("wohnungsmix_begruendung") or "",
+        wohnungsmix_herkunft=(
+            "benutzerannahme" if daten.get("wohnungsmix_vom_benutzer")
+            else "systemannahme"),
         attika_zulaessig=daten.get("attika_zulaessig"),
         gebaeudeabstand_m=_zahl(daten.get("gebaeudeabstand_m")),
         restflaeche_verteilen=bool(daten.get("restflaeche_verteilen")),

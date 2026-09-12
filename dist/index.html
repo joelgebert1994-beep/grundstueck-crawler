@@ -1894,6 +1894,7 @@ function uebernehmeVariantenEingaben(eingaben) {
    "zielmarge", "land_ansatz", "verkauf_basis", "restflaeche_verteilen"].forEach(function (k) {
     if (eingaben[k] !== undefined) wEingaben[k] = eingaben[k];
   });
+  if (eingaben.wohnungsmix_vom_benutzer) wBeruehrt.wohnungsmix = true;
   if (eingaben.wohnungsmix && eingaben.wohnungsmix.length) {
     wEingaben.wohnungsmix = eingaben.wohnungsmix.map(function (t) {
       return { typ: t.typ, flaeche_m2: t.flaeche_m2, anteil: t.anteil };
@@ -4272,6 +4273,11 @@ function eingabenFuerVariante() {
   // als ein Mix, der als Annahme gefuehrt wird.
   if (!e.wohnungsmix && wEingaben.wohnungsmix && wEingaben.wohnungsmix.length) {
     e.wohnungsmix = wEingaben.wohnungsmix;
+    // ... aber er zaehlt dann NICHT als eigene Annahme. Gespeichert wird er
+    // fuer die Reproduzierbarkeit, ausgewiesen wird er als das, was er ist.
+    e.wohnungsmix_vom_benutzer = false;
+  } else if (e.wohnungsmix) {
+    e.wohnungsmix_vom_benutzer = true;
   }
   return e;
 }
@@ -4353,7 +4359,13 @@ function wRechne() {
   var t0 = performance.now();
   fetch("/api/entwicklung", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(Object.assign({ job_id: jobIdAktuell }, wEingaben))
+    // wohnungsmix_vom_benutzer sagt dem Server, ob der Mix eine eigene
+    // Entscheidung ist oder nur die Vorbelegung. Der Mix selbst geht immer
+    // mit (sonst rechnete eine wieder geoeffnete Variante anders) -- aber er
+    // wird nur dann als Benutzerannahme ausgewiesen, wenn er auch eine ist.
+    body: JSON.stringify(Object.assign(
+      { job_id: jobIdAktuell, wohnungsmix_vom_benutzer: !!wBeruehrt.wohnungsmix },
+      wEingaben))
   }).then(function (r) { return r.json(); }).then(function (data) {
     wLaeuft = false;
     if (!data.ok) {
