@@ -1,0 +1,44 @@
+# Caddy holt und erneuert das TLS-Zertifikat selbst (Let's Encrypt).
+# Voraussetzung: DOMAIN zeigt per DNS auf die oeffentliche IP der VM, und
+# Port 80 und 443 sind erreichbar -- in der VCN-Sicherheitsliste UND in der
+# Firewall der VM. Beides ist noetig; die VM-Firewall wird am haeufigsten
+# vergessen.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Der Health-Check bleibt ohne Zugangsschluessel erreichbar, damit sich
+	# von aussen pruefen laesst, ob der Dienst laeuft.
+	handle /health {
+		reverse_proxy backend:8787
+	}
+
+	handle {
+		reverse_proxy backend:8787 {
+			# Eine Analyse dauert 1-3 Minuten. Ohne diese Zeitlimits bricht
+			# Caddy die Anfrage vorher ab -- und der Benutzer sieht einen
+			# technischen Fehler, obwohl die Analyse noch laeuft.
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 300s
+				read_timeout 300s
+				write_timeout 300s
+			}
+		}
+	}
+
+	# Nur das Noetigste. Keine Referrer an fremde Seiten, kein MIME-Raten.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+		# Gesundheitsabfragen alle 30 Sekunden wuerden das Log sonst fluten.
+		level WARN
+	}
+}

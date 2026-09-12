@@ -1,0 +1,8 @@
+[Unit]
+Description=Sicherung der gebimo-Datenbank
+After=gebimo.service
+Requires=gebimo.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gebimo/grundstueck-crawler/deploy/sicherung.sh

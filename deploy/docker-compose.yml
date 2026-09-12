@@ -1,0 +1,89 @@
+# Produktivbetrieb auf einer Oracle-Always-Free-VM (ARM, Ampere A1).
+#
+# Erwartete Verzeichnisstruktur auf dem Server:
+#
+#   /opt/gebimo/
+#     ├── grundstueck-crawler/     Engine und Webdienst   (Repo 1)
+#     ├── Crawler/                 Datenschicht (kern)    (Repo 2)
+#     ├── daten/                   SQLite -- ueberlebt jedes Neubauen
+#     ├── caddy/                   TLS-Zertifikate
+#     ├── .env                     Secrets, Modus 600, NIE im Repo
+#     └── docker-compose.yml       diese Datei (von einrichten.sh kopiert)
+#
+# Der Bau-Kontext ist ABSICHTLICH das Elternverzeichnis: webapp.py findet die
+# Datenschicht ueber `../Crawler`. Wer nur aus grundstueck-crawler/ heraus
+# baut, bekommt einen Dienst ohne Projektablage -- und merkt es erst, wenn
+# jemand ein Projekt speichern will.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: grundstueck-crawler/Dockerfile
+    image: gebimo-potenzial:aktuell
+    container_name: gebimo-backend
+    restart: unless-stopped
+
+    environment:
+      UMGEBUNG: produktion
+      PORT: "8787"
+      KERN_DB_PFAD: /daten/kern.db
+      # Wie lange eine gespeicherte Analyse gilt. Amtliche Grundlagen aendern
+      # sich selten, aber sie aendern sich.
+      ANALYSE_CACHE_TAGE: "30"
+    env_file:
+      - .env          # GEMINI_API_KEY, ZUGANGSSCHLUESSEL
+
+    volumes:
+      # Die Datenbank liegt AUSSERHALB des Abbilds. Ein Abbild wird bei jedem
+      # Einspielen ersetzt; Projekte, Varianten und Vergleichsobjekte nicht.
+      - ./daten:/daten
+
+    # KEIN ports:-Eintrag. Der Dienst ist nur ueber Caddy erreichbar, nie
+    # direkt. Sonst umginge man TLS und den Zugangsschluessel waere die
+    # einzige Huerde.
+    expose:
+      - "8787"
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:8787/health',timeout=4)); sys.exit(0 if d.get('ok') else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        # Ohne Begrenzung frisst das Log irgendwann die Bootplatte.
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: gebimo-caddy
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+    ports:
+      - "80:80"      # noetig fuer die Let's-Encrypt-Pruefung
+      - "443:443"
+      - "443:443/udp"
+
+    environment:
+      # Wird aus .env gelesen und im Caddyfile eingesetzt.
+      DOMAIN: ${DOMAIN}
+
+    volumes:
+      - ./grundstueck-crawler/deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data      # Zertifikate -- muss persistent sein, sonst
+      - ./caddy/config:/config  # holt Caddy bei jedem Start neue und laeuft
+                                # in die Mengenbegrenzung von Let's Encrypt
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

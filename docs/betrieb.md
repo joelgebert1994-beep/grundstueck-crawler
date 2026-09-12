@@ -369,10 +369,13 @@ LLM-Schlüssel). Besser jetzt als nach drei Minuten Analyse.
 
 ---
 
-## 8 Offene Rückfrage an Oracle (vor der Kontoeröffnung)
+## 8 Rückfrage an Oracle — beantwortet
 
-**Status: unbeantwortet.** Bis zur Antwort keine Kontoeröffnung, kein
-Upgrade, kein Deployment.
+**Status: geklärt (12.09.2026, durch den Auftraggeber an der offiziellen Oracle-Dokumentation/FAQ geprüft).** Bei einem Pay-As-You-Go-Konto bleiben Always-Free-Ressourcen kostenlos und werden nicht wegen Inaktivität zurückgefordert. Daraus folgt für die Einrichtung: **direkt nach der Kontoeröffnung auf PAYG hochstufen** — das ist Schritt 1 in [`einrichtung_oracle.md`](einrichtung_oracle.md).
+
+Die ursprüngliche Frage bleibt unten stehen, damit nachvollziehbar ist, was geprüft wurde.
+
+**Ursprünglicher Status: unbeantwortet.** ~~Bis zur Antwort keine Kontoeröffnung, kein Upgrade, kein Deployment.~~ Erledigt.
 
 ### Kanäle, die als belastbar gelten
 

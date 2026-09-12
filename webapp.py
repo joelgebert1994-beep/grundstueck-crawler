@@ -48,6 +48,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
 import hashlib
+import hmac
 from datetime import date, datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
@@ -77,6 +78,14 @@ def _port() -> int:
 # die Oberflaeche zeigt es an, damit niemand versehentlich auf der
 # Entwicklungsumgebung arbeitet und sich ueber fehlende Projekte wundert.
 UMGEBUNG = os.environ.get("UMGEBUNG", "entwicklung")
+
+# Im oeffentlichen Betrieb steht der Dienst im Internet. Ein offener
+# /analyze-Endpunkt loest je Aufruf eine 129-Sekunden-Analyse und einen
+# LLM-Aufruf aus -- das ist fremdes Geld und fremde Kontingente. Ist
+# ZUGANGSSCHLUESSEL gesetzt, muss jeder Aufruf ausser /health ihn im Kopf
+# X-Gebimo-Schluessel mitbringen. Lokal ist die Variable nicht gesetzt und
+# es aendert sich nichts.
+ZUGANGSSCHLUESSEL = os.environ.get("ZUGANGSSCHLUESSEL", "")
 
 # --- Analyse-Zwischenspeicher -------------------------------------------
 #
@@ -378,10 +387,33 @@ class Handler(BaseHTTPRequestHandler):
         self._cors()
         self.end_headers()
 
+    def _zugang_ok(self) -> bool:
+        """Prueft den gemeinsamen Schluessel, falls einer gesetzt ist.
+
+        Vergleich mit compare_digest: ein zeichenweiser Vergleich verraet
+        ueber die Laufzeit, wie viele Zeichen stimmen.
+        """
+        if not ZUGANGSSCHLUESSEL:
+            return True
+        mitgebracht = self.headers.get("X-Gebimo-Schluessel") or ""
+        if hmac.compare_digest(mitgebracht, ZUGANGSSCHLUESSEL):
+            return True
+        self._send_json(
+            {"ok": False, "art": "kein_zugang", "technisch": True,
+             "fehler": "Kein gueltiger Zugangsschluessel."}, status=401)
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
         if self.path in ("/", "/health"):
+            # Der Health-Check bleibt offen: die Plattform muss den Dienst
+            # pruefen koennen, ohne den Schluessel zu kennen. Er gibt nur
+            # Bereitschaftsflaggen preis, keine Daten.
             self._send_json(_bereitschaft())
-        elif self.path.startswith("/status/"):
+            return
+        if not self._zugang_ok():
+            return
+
+        if self.path.startswith("/status/"):
             self._handle_status(self.path[len("/status/"):])
         elif self.path.startswith("/projekt/export"):
             self._handle_projekt_export()
@@ -979,6 +1011,8 @@ class Handler(BaseHTTPRequestHandler):
                         status=200 if geloescht else 404)
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._zugang_ok():
+            return
         if self.path == "/projekt":
             self._handle_projekt_schreiben()
             return

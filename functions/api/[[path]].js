@@ -43,6 +43,15 @@ export async function onRequest({ request, env, params }) {
   const target = `${backendUrl}/${segments}${query}`;
 
   const init = { method: request.method, headers: {} };
+
+  // Gemeinsames Geheimnis. Ohne diesen Riegel kann jeder im Internet
+  // /analyze aufrufen -- und jeder Aufruf kostet zwei Minuten Rechenzeit und
+  // einen LLM-Aufruf aus unserem Kontingent. Der Schluessel steht in den
+  // Pages-Umgebungsvariablen, nie im Code.
+  if (env.BACKEND_SCHLUESSEL) {
+    init.headers["X-Gebimo-Schluessel"] = env.BACKEND_SCHLUESSEL;
+  }
+
   if (request.method !== "GET" && request.method !== "HEAD") {
     init.headers["Content-Type"] = request.headers.get("Content-Type") || "application/json";
     init.body = await request.text();
@@ -53,6 +62,18 @@ export async function onRequest({ request, env, params }) {
     resp = await fetch(target, init);
   } catch (err) {
     return fehler("backend_offline", "Der Analyse-Server ist gerade nicht erreichbar.", 502);
+  }
+
+  // Ein 401 heisst: die Seite ist falsch konfiguriert. Das ist eine
+  // technische Stoerung und darf nicht wie ein Befund ueber das Grundstueck
+  // aussehen.
+  if (resp.status === 401) {
+    return fehler(
+      "nicht_konfiguriert",
+      "Diese Seite ist nicht berechtigt, den Analyse-Server zu nutzen " +
+      "(Zugangsschlüssel fehlt oder stimmt nicht).",
+      401
+    );
   }
 
   const headers = new Headers();

@@ -1,0 +1,16 @@
+# Taegliche Sicherung.
+#
+#   sudo cp grundstueck-crawler/deploy/gebimo-sicherung.{service,timer} /etc/systemd/system/
+#   sudo systemctl enable --now gebimo-sicherung.timer
+
+[Unit]
+Description=Taegliche Sicherung der gebimo-Datenbank
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+# Nach einem Neustart nachholen, falls die VM um 03:30 aus war.
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

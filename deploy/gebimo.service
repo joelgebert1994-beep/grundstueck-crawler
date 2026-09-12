@@ -1,0 +1,33 @@
+# systemd-Einheit: startet den Dienst beim Hochfahren und haelt ihn am Leben.
+#
+#   sudo cp grundstueck-crawler/deploy/gebimo.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now gebimo
+#
+# Warum ueberhaupt systemd, wo compose doch `restart: unless-stopped` hat?
+# Weil das nur einzelne Container neu startet. Nach einem Neustart der VM
+# braucht es etwas, das `docker compose up` ueberhaupt erst aufruft -- und
+# das ist genau diese Einheit.
+
+[Unit]
+Description=gebimo Potenzial-Engine (Backend und Caddy)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/gebimo
+
+# Beim Start hochfahren, beim Stoppen sauber herunterfahren.
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+# `systemctl reload gebimo` baut neu und spielt ein, ohne die Datenbank
+# anzufassen -- sie liegt im Volume, nicht im Abbild.
+ExecReload=/usr/bin/docker compose up -d --build
+
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -325,6 +325,7 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 12.09.2026 | Betrieb | Oracle-Deployment: docker-compose, Caddy/TLS, systemd, taegliche Sicherung, Zugangsschluessel, Einrichtungsanleitung |
 | 12.09.2026 | Block 6 | SIA 416 abgeschlossen: Wohnungsmix wird als Systemvorschlag oder Benutzerannahme gefuehrt statt pauschal als Annahme |
 | 12.09.2026 | Block 5 | Register angelegt · Ansicht/Messungen/Arbeitsstand speichern, Variante umbenennen/löschen, Projekt-Import in der Oberfläche |
 | 12.09.2026 | Block 4 | Sonne, Schatten, Messwerkzeuge |
