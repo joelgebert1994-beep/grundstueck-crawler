@@ -274,6 +274,17 @@ ul.plain li { margin-bottom: 4px; }
   padding: 8px 10px; border-radius: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .wbilanz.zu { background: rgba(31,122,77,.10); border: 1px solid rgba(31,122,77,.35); }
 .wbilanz.offen { background: rgba(179,50,74,.10); border: 1px solid rgba(179,50,74,.40); }
+.wmarkt { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg-2); }
+.wmkopf { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.wmkopf b { font-size: 12px; letter-spacing: .02em; }
+.wmzeile { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 3px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.wmzeile .wmlab { color: var(--ink-3); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.wmzeile .wmwert { text-align: right; }
+.wmzeile .wmwert.na { color: var(--ink-3); font-style: italic; }
+.wmzeile .wmwert em { color: var(--ink-3); font-style: normal; font-size: 11px; }
+.wmzeile.stark { border-top: 1px solid var(--line-2); margin-top: 4px; padding-top: 6px; font-weight: 600; }
 .wschalter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); cursor: pointer; }
 .wok { color: #1f7a4d; } .wfehler { color: #b3324a; } .wlaeuft { color: var(--ink-3); }
 .wstatus { min-height: 18px; margin: 8px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -1900,20 +1911,92 @@ function feld(id, label, wert, einheit, schritt) {
     '" placeholder="Systemvorschlag"><em>' + esc(einheit) + "</em></span></label>";
 }
 
+function wLage(groesse) {
+  return (wErgebnis && wErgebnis.marktlage) ? wErgebnis.marktlage[groesse] : null;
+}
 function marktBlock(erg) {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
   var preis = (e.verkauf || {}).preis;
-  var referenzZeile = function (mw, label) {
+  var SICHER_BADGE = { hoch: "ok", mittel: "warn", gering: "stop", keine_daten: "mute" };
+  var SICHER_TEXT = { hoch: "belastbar", mittel: "brauchbar", gering: "schwach gestützt",
+                      keine_daten: "keine Referenzen" };
+  var HERKUNFT_TEXT = { extern: "extern", gebimo: "gebimo", manuell: "manuell" };
+  var WERTFELD = { miete: "mietzins_chf_pro_m2_jahr", boden: "bodenpreis_chf_pro_m2",
+                   verkauf: "preis_chf_pro_m2" };
+
+  // Die drei Ebenen untereinander, in genau dieser Reihenfolge: was der Markt
+  // zeigt, was das System daraus vorschlägt, und womit tatsächlich
+  // gerechnet wird. Die Benutzerannahme steht zuunterst und hervorgehoben --
+  // sie ist die einzige Zahl, die in die Wirtschaftlichkeit eingeht.
+  var referenzZeile = function (mw, label, einheit, lage) {
     if (!mw) return "";
     var badge = HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"];
-    return '<div class="wref"><b>' + esc(label) + "</b> " +
-      (mw.referenzspanne
-        ? '<span class="wspanne">Marktreferenzen ' + chf(mw.referenzspanne[0]) + "–" +
-          chf(mw.referenzspanne[1]) + " (" + mw.anzahl_referenzen + " Objekte)</span>"
-        : '<span class="wspanne">keine Referenzen hinterlegt</span>') +
-      (leer(mw.systemvorschlag) ? "" : '<span class="wvorschlag">Systemvorschlag ' + chf(mw.systemvorschlag) + "</span>") +
-      '<span class="badge ' + badge[1] + '">gerechnet: ' + chf(mw.wert) + " · " + esc(badge[0]) + "</span></div>";
+    lage = lage || {};
+    var sicher = lage.sicherheit || (mw.anzahl_referenzen ? "mittel" : "keine_daten");
+    var objekte = lage.objekte || [];
+    var feld = WERTFELD[lage.groesse] || "preis_chf_pro_m2";
+
+    var refText = !mw.referenzspanne
+      ? "keine Vergleichsobjekte hinterlegt"
+      : (mw.referenzspanne[0] === mw.referenzspanne[1]
+          ? chf(mw.referenzspanne[0]) + " " + einheit
+          : chf(mw.referenzspanne[0]) + "–" + chf(mw.referenzspanne[1]) + " " + einheit);
+    var herkunftText = lage.nach_herkunft
+      ? Object.keys(lage.nach_herkunft).map(function (k) {
+          return lage.nach_herkunft[k] + "× " + (HERKUNFT_TEXT[k] || k);
+        }).join(", ")
+      : "";
+
+    var tabelle = objekte.length
+      ? '<div class="scroller"><table class="src"><thead><tr><th>Objekt</th><th>Quelle</th>' +
+        "<th>Stand</th><th>Wert</th><th>Qualität</th></tr></thead><tbody>" +
+        objekte.map(function (o) {
+          return "<tr><td>" + esc(o.bezeichnung || "–") +
+            (o.gemeinde ? '<div class="f">' + esc(o.gemeinde) + "</div>" : "") + "</td>" +
+            "<td>" + esc(o.quelle || "–") +
+            '<div class="f">' + esc(o.herkunftsart || "") + "</div></td>" +
+            "<td>" + esc(o.datenstand || "–") +
+            (leer(o.alter_monate) ? "" : '<div class="f">' + o.alter_monate + " Mt.</div>") + "</td>" +
+            "<td>" + chf(o[feld]) + "</td>" +
+            "<td>" + esc(o.datenqualitaet || "–") + "</td></tr>";
+        }).join("") + "</tbody></table></div>"
+      : "";
+
+    var ausgeschlossen = (lage.ausgeschlossen || []).length
+      ? '<div class="note">Nicht einbezogen: ' +
+        lage.ausgeschlossen.map(function (a) {
+          return esc(a.bezeichnung) + " (" + esc(a.grund) + ")";
+        }).join(" · ") + "</div>"
+      : "";
+
+    var details = (lage.begruendung && lage.begruendung.length)
+      ? '<details class="more"><summary>' + objekte.length + " Vergleichsobjekt" +
+        (objekte.length === 1 ? "" : "e") + " &amp; Bewertung</summary><div>" +
+        '<ul class="plain">' + lage.begruendung.map(function (b) {
+          return "<li>" + esc(b) + "</li>";
+        }).join("") + "</ul>" + tabelle + ausgeschlossen + "</div></details>"
+      : "";
+
+    return '<div class="wmarkt">' +
+      '<div class="wmkopf"><b>' + esc(label) + "</b>" +
+        '<span class="badge ' + (SICHER_BADGE[sicher] || "mute") + '">' +
+          esc(SICHER_TEXT[sicher] || sicher) + "</span></div>" +
+      '<div class="wmzeile"><span class="wmlab">Marktreferenzen</span>' +
+        '<span class="wmwert">' + refText +
+        (mw.anzahl_referenzen ? " <em>(" + mw.anzahl_referenzen +
+          (mw.anzahl_referenzen === 1 ? " Objekt" : " Objekte") +
+          (herkunftText ? ", " + esc(herkunftText) : "") + ")</em>" : "") + "</span></div>" +
+      '<div class="wmzeile"><span class="wmlab">Systemvorschlag</span>' +
+        '<span class="wmwert' + (leer(mw.systemvorschlag) ? " na" : "") + '">' +
+        (leer(mw.systemvorschlag) ? "nicht ableitbar" : chf(mw.systemvorschlag) + " " + einheit) +
+        "</span></div>" +
+      '<div class="wmzeile stark"><span class="wmlab">Gerechnet mit</span>' +
+        '<span class="wmwert' + (leer(mw.wert) ? " na" : "") + '">' +
+        (leer(mw.wert) ? "nicht gesetzt" : chf(mw.wert) + " " + einheit) +
+        ' <span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></span></div>" +
+      details +
+    "</div>";
   };
 
   return '<div class="wkarte"><h4>Markt</h4>' +
@@ -1937,9 +2020,11 @@ function marktBlock(erg) {
         '<input type="number" id="w-zielmarge" value="' + (wEingaben.zielmarge * 100).toFixed(0) +
         '" step="1" min="0" max="60"><em>%</em></span></label>' +
     "</div>" +
-    referenzZeile(preis, "Verkaufspreis") +
-    referenzZeile((e.miete || {}).ansatz, "Mietzins") +
-    referenzZeile((e.land || {}).bodenpreis, "Bodenpreis") +
+    (wErgebnis && wErgebnis.marktlage_fehler
+      ? '<div class="note warn">' + esc(wErgebnis.marktlage_fehler) + "</div>" : "") +
+    referenzZeile(preis, "Verkaufspreis", "CHF/m²", wLage("verkauf")) +
+    referenzZeile((e.miete || {}).ansatz, "Mietzins", "CHF/m²/Jahr", wLage("miete")) +
+    referenzZeile((e.land || {}).bodenpreis, "Bodenpreis", "CHF/m²", wLage("boden")) +
     ((e.land || {}).ansatz_bedeutung ? '<div class="note">' + esc(e.land.ansatz_bedeutung) + "</div>" : "") +
   "</div>";
 }
@@ -2151,6 +2236,11 @@ function wRechne() {
       return;
     }
     wErgebnis = data.wirtschaftlichkeit;
+    if (wErgebnis) {
+      wErgebnis.marktlage = data.marktlage;
+      wErgebnis.marktlage_fehler = data.marktlage_fehler;
+      wErgebnis.referenzgebiet = data.referenzgebiet;
+    }
     ergebnisAktuell.szenarien = data.szenarien;
     ergebnisAktuell.wirtschaftlichkeit = data.wirtschaftlichkeit;
     if (status) {

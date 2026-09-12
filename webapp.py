@@ -43,6 +43,7 @@ import sys
 import threading
 import time
 import traceback
+from pathlib import Path
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
@@ -61,6 +62,35 @@ DEFAULT_PORT = 8787
 _JOBS: dict[str, dict[str, Any]] = {}
 _JOBS_LOCK = threading.Lock()
 _JOB_TTL_SECONDS = 30 * 60
+
+
+# Die Vergleichsobjekte liegen in der Datenschicht (kern), nicht in der
+# Engine -- die ist zustandslos. Fehlt kern (Engine allein ausgecheckt),
+# laeuft alles Uebrige weiter, es gibt dann nur keine gespeicherten
+# Referenzen.
+_KERN_PFAD = Path(__file__).resolve().parent.parent / "Crawler"
+if _KERN_PFAD.exists() and str(_KERN_PFAD) not in sys.path:
+    sys.path.insert(0, str(_KERN_PFAD))
+
+
+def _kern_marktdaten():
+    """Die Marktdaten-Ablage, oder None wenn die Datenschicht fehlt."""
+    try:
+        from kern import db as kern_db, marktdaten as kern_markt
+    except ImportError:
+        return None, None
+    return kern_db, kern_markt
+
+
+def _lade_vergleichsobjekte(gemeinde=None, kanton=None, objektart=None):
+    kern_db, kern_markt = _kern_marktdaten()
+    if kern_markt is None:
+        return [], "Datenschicht (kern) nicht verfuegbar -- keine gespeicherten Referenzen."
+    try:
+        con = kern_db.verbinde()
+        return kern_markt.lade(con, gemeinde=gemeinde, kanton=kanton, objektart=objektart), None
+    except Exception as exc:  # noqa: BLE001
+        return [], f"Referenzen nicht ladbar: {exc}"
 
 
 def _zahl(wert, vorgabe=None):
@@ -116,33 +146,43 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         restflaeche_verteilen=bool(daten.get("restflaeche_verteilen")),
     )
 
-    def referenzen(schluessel):
-        return [
-            wi.Referenzwert(
-                quelle=str(r.get("quelle") or "?"), datum=str(r.get("datum") or "?"),
-                objekt=str(r.get("objekt") or "?"), wert=_zahl(r.get("wert"), 0) or 0.0,
-                einheit=str(r.get("einheit") or "CHF/m2"),
-                qualitaet=str(r.get("qualitaet") or "unbekannt"),
-            )
-            for r in (daten.get("referenzen") or {}).get(schluessel, [])
-        ]
+    # Referenzlage aus den gespeicherten Vergleichsobjekten: gefiltert auf
+    # Gemeinde und Kanton des Grundstuecks, ausgewertet mit Sicherheitsgrad.
+    # Der Systemvorschlag entsteht damit aus echten Referenzen, die
+    # Benutzerannahme bleibt davon unberuehrt und hat weiter Vorrang.
+    from potenzial_engine import marktdaten as mdt
+
+    m1 = analyse.ergebnis.get("modul1_geodaten") or {}
+    gemeinde = (m1.get("gemeinde") or {}).get("gemeinde")
+    kanton = (m1.get("gemeinde") or {}).get("kanton")
+    gespeichert, referenz_fehler = _lade_vergleichsobjekte(gemeinde=gemeinde, kanton=kanton)
+
+    # Zusaetzlich im Request mitgegebene Referenzen (z.B. Einzelfall-Eingabe).
+    aus_request, _ = mdt.aus_dicts(daten.get("vergleichsobjekte") or [])
+    alle_objekte = list(gespeichert) + list(aus_request)
+
+    vergleichsfilter = mdt.Vergleichsfilter(
+        gemeinde=gemeinde, kanton=kanton,
+        objektart=daten.get("referenz_objektart") or None,
+    )
+    lage = {
+        g: mdt.werte_referenzen_aus(alle_objekte, g, vergleichsfilter)
+        for g in (mdt.GROESSE_VERKAUF, mdt.GROESSE_MIETE, mdt.GROESSE_BODEN)
+    }
 
     markt = wi.Marktannahmen(
         verkauf=wi.Verkaufsannahme(
             basis=daten.get("verkauf_basis") or "nwf",
-            preis_pro_m2=wi.marktwert("verkauf", "CHF/m2",
-                                      referenzen=referenzen("verkauf"),
-                                      benutzerannahme=_zahl(daten.get("verkauf_chf_pro_m2"))),
+            preis_pro_m2=lage[mdt.GROESSE_VERKAUF].als_marktwert(
+                _zahl(daten.get("verkauf_chf_pro_m2"))),
         ),
         miete=wi.Mietannahme(
             basis=daten.get("miete_basis") or "nwf",
-            miete_pro_m2_jahr=wi.marktwert("miete", "CHF/m2/Jahr",
-                                           referenzen=referenzen("miete"),
-                                           benutzerannahme=_zahl(daten.get("miete_chf_pro_m2_jahr"))),
+            miete_pro_m2_jahr=lage[mdt.GROESSE_MIETE].als_marktwert(
+                _zahl(daten.get("miete_chf_pro_m2_jahr"))),
         ),
-        bodenpreis_chf_pro_m2=wi.marktwert("boden", "CHF/m2",
-                                           referenzen=referenzen("boden"),
-                                           benutzerannahme=_zahl(daten.get("bodenpreis_chf_pro_m2"))),
+        bodenpreis_chf_pro_m2=lage[mdt.GROESSE_BODEN].als_marktwert(
+            _zahl(daten.get("bodenpreis_chf_pro_m2"))),
         landpreis_total_chf=_zahl(daten.get("landpreis_total_chf")),
         zielmarge=_zahl(daten.get("zielmarge"), 0.15),
         land_ansatz=daten.get("land_ansatz") or wi.LAND_KAUF,
@@ -164,7 +204,13 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
 
     wirtschaft = _wirt(analyse, markt, kostenpositionen=positionen,
                        szenarien_ergebnis=szenarien)
-    return {"szenarien": szenarien, "wirtschaftlichkeit": wirtschaft}
+    return {
+        "szenarien": szenarien,
+        "wirtschaftlichkeit": wirtschaft,
+        "marktlage": {g: r.to_dict() for g, r in lage.items()},
+        "marktlage_fehler": referenz_fehler,
+        "referenzgebiet": {"gemeinde": gemeinde, "kanton": kanton},
+    }
 
 
 def _cleanup_alte_jobs() -> None:
@@ -198,6 +244,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "service": "grundstueck-crawler-backend"})
         elif self.path.startswith("/status/"):
             self._handle_status(self.path[len("/status/"):])
+        elif self.path.startswith("/marktdaten"):
+            self._handle_marktdaten_lesen()
         elif self.path.startswith("/pick"):
             self._handle_pick()
         else:
@@ -354,7 +402,101 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"ok": True, **antwort})
 
+    def _handle_marktdaten_lesen(self) -> None:
+        """Gespeicherte Vergleichsobjekte und ihre Auswertung."""
+        from potenzial_engine import marktdaten as mdt
+
+        query = parse_qs(urlparse(self.path).query)
+        einzel = lambda k: (query.get(k) or [None])[0]  # noqa: E731
+        gemeinde, kanton = einzel("gemeinde"), einzel("kanton")
+        objekte, fehler = _lade_vergleichsobjekte(
+            gemeinde=gemeinde, kanton=kanton, objektart=einzel("objektart"))
+        filter_ = mdt.Vergleichsfilter(gemeinde=gemeinde, kanton=kanton,
+                                       objektart=einzel("objektart"))
+        lage = {g: mdt.werte_referenzen_aus(objekte, g, filter_).to_dict()
+                for g in (mdt.GROESSE_VERKAUF, mdt.GROESSE_MIETE, mdt.GROESSE_BODEN)}
+        self._send_json({
+            "ok": True, "fehler": fehler,
+            "anzahl": len(objekte),
+            "objekte": [o.to_dict() for o in objekte],
+            "marktlage": lage,
+        })
+
+    def _handle_marktdaten_schreiben(self) -> None:
+        """Vergleichsobjekte erfassen -- einzeln oder als CSV-Import."""
+        from potenzial_engine import marktdaten as mdt
+
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        kern_db, kern_markt = _kern_marktdaten()
+        if kern_markt is None:
+            self._send_json(
+                {"ok": False, "fehler": "Datenschicht (kern) nicht verfuegbar -- "
+                                        "Vergleichsobjekte koennen nicht abgelegt werden."},
+                status=503)
+            return
+
+        quelle = (daten.get("quelle") or "").strip()
+        herkunftsart = daten.get("herkunftsart") or mdt.HERKUNFT_GEBIMO
+        try:
+            if daten.get("csv"):
+                if not quelle:
+                    self._send_json({"ok": False, "fehler": "Fuer einen CSV-Import ist 'quelle' noetig."},
+                                    status=400)
+                    return
+                objekte, fehler = mdt.lese_csv(
+                    daten["csv"], quelle=quelle, herkunftsart=herkunftsart,
+                    datenstand=daten.get("datenstand"))
+            else:
+                eintraege = daten.get("objekte") or ([daten["objekt"]] if daten.get("objekt") else [])
+                for e in eintraege:
+                    e.setdefault("herkunftsart", herkunftsart)
+                    if quelle:
+                        e.setdefault("quelle", quelle)
+                objekte, fehler = mdt.aus_dicts(eintraege)
+        except mdt.MarktdatenError as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=400)
+            return
+
+        if not objekte:
+            self._send_json(
+                {"ok": False, "fehler": "Kein gueltiges Vergleichsobjekt erkannt.", "details": fehler},
+                status=400)
+            return
+
+        con = kern_db.verbinde()
+        bilanz = kern_markt.speichere(con, objekte)
+        self._send_json({"ok": True, "gespeichert": bilanz, "abgelehnt": fehler,
+                         "statistik": kern_markt.statistik(con)})
+
+    def _handle_marktdaten_loeschen(self) -> None:
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        kern_db, kern_markt = _kern_marktdaten()
+        if kern_markt is None:
+            self._send_json({"ok": False, "fehler": "Datenschicht (kern) nicht verfuegbar."}, status=503)
+            return
+        try:
+            objekt_id = int(daten.get("vergleichsobjekt_id"))
+        except (TypeError, ValueError):
+            self._send_json({"ok": False, "fehler": "vergleichsobjekt_id fehlt oder ist keine Zahl."},
+                            status=400)
+            return
+        con = kern_db.verbinde()
+        geloescht = kern_markt.loesche(con, objekt_id)
+        self._send_json({"ok": geloescht, "geloescht": geloescht,
+                         "statistik": kern_markt.statistik(con)},
+                        status=200 if geloescht else 404)
+
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/marktdaten":
+            self._handle_marktdaten_schreiben()
+            return
+        if self.path == "/marktdaten/loeschen":
+            self._handle_marktdaten_loeschen()
+            return
         if self.path == "/entwicklung":
             self._handle_entwicklung()
             return
