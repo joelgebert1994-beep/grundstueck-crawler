@@ -336,6 +336,38 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 #view3d { width: 100%; height: 380px; border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; background: var(--bg-2); cursor: grab; touch-action: none; }
 #view3d:active { cursor: grabbing; }
+
+/* --- Sonne, Schatten und Messwerkzeuge (Block 4) --- */
+.v3rahmen { position: relative; }
+#view3d-schilder { position: absolute; inset: 0; pointer-events: none; }
+.m3schild { position: absolute; transform: translate(-50%, -50%);
+  background: var(--bg); border: 1px solid; border-radius: 4px;
+  padding: 1px 5px; font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.s3leiste { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+  margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--bg-2); }
+.s3leiste input[type="range"] { flex: 1 1 200px; min-width: 160px; accent-color: var(--ink); }
+.s3leiste input[type="date"] { font: inherit; font-size: 12px; padding: 2px 4px;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
+  color: var(--ink); }
+.s3info { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums;
+  flex: 1 1 100%; }
+.s3zeiten { font-size: 11px; color: var(--ink-3); flex: 1 1 100%;
+  font-variant-numeric: tabular-nums; }
+.m3knopf { font: inherit; font-size: 11px; padding: 3px 9px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+  color: var(--ink-2); }
+.m3knopf:hover { border-color: var(--ink-3); color: var(--ink); }
+.m3knopf.an { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.m3neben { color: var(--ink-3); }
+.m3tafel { margin: 8px 0 2px; }
+.m3hinweis { font-size: 11px; color: var(--ink-3); }
+.m3liste { list-style: none; margin: 5px 0 0; padding: 0; font-size: 12px;
+  color: var(--ink-2); }
+.m3liste li { padding: 2px 0; font-variant-numeric: tabular-nums; }
+.m3liste .m3laeuft { color: var(--ink-3); font-style: italic; }
 #view3d-legende { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 2px; font-size: 11px; color: var(--ink-2); }
 #view3d-legende .l3d { display: inline-flex; align-items: center; gap: 6px; }
 #view3d-legende i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
@@ -2437,10 +2469,29 @@ function secSzenarien(erg) {
         d3schalter("strassen", "Strassen") + "</div>" +
       '<div class="d3gruppe"><span class="d3titel">Projekt</span>' +
         d3schalter("grundstueck", "Grundstück") + d3schalter("projekt", "Baukörper") + "</div>" +
-      '<div class="d3gruppe d3spaeter"><span class="d3titel">Analyse</span>' +
-        '<span class="d3bald">Sonne · Schatten · Abstände · Sicht — folgen</span></div>' +
+      '<div class="d3gruppe"><span class="d3titel">Analyse</span>' +
+        '<label class="d3opt"><input type="checkbox" id="sonne-an">Sonne &amp; Schatten</label>' +
+        '<button class="m3knopf" data-mess="distanz">Distanz</button>' +
+        '<button class="m3knopf" data-mess="flaeche">Fläche</button>' +
+        '<button class="m3knopf" data-mess="hoehe">Höhe</button>' +
+        '<button class="m3knopf" data-mess="punkt">Punkt</button>' +
+        '<button class="m3knopf m3neben" id="mess-abschliessen" hidden>Fläche abschliessen</button>' +
+        '<button class="m3knopf m3neben" id="mess-reset">Zurücksetzen</button>' +
+      "</div>" +
     "</div>" +
-    '<div id="view3d"></div><div id="view3d-legende"></div>' +
+    '<div class="s3leiste" id="sonne-regler" hidden>' +
+      '<label class="d3opt">Datum <input type="date" id="sonne-datum"></label>' +
+      '<button class="m3knopf" id="sonne-heute">Heute</button>' +
+      '<input type="range" id="sonne-zeit" min="0" max="144" value="72" step="1">' +
+      '<button class="m3knopf" id="sonne-play">▶ Ablauf</button>' +
+      '<span class="s3info" id="sonne-info"></span>' +
+      '<span class="s3zeiten" id="sonne-zeiten"></span>' +
+    "</div>" +
+    '<div class="v3rahmen"><div id="view3d"></div>' +
+      '<div id="view3d-schilder"></div></div>' +
+    '<div class="m3tafel"><span class="m3hinweis" id="mess-hinweis"></span>' +
+      '<div id="mess-liste"></div></div>' +
+    '<div id="view3d-legende"></div>' +
     '<div class="note">Ziehen dreht die Ansicht, Scrollen zoomt. Jedes Volumen ist das Extrudat eines real berechneten Polygons mit der berechneten Höhe &mdash; ist keine Höhe bekannt, wird der Körper flach dargestellt statt geraten.</div>' +
     budgetBlock + tabelle +
     '<h4 class="subhead">Die Szenarien im Einzelnen</h4>' + karten +
@@ -2455,6 +2506,30 @@ function secSzenarien(erg) {
 (function () {
   var szene = null, kamera = null, renderer = null, gruppe3d = null, animation = null;
   var drehung = 0.6, neigung = 0.9, zoom = 1.0, ziehtGerade = false, letzteMaus = null;
+  var umgebungslicht = null, sonnenlicht = null, klickStart = null;
+
+  // Der Rahmen der laufenden Szene. Messung und Schattenkamera brauchen ihn:
+  // mx/my sind der LV95-Nullpunkt der Ansicht, basis die Terrainhoehe dort,
+  // spanne die halbe Kantenlaenge des dargestellten Ausschnitts. Er wird in
+  // zeichneSzene() gesetzt -- genau einmal, aus denselben Werten wie die
+  // Geometrie selbst. Eine zweite Herleitung gaebe es hier nicht.
+  var szeneRahmen = null;
+
+  // --- Sonne ----------------------------------------------------------
+  var sonneAn = false;          // Schattenmodus eingeschaltet?
+  var sonneTag = null;          // Antwort von /sonne (ein ganzer Tag)
+  var sonneSchritt = 0;         // Index im Tagesverlauf
+  var sonneLaeuft = false;      // Animation
+  var sonneTakt = null;
+  var sonneLaedt = false;
+
+  // --- Messung --------------------------------------------------------
+  var messModus = null;         // null | "distanz" | "flaeche" | "hoehe" | "punkt"
+  var messPunkte = [];          // laufende Messung, lokale Meterkoordinaten
+  var messungen = [];           // abgeschlossene Messungen
+  var messGruppe = null;        // Zeichnung der Messungen in der Szene
+  var messSchilder = [];        // {anker: Vector3, text: string}
+  var messZaehler = 0;
 
   function behaelter() { return document.getElementById("view3d"); }
 
@@ -2472,16 +2547,43 @@ function secSzenarien(erg) {
     renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setSize(el.clientWidth, el.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     el.appendChild(renderer.domElement);
-    szene.add(new THREE.AmbientLight(0xffffff, 0.72));
-    var sonne = new THREE.DirectionalLight(0xffffff, 0.85);
-    sonne.position.set(-60, 90, 70);
-    szene.add(sonne);
+
+    // Zwei Lichter mit klarer Aufgabenteilung: das Umgebungslicht macht die
+    // Szene lesbar, das gerichtete Licht wirft den Schatten. Ohne Sonnenmodus
+    // bleibt es bei der bisherigen, flachen Ausleuchtung -- ein Schattenwurf
+    // ohne Datum und Uhrzeit waere eine Behauptung ohne Grundlage.
+    umgebungslicht = new THREE.AmbientLight(0xffffff, 0.72);
+    szene.add(umgebungslicht);
+    sonnenlicht = new THREE.DirectionalLight(0xffffff, 0.85);
+    sonnenlicht.position.set(-60, 90, 70);
+    sonnenlicht.shadow.mapSize.width = 2048;
+    sonnenlicht.shadow.mapSize.height = 2048;
+    // Ohne diese Korrektur streift die Flaeche ihren eigenen Schatten und
+    // die Daecher bekommen Streifen ("shadow acne").
+    sonnenlicht.shadow.bias = -0.0006;
+    if ("normalBias" in sonnenlicht.shadow) sonnenlicht.shadow.normalBias = 0.6;
+    szene.add(sonnenlicht);
+    szene.add(sonnenlicht.target);
+
     gruppe3d = new THREE.Group();
     szene.add(gruppe3d);
 
+    // Ziehen dreht, Klicken misst. Unterschieden wird am zurueckgelegten Weg:
+    // wer die Ansicht dreht, bewegt die Maus dabei zwangslaeufig.
     renderer.domElement.addEventListener("pointerdown", function (e) {
-      ziehtGerade = true; letzteMaus = { x: e.clientX, y: e.clientY };
+      ziehtGerade = true;
+      letzteMaus = { x: e.clientX, y: e.clientY };
+      klickStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+    });
+    renderer.domElement.addEventListener("pointerup", function (e) {
+      if (klickStart && messModus) {
+        var weg = Math.hypot(e.clientX - klickStart.x, e.clientY - klickStart.y);
+        if (weg < 5 && Date.now() - klickStart.t < 700) messKlick(e);
+      }
+      klickStart = null;
     });
     window.addEventListener("pointerup", function () { ziehtGerade = false; });
     window.addEventListener("pointermove", function (e) {
@@ -2548,6 +2650,8 @@ function secSzenarien(erg) {
   var u3dSicht = { terrain: true, gebaeude: true, strassen: true,
                    grundstueck: true, projekt: true };
 
+  var TERRAIN_DECKKRAFT = 0.55;   // Grundeinstellung aus Block 1
+
   var FARBE = {
     terrain:     "#8a9a86",
     gebaeudeNeu: "#9aa3ad",   // Nachbarschaft: neutral, zurueckhaltend
@@ -2596,8 +2700,8 @@ function secSzenarien(erg) {
     }
     geo.computeVertexNormals();
     var mat = new THREE.MeshLambertMaterial({
-      color: new THREE.Color(FARBE.terrain), transparent: true, opacity: 0.55,
-      side: THREE.DoubleSide
+      color: new THREE.Color(FARBE.terrain), transparent: true,
+      opacity: TERRAIN_DECKKRAFT, side: THREE.DoubleSide
     });
     var mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.x = -Math.PI / 2;
@@ -2654,6 +2758,508 @@ function secSzenarien(erg) {
       });
   }
 
+  // =====================================================================
+  // Sonne und Schatten
+  //
+  // Der Sonnenstand kommt fertig gerechnet vom Server (/sonne liefert einen
+  // ganzen Tag als Stuetzstellen). Hier wird er nur noch in die Szene
+  // gestellt. Es gibt bewusst keine zweite Sonnenformel im Browser -- die
+  // getestete steht in potenzial_engine/sonnenstand.py.
+  //
+  // Achsen: die Szene rechnet in Metern mit +X = Ost, -Z = Nord, +Y = hoch.
+  // Der Server liefert den Einheitsvektor zur Sonne als (ost, nord, hoch).
+  // Die Zuordnung steht genau hier und nirgends sonst.
+  // =====================================================================
+
+  function terrainDeckkraft(wert) {
+    if (!u3dGruppen || !u3dGruppen.terrain) return;
+    u3dGruppen.terrain.traverse(function (o) {
+      // Nur die Flaeche, nicht das Drahtgitter darueber.
+      if (o.isMesh && o.material && o.material.opacity !== wert) {
+        o.material.opacity = wert;
+        o.material.transparent = wert < 1;
+        o.material.needsUpdate = true;
+      }
+    });
+  }
+
+  function sonneStandJetzt() {
+    if (!sonneTag || !sonneTag.verlauf || !sonneTag.verlauf.length) return null;
+    var i = Math.max(0, Math.min(sonneSchritt, sonneTag.verlauf.length - 1));
+    return sonneTag.verlauf[i];
+  }
+
+  function sonneAnwenden() {
+    if (!sonnenlicht) return;
+    var stand = sonneAn ? sonneStandJetzt() : null;
+
+    if (!stand) {
+      // Ohne Sonnenmodus die bisherige, gleichmaessige Ausleuchtung.
+      terrainDeckkraft(TERRAIN_DECKKRAFT);
+      sonnenlicht.castShadow = false;
+      sonnenlicht.intensity = 0.85;
+      sonnenlicht.position.set(-60, 90, 70);
+      sonnenlicht.target.position.set(0, 0, 0);
+      umgebungslicht.intensity = 0.72;
+      if (renderer) renderer.shadowMap.needsUpdate = true;
+      return;
+    }
+
+    if (!stand.ueber_horizont) {
+      // Keine Sonne, kein Schatten. Die Szene bleibt sichtbar, aber es wird
+      // nichts beleuchtet, was in Wirklichkeit im Dunkeln liegt.
+      terrainDeckkraft(TERRAIN_DECKKRAFT);
+      sonnenlicht.castShadow = false;
+      sonnenlicht.intensity = 0.0;
+      umgebungslicht.intensity = 0.62;
+      return;
+    }
+
+    // Im Schattenmodus wird das Terrain undurchsichtig. Die 55 % Deckkraft
+    // aus Block 1 lassen den Untergrund durchscheinen -- das ist beim
+    // Einordnen hilfreich, wuscht den Schattenwurf aber so weit aus, dass er
+    // praktisch unsichtbar wird. Genau daran ist die erste Fassung
+    // gescheitert: die Schatten waren da, nur nicht zu sehen.
+    terrainDeckkraft(1.0);
+
+    var weite = (szeneRahmen ? szeneRahmen.spanne : 150) * 1.8;
+    sonnenlicht.position.set(stand.ost * weite, stand.hoch * weite, -stand.nord * weite);
+    sonnenlicht.target.position.set(0, 0, 0);
+    sonnenlicht.target.updateMatrixWorld();
+
+    var sk = sonnenlicht.shadow.camera;
+    var rand = (szeneRahmen ? szeneRahmen.spanne : 150) * 1.25;
+    sk.left = -rand; sk.right = rand; sk.top = rand; sk.bottom = -rand;
+    sk.near = 0.5; sk.far = weite * 2.5;
+    sk.updateProjectionMatrix();
+    sonnenlicht.castShadow = true;
+
+    // Tief stehende Sonne leuchtet schwaecher. Das Umgebungslicht wird im
+    // Sonnenmodus zurueckgenommen, sonst waere der Schatten nicht zu sehen.
+    var hoehe = Math.max(0, Math.min(1, stand.hoch));
+    sonnenlicht.intensity = 0.55 + 0.75 * hoehe;
+    umgebungslicht.intensity = 0.38;
+  }
+
+  function sonneBeschriftung() {
+    var feld = document.getElementById("sonne-info");
+    if (!feld) return;
+    if (!sonneAn) { feld.textContent = ""; return; }
+    if (sonneLaedt) { feld.textContent = "Sonnenstand wird geladen …"; return; }
+    if (!sonneTag) { feld.textContent = "Sonnenstand nicht verfügbar."; return; }
+
+    var stand = sonneStandJetzt();
+    if (!stand) { feld.textContent = "—"; return; }
+    var uhr = stand.zeit_lokal.slice(11, 16);
+    if (!stand.ueber_horizont) {
+      feld.innerHTML = "<b>" + uhr + "</b> — Sonne unter dem Horizont (" +
+        stand.hoehe_grad.toFixed(1) + "°), kein Schattenwurf";
+      return;
+    }
+    // Schattenlaenge je Meter Bauhoehe: der Wert, um den es beim Nachbarn geht.
+    var schatten = 1 / Math.tan(stand.hoehe_grad * Math.PI / 180);
+    feld.innerHTML = "<b>" + uhr + "</b> · Azimut " + Math.round(stand.azimut_grad) +
+      "° (" + himmelsrichtung(stand.azimut_grad) + ") · Höhe " +
+      stand.hoehe_grad.toFixed(1) + "° · Schatten " + schatten.toFixed(1) +
+      " m je m Bauhöhe";
+  }
+
+  function himmelsrichtung(azimut) {
+    var namen = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
+    return namen[Math.round(((azimut % 360) / 45)) % 8];
+  }
+
+  function sonneZeiten() {
+    var feld = document.getElementById("sonne-zeiten");
+    if (!feld) return;
+    if (!sonneAn || !sonneTag) { feld.textContent = ""; return; }
+    var z = sonneTag.zeiten || {};
+    if (z.polarnacht) { feld.textContent = "Polarnacht"; return; }
+    if (z.polartag) { feld.textContent = "Polartag"; return; }
+    if (!z.aufgang) { feld.textContent = ""; return; }
+    feld.textContent = "Aufgang " + z.aufgang.slice(11, 16) +
+      " · Höchststand " + z.hoechststand.slice(11, 16) +
+      " (" + Math.round(z.max_hoehe_grad) + "°)" +
+      " · Untergang " + z.untergang.slice(11, 16);
+  }
+
+  function sonneIndexFuer(zeitIso) {
+    if (!sonneTag || !zeitIso) return null;
+    for (var i = 0; i < sonneTag.verlauf.length; i++) {
+      if (sonneTag.verlauf[i].zeit_lokal >= zeitIso) return i;
+    }
+    return null;
+  }
+
+  function ladeSonne(datum, danach) {
+    var m1 = (ergebnisAktuell || {}).modul1_geodaten || {};
+    var geo = m1.geocoding || {};
+    if (leer(geo.wgs84_lat) || leer(geo.wgs84_lon)) {
+      sonneTag = null;
+      sonneLaedt = false;
+      var feld = document.getElementById("sonne-info");
+      if (feld) {
+        feld.textContent = "Sonnenstand nicht berechenbar — zu diesem Grundstück " +
+          "liegt keine geografische Breite/Länge vor.";
+      }
+      if (danach) danach();
+      return;
+    }
+    sonneLaedt = true;
+    sonneBeschriftung();
+    fetch("/api/sonne?lat=" + encodeURIComponent(geo.wgs84_lat) +
+          "&lon=" + encodeURIComponent(geo.wgs84_lon) +
+          "&datum=" + encodeURIComponent(datum))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        sonneLaedt = false;
+        sonneTag = d && d.ok ? d.sonne : null;
+        if (sonneTag) {
+          var schieber = document.getElementById("sonne-zeit");
+          if (schieber) {
+            schieber.max = String(sonneTag.verlauf.length - 1);
+            // Start beim Hoechststand: dort ist der Schatten am kuerzesten
+            // und die Szene am aussagekraeftigsten.
+            var i = sonneIndexFuer((sonneTag.zeiten || {}).hoechststand);
+            sonneSchritt = i === null ? Math.floor(sonneTag.verlauf.length / 2) : i;
+            schieber.value = String(sonneSchritt);
+          }
+        }
+        sonneAnwenden(); sonneBeschriftung(); sonneZeiten();
+        if (danach) danach();
+      })
+      .catch(function (e) {
+        sonneLaedt = false;
+        sonneTag = null;
+        var f = document.getElementById("sonne-info");
+        if (f) f.textContent = "Sonnenstand nicht ladbar: " + e;
+        if (danach) danach();
+      });
+  }
+
+  function sonneSpielen(an) {
+    sonneLaeuft = an;
+    var knopf = document.getElementById("sonne-play");
+    if (knopf) knopf.textContent = an ? "❚❚ Pause" : "▶ Ablauf";
+    if (sonneTakt) { clearInterval(sonneTakt); sonneTakt = null; }
+    if (!an || !sonneTag) return;
+
+    // Abgespielt wird von Sonnenaufgang bis Sonnenuntergang. Die Nacht
+    // mitlaufen zu lassen hiesse, die halbe Zeit auf eine unbeleuchtete
+    // Szene zu schauen.
+    var z = sonneTag.zeiten || {};
+    var von = sonneIndexFuer(z.aufgang), bis = sonneIndexFuer(z.untergang);
+    if (von === null || bis === null || bis <= von) { von = 0; bis = sonneTag.verlauf.length - 1; }
+    if (sonneSchritt < von || sonneSchritt >= bis) sonneSchritt = von;
+
+    sonneTakt = setInterval(function () {
+      sonneSchritt = sonneSchritt + 1 > bis ? von : sonneSchritt + 1;
+      var schieber = document.getElementById("sonne-zeit");
+      if (schieber) schieber.value = String(sonneSchritt);
+      sonneAnwenden(); sonneBeschriftung();
+    }, 140);
+  }
+
+  // =====================================================================
+  // Messwerkzeuge
+  //
+  // Gemessen wird am Strahl durch die Szene -- also an genau der Geometrie,
+  // die auch dargestellt wird: Terrain aus dem Hoehenmodell, Gebaeude aus
+  // dem Register, Projektkoerper aus der Berechnung. Es gibt keine zweite,
+  // unsichtbare Messflaeche.
+  // =====================================================================
+
+  var strahl = new THREE.Raycaster();
+  var mausNdc = new THREE.Vector2();
+
+  function messZiele() {
+    var ziele = [];
+    ["terrain", "gebaeude", "grundstueck", "projekt"].forEach(function (k) {
+      if (u3dGruppen[k] && u3dGruppen[k].visible) ziele.push(u3dGruppen[k]);
+    });
+    return ziele;
+  }
+
+  function messKlick(ereignis) {
+    if (!messModus || !renderer) return;
+    var flaeche = renderer.domElement.getBoundingClientRect();
+    mausNdc.x = ((ereignis.clientX - flaeche.left) / flaeche.width) * 2 - 1;
+    mausNdc.y = -((ereignis.clientY - flaeche.top) / flaeche.height) * 2 + 1;
+    strahl.setFromCamera(mausNdc, kamera);
+
+    var treffer = strahl.intersectObjects(messZiele(), true).filter(function (t) {
+      // Linien und Kanten sind Darstellung, keine Messflaeche.
+      return t.object && t.object.isMesh;
+    });
+    if (!treffer.length) {
+      messHinweis("Kein Punkt getroffen — auf Terrain, Gebäude oder Baukörper klicken.");
+      return;
+    }
+
+    messPunkte.push(treffer[0].point.clone());
+    if (messModus === "punkt") { messAbschliessen(); return; }
+    if (messModus === "distanz" && messPunkte.length === 2) { messAbschliessen(); return; }
+    if (messModus === "hoehe" && messPunkte.length === 2) { messAbschliessen(); return; }
+    zeichneMessungen();
+    messTafel();
+  }
+
+  function nachLv95(p) {
+    if (!szeneRahmen) return null;
+    return {
+      e: p.x + szeneRahmen.mx,
+      n: -p.z + szeneRahmen.my,
+      hoehe: p.y + szeneRahmen.basis
+    };
+  }
+
+  function messAbschliessen() {
+    if (!messPunkte.length) return;
+    var punkte = messPunkte.slice();
+    var eintrag = null;
+
+    if (messModus === "punkt") {
+      var k = nachLv95(punkte[0]);
+      eintrag = k ? {
+        art: "punkt", punkte: punkte,
+        kurz: Math.round(k.hoehe * 10) / 10 + " m ü. M.",
+        lang: "LV95 " + Math.round(k.e) + " / " + Math.round(k.n) +
+              " · " + (Math.round(k.hoehe * 10) / 10) + " m ü. M." +
+              " · " + (Math.round(punkte[0].y * 10) / 10) + " m über Parzellenmitte"
+      } : null;
+
+    } else if (messModus === "distanz" && punkte.length >= 2) {
+      var a = punkte[0], b = punkte[1];
+      var schraeg = a.distanceTo(b);
+      var waagrecht = Math.hypot(b.x - a.x, b.z - a.z);
+      var senkrecht = Math.abs(b.y - a.y);
+      eintrag = {
+        art: "distanz", punkte: punkte,
+        kurz: waagrecht.toFixed(2) + " m",
+        // Im Baurecht zaehlt das waagrechte Mass (Grenz- und Gebaeudeabstand).
+        // Das schraege Mass steht daneben, damit klar ist, welches gemeint ist.
+        lang: "waagrecht " + waagrecht.toFixed(2) + " m · schräg " + schraeg.toFixed(2) +
+              " m · Höhenunterschied " + senkrecht.toFixed(2) + " m"
+      };
+
+    } else if (messModus === "hoehe" && punkte.length >= 2) {
+      var u = punkte[0], o = punkte[1];
+      var dh = Math.abs(o.y - u.y);
+      var ku = nachLv95(u), ko = nachLv95(o);
+      eintrag = {
+        art: "hoehe", punkte: punkte,
+        kurz: dh.toFixed(2) + " m",
+        lang: "Höhenunterschied " + dh.toFixed(2) + " m · von " +
+              (ku ? ku.hoehe.toFixed(1) : "?") + " auf " +
+              (ko ? ko.hoehe.toFixed(1) : "?") + " m ü. M."
+      };
+
+    } else if (messModus === "flaeche" && punkte.length >= 3) {
+      var f = 0;
+      for (var i = 0; i < punkte.length; i++) {
+        var p1 = punkte[i], p2 = punkte[(i + 1) % punkte.length];
+        // Gauss-Trapezformel auf der Waagrechten (x, -z = Ost, Nord).
+        f += p1.x * (-p2.z) - p2.x * (-p1.z);
+      }
+      var flaecheM2 = Math.abs(f) / 2;
+      var umfang = 0;
+      for (var j = 0; j < punkte.length; j++) {
+        var q1 = punkte[j], q2 = punkte[(j + 1) % punkte.length];
+        umfang += Math.hypot(q2.x - q1.x, q2.z - q1.z);
+      }
+      eintrag = {
+        art: "flaeche", punkte: punkte,
+        kurz: Math.round(flaecheM2) + " m²",
+        // Ausdruecklich die waagrechte Projektion: am Hang ist die
+        // Gelaendeflaeche groesser, gerechnet wird im Baurecht aber mit der
+        // Projektion. Wer das verwechselt, bekommt zu viel Ausnuetzung.
+        lang: flaecheM2.toFixed(1) + " m² waagrecht projiziert · Umfang " +
+              umfang.toFixed(1) + " m · " + punkte.length + " Punkte"
+      };
+    }
+
+    if (eintrag) {
+      messZaehler += 1;
+      eintrag.nr = messZaehler;
+      messungen.push(eintrag);
+    }
+    messPunkte = [];
+    zeichneMessungen();
+    messTafel();
+  }
+
+  function messHinweis(text) {
+    var f = document.getElementById("mess-hinweis");
+    if (f) f.textContent = text || "";
+  }
+
+  var MESS_FARBE = { distanz: "#0369a1", flaeche: "#1f7a4d", hoehe: "#b45309", punkt: "#b3324a" };
+
+  function zeichneMessungen() {
+    if (!gruppe3d) return;
+    if (messGruppe) { gruppe3d.remove(messGruppe); }
+    messGruppe = new THREE.Group();
+    gruppe3d.add(messGruppe);
+    messSchilder = [];
+
+    function punktKugel(p, farbe) {
+      var k = new THREE.Mesh(
+        new THREE.SphereGeometry(Math.max(0.35, (szeneRahmen ? szeneRahmen.spanne : 150) * 0.004), 10, 8),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(farbe) }));
+      k.position.copy(p);
+      messGruppe.add(k);
+    }
+
+    function zug(punkte, farbe, schliessen) {
+      var liste = punkte.slice();
+      if (schliessen && liste.length > 2) liste.push(liste[0]);
+      if (liste.length < 2) return;
+      messGruppe.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(liste),
+        new THREE.LineBasicMaterial({ color: new THREE.Color(farbe) })));
+    }
+
+    function mitte(punkte) {
+      var m = new THREE.Vector3();
+      punkte.forEach(function (p) { m.add(p); });
+      return m.divideScalar(punkte.length);
+    }
+
+    messungen.forEach(function (m) {
+      var farbe = MESS_FARBE[m.art] || "#0369a1";
+      m.punkte.forEach(function (p) { punktKugel(p, farbe); });
+      if (m.art === "hoehe" && m.punkte.length === 2) {
+        // Beim Hoehenmass ist die senkrechte Strecke das Mass -- also auch
+        // die, die gezeichnet wird.
+        var u = m.punkte[0], o = m.punkte[1];
+        zug([u, new THREE.Vector3(u.x, o.y, u.z), o], farbe, false);
+      } else {
+        zug(m.punkte, farbe, m.art === "flaeche");
+      }
+      messSchilder.push({ anker: mitte(m.punkte), text: m.nr + ": " + m.kurz, farbe: farbe });
+    });
+
+    // Die laufende, noch nicht abgeschlossene Messung.
+    if (messPunkte.length) {
+      var lf = MESS_FARBE[messModus] || "#0369a1";
+      messPunkte.forEach(function (p) { punktKugel(p, lf); });
+      zug(messPunkte, lf, false);
+    }
+  }
+
+  // Beschriftungen liegen als HTML ueber der Ansicht und werden je Bild an
+  // die projizierte Lage gesetzt. Das ist genauer und schaerfer als Text in
+  // die Szene zu rendern -- und funktioniert bei jedem Zoom.
+  function messSchilderZeichnen() {
+    var schicht = document.getElementById("view3d-schilder");
+    if (!schicht || !kamera || !renderer) return;
+    if (!messSchilder.length) { schicht.innerHTML = ""; return; }
+
+    var b = renderer.domElement;
+    var html = "";
+    messSchilder.forEach(function (sch) {
+      var v = sch.anker.clone();
+      gruppe3d.localToWorld(v);
+      v.project(kamera);
+      if (v.z > 1) return;                    // hinter der Kamera
+      var x = (v.x * 0.5 + 0.5) * b.clientWidth;
+      var y = (-v.y * 0.5 + 0.5) * b.clientHeight;
+      html += '<span class="m3schild" style="left:' + x.toFixed(0) + "px;top:" +
+        y.toFixed(0) + "px;border-color:" + sch.farbe + '">' + esc(sch.text) + "</span>";
+    });
+    schicht.innerHTML = html;
+  }
+
+  function messTafel() {
+    var tafel = document.getElementById("mess-liste");
+    if (!tafel) return;
+    if (!messungen.length && !messPunkte.length) {
+      tafel.innerHTML = "";
+      messHinweis(messModus ? MESS_ANLEITUNG[messModus] : "");
+      return;
+    }
+    var zeilen = messungen.map(function (m) {
+      return '<li><b style="color:' + (MESS_FARBE[m.art] || "#0369a1") + '">' + m.nr +
+        "</b> " + esc(MESS_NAME[m.art] || m.art) + ": " + esc(m.lang) + "</li>";
+    }).join("");
+    if (messPunkte.length) {
+      zeilen += '<li class="m3laeuft">' + esc(MESS_NAME[messModus] || "") + ": " +
+        messPunkte.length + " Punkt(e) gesetzt — " + esc(MESS_ANLEITUNG[messModus] || "") + "</li>";
+    }
+    tafel.innerHTML = '<ul class="m3liste">' + zeilen + "</ul>";
+    messHinweis(messModus ? MESS_ANLEITUNG[messModus] : "");
+  }
+
+  var MESS_NAME = { distanz: "Distanz", flaeche: "Fläche", hoehe: "Höhe", punkt: "Punkt" };
+  var MESS_ANLEITUNG = {
+    distanz: "Zwei Punkte anklicken.",
+    flaeche: "Punkte anklicken, dann „Fläche abschliessen“ (mindestens 3).",
+    hoehe: "Unten und oben anklicken — gemessen wird der Höhenunterschied.",
+    punkt: "Einen Punkt anklicken."
+  };
+
+  window.setzeMessModus = function (art) {
+    messModus = messModus === art ? null : art;
+    messPunkte = [];
+    if (renderer) renderer.domElement.style.cursor = messModus ? "crosshair" : "grab";
+    document.querySelectorAll(".m3knopf").forEach(function (k) {
+      k.classList.toggle("an", k.dataset.mess === messModus);
+    });
+    var ab = document.getElementById("mess-abschliessen");
+    if (ab) ab.hidden = messModus !== "flaeche";
+    zeichneMessungen();
+    messTafel();
+    return messModus;
+  };
+
+  window.messAbschliessenJetzt = function () {
+    if (messModus === "flaeche" && messPunkte.length < 3) {
+      messHinweis("Für eine Fläche braucht es mindestens drei Punkte.");
+      return;
+    }
+    messAbschliessen();
+  };
+
+  window.messZuruecksetzen = function () {
+    messungen = []; messPunkte = []; messZaehler = 0;
+    zeichneMessungen();
+    messTafel();
+    messHinweis(messModus ? MESS_ANLEITUNG[messModus] : "");
+  };
+
+  window.sonneSchalten = function (an) {
+    sonneAn = an;
+    var kasten = document.getElementById("sonne-regler");
+    if (kasten) kasten.hidden = !an;
+    if (an && !sonneTag) {
+      var feld = document.getElementById("sonne-datum");
+      ladeSonne(feld && feld.value ? feld.value : heuteIso());
+    } else {
+      if (!an) sonneSpielen(false);
+      sonneAnwenden(); sonneBeschriftung(); sonneZeiten();
+    }
+  };
+
+  window.sonneDatumSetzen = function (datum) {
+    sonneSpielen(false);
+    ladeSonne(datum);
+  };
+
+  window.sonneZeitSetzen = function (index) {
+    sonneSchritt = parseInt(index, 10) || 0;
+    sonneAnwenden();
+    sonneBeschriftung();
+  };
+
+  window.sonneAblaufSchalten = function () { sonneSpielen(!sonneLaeuft); };
+
+  function heuteIso() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+      "-" + String(d.getDate()).padStart(2, "0");
+  }
+  window.heuteIso = heuteIso;
+
   window.zeichne3D = function (szenarioId) {
     if (!bereitMachen()) return;
     if (!ergebnisAktuell) return;
@@ -2690,6 +3296,11 @@ function secSzenarien(erg) {
     var terrain = u ? u.terrain : null;
     var basis = terrain ? (terrainHoeheAn(terrain, mx, my) || 0) : 0;
     var spanne = u ? u.radius_m * 1.6 : parzellenSpanne;
+
+    // Der Bezugsrahmen der Szene, einmal festgehalten: Messung und
+    // Schattenkamera benutzen genau diese Werte. Sie ein zweites Mal
+    // herzuleiten hiesse, zwei Koordinatensysteme zu pflegen.
+    szeneRahmen = { mx: mx, my: my, basis: basis, spanne: spanne };
 
     // --- Umgebung -------------------------------------------------------
     if (terrain) u3dGruppen.terrain.add(terrainMesh(terrain, mx, my, basis));
@@ -2749,6 +3360,23 @@ function secSzenarien(erg) {
       });
     }
 
+    // --- Schattenwurf ---------------------------------------------------
+    // Es entsteht keine eigene Schattengeometrie: Schatten werfen genau die
+    // Koerper, die ohnehin in der Szene stehen -- Gebaeude aus dem Register
+    // und der berechnete Projektkoerper. Flache Flaechen (Parzelle,
+    // Baubereich) werfen keinen, sie haben keine Hoehe.
+    ["gebaeude", "projekt"].forEach(function (k) {
+      u3dGruppen[k].traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    });
+    ["terrain", "gebaeude", "grundstueck", "projekt"].forEach(function (k) {
+      u3dGruppen[k].traverse(function (o) { if (o.isMesh) o.receiveShadow = true; });
+    });
+    sonneAnwenden();
+
+    // Messungen ueberleben den Neuaufbau der Szene -- sie haengen am
+    // Bezugsrahmen, nicht am Szenario.
+    zeichneMessungen();
+
     // --- Legende --------------------------------------------------------
     var info = document.getElementById("view3d-legende");
     if (info) {
@@ -2786,6 +3414,7 @@ function secSzenarien(erg) {
       );
       kamera.lookAt(0, 0, 0);
       renderer.render(szene, kamera);
+      messSchilderZeichnen();
     })();
   }
 })();
@@ -2805,6 +3434,38 @@ function verdrahte3DSteuerung() {
       if (window.setze3DSicht) window.setze3DSicht(box.dataset.ebene, box.checked);
     });
   });
+
+  function einmal(id, ereignis, was) {
+    var el = document.getElementById(id);
+    if (!el || el._verdrahtet) return el;
+    el._verdrahtet = true;
+    el.addEventListener(ereignis, was);
+    return el;
+  }
+
+  // --- Sonne ---------------------------------------------------------
+  var datum = document.getElementById("sonne-datum");
+  if (datum && !datum.value) datum.value = window.heuteIso ? window.heuteIso() : "";
+
+  einmal("sonne-an", "change", function () { window.sonneSchalten(this.checked); });
+  einmal("sonne-datum", "change", function () { window.sonneDatumSetzen(this.value); });
+  einmal("sonne-zeit", "input", function () { window.sonneZeitSetzen(this.value); });
+  einmal("sonne-play", "click", function () { window.sonneAblaufSchalten(); });
+  einmal("sonne-heute", "click", function () {
+    var f = document.getElementById("sonne-datum");
+    if (!f) return;
+    f.value = window.heuteIso();
+    window.sonneDatumSetzen(f.value);
+  });
+
+  // --- Messwerkzeuge -------------------------------------------------
+  document.querySelectorAll(".m3knopf[data-mess]").forEach(function (k) {
+    if (k._verdrahtet) return;
+    k._verdrahtet = true;
+    k.addEventListener("click", function () { window.setzeMessModus(k.dataset.mess); });
+  });
+  einmal("mess-abschliessen", "click", function () { window.messAbschliessenJetzt(); });
+  einmal("mess-reset", "click", function () { window.messZuruecksetzen(); });
 }
 
 function secEntwicklung(erg) {

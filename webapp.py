@@ -47,9 +47,11 @@ from pathlib import Path
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
+from datetime import date
 from urllib.parse import parse_qs, urlparse
 
 from potenzial_engine import Analyse, analysiere_grundstueck, berechne_wirtschaftlichkeit
+from potenzial_engine import sonnenstand
 from potenzial_engine.modul1_geodata import Modul1Error, get_gwr_data, get_parcel_data
 from potenzial_engine.modul2_bzo_analysis import Modul2Error
 from potenzial_engine.modul3_financial import Modul3Error
@@ -323,10 +325,54 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_umgebung()
         elif self.path.startswith("/marktdaten"):
             self._handle_marktdaten_lesen()
+        elif self.path.startswith("/sonne"):
+            self._handle_sonne()
         elif self.path.startswith("/pick"):
             self._handle_pick()
         else:
             self._send_json({"ok": False, "fehler": "Nicht gefunden."}, status=404)
+
+    def _handle_sonne(self) -> None:
+        """Sonnenstand fuer einen Tag an einem Ort.
+
+        Geliefert wird der ganze Tagesverlauf auf einmal, nicht ein einzelner
+        Zeitpunkt: der Zeitschieber in der Ansicht muss fluessig laufen, und
+        ein Serveraufruf je Bild waere dafuer unbrauchbar. Gerechnet wird
+        trotzdem nur hier -- im Browser steht keine zweite Sonnenformel.
+        """
+        query = parse_qs(urlparse(self.path).query)
+        try:
+            lat = float((query.get("lat") or [""])[0])
+            lon = float((query.get("lon") or [""])[0])
+        except (TypeError, ValueError):
+            self._send_json(
+                {"ok": False, "fehler": "lat und lon (WGS84) sind Pflichtparameter."},
+                status=400)
+            return
+        if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+            self._send_json({"ok": False, "fehler": "lat/lon ausserhalb des gueltigen Bereichs."},
+                            status=400)
+            return
+
+        roh_datum = ((query.get("datum") or [""])[0]).strip()
+        try:
+            tag = date.fromisoformat(roh_datum) if roh_datum else date.today()
+        except ValueError:
+            self._send_json({"ok": False, "fehler": f"Datum {roh_datum!r} ist kein JJJJ-MM-TT."},
+                            status=400)
+            return
+
+        try:
+            schritt = int((query.get("schritt") or ["10"])[0])
+        except (TypeError, ValueError):
+            schritt = 10
+
+        try:
+            daten = sonnenstand.tagesdaten(lat, lon, tag, schritt)
+        except ValueError as exc:
+            self._send_json({"ok": False, "fehler": str(exc)}, status=400)
+            return
+        self._send_json({"ok": True, "sonne": daten})
 
     def _handle_pick(self) -> None:
         """Kartenklick auf einen beliebigen Punkt: liefert Parzelle + GWR-
