@@ -297,6 +297,315 @@ def berechne_szenarien(
     )
 
 
+def _kette_fuer_parzelle(
+    modul1_result: dict,
+    zonen_zuordnung: dict,
+    markt,
+    kostenpositionen,
+    marktlage: Optional[dict],
+    szenario_kwargs: dict,
+    kantenklassifikation: Optional[dict],
+) -> dict:
+    """G1 -> Flaechen -> Szenarien -> Wirtschaftlichkeit fuer EINE Kontur.
+
+    Genau die Kette, die `analysiere_grundstueck` und
+    `berechne_wirtschaftlichkeit_je_szenario` ohnehin durchlaufen -- hier nur
+    an einem Stueck aufgerufen, damit A und A+B mit identischen Annahmen
+    gerechnet werden. Ein Vergleich zweier Ketten mit verschiedenen
+    Kostenansaetzen oder Verkaufspreisen waere wertlos.
+    """
+    ergebnis: dict[str, Any] = {"g1": None, "g1_fehler": None}
+    try:
+        ergebnis["g1"] = berechne_g1_fuer_fall(
+            modul1_result, zonen_zuordnung["zone"],
+            kantenklassifikation=kantenklassifikation or None,
+        )
+    except G1VerdrahtungError as exc:
+        ergebnis["g1_fehler"] = str(exc)
+        return ergebnis
+
+    ergebnis["flaechen"] = _flaechen_fuer_g1_ergebnis(ergebnis["g1"], zonen_zuordnung)
+    ergebnis["szenarien"] = _szenarien_fuer_analyse(
+        ergebnis["g1"], zonen_zuordnung, modul1_result, **szenario_kwargs
+    )
+
+    kataster = modul1_result.get("kataster") or {}
+    bestand = (modul1_result.get("bestand") or {})
+    haupt = bestand.get("hauptgebaeude") or {}
+    wirtschaft = _berechne_wirtschaftlich(
+        ergebnis["szenarien"],
+        kataster.get("flaeche_m2"),
+        markt,
+        kostenpositionen,
+        bestand_volumen_m3=haupt.get("gebaeudevolumen_m3"),
+        marktlage=marktlage,
+    )
+    wirtschaft["hbu"] = _bestimme_hbu(ergebnis["szenarien"], wirtschaft, marktlage)
+    ergebnis["wirtschaft"] = wirtschaft
+    return ergebnis
+
+
+def berechne_kombination(
+    analyse: Analyse,
+    *,
+    e_b: float,
+    n_b: float,
+    markt: Marktannahmen,
+    kostenpositionen: Optional[list] = None,
+    kaufpreis_b_chf: Optional[float] = None,
+    zusatzkosten_chf: Optional[float] = None,
+    marktlage: Optional[dict] = None,
+    **szenario_kwargs,
+) -> dict[str, Any]:
+    """Vergleicht Parzelle A allein mit der Kombination A+B.
+
+    `e_b`/`n_b` ist ein Punkt in Parzelle B (LV95) -- in der Oberflaeche ein
+    Kartenklick auf die Nachbarparzelle. Daraus werden ueber DIESELBEN
+    Modul-1-Funktionen Kontur, Flaeche, EGRID und Zonenbezeichnung von B
+    geholt; eine neue Datenquelle gibt es nicht.
+
+    Die Kette laeuft danach zweimal durch dieselben Funktionen -- einmal auf
+    A, einmal auf der vereinigten Kontur. Nur so sind die beiden Ergebnisse
+    ueberhaupt vergleichbar, und nur so gibt es keine zweite Rechenlogik.
+
+    Reihenfolge der Pruefungen (Filter, wie beim HBU): Geometrie, Angrenzung,
+    Zone, G1. Faellt eine Stufe aus, wird mit Grund abgebrochen statt
+    weitergerechnet.
+    """
+    from .kombination import (
+        STATUS_MOEGLICH,
+        ist_strassenparzelle,
+        pruefe_zonen,
+        vereinige,
+        vergleiche,
+    )
+    from .modul1_geodata import get_gwr_data, get_parcel_data
+    from .modul1b_nutzungsklassifikation import klassifiziere_nutzung
+    from .restriktionsgeometrie import hole_restriktionen_fuer_parzelle
+
+    m1_a = analyse.ergebnis.get("modul1_geodaten") or {}
+    zonen_zuordnung = analyse.ergebnis.get("zonen_zuordnung") or {}
+    if zonen_zuordnung.get("status") != "gefunden":
+        return {
+            "status": "nicht_bestimmbar",
+            "grund": ("Fuer Parzelle A ist keine Zone eindeutig zugeordnet. Ohne sie gibt "
+                      "es schon fuer A allein keine belastbare Geschossflaeche -- ein "
+                      "Vergleich mit A+B waere ein Vergleich zweier Unbekannter."),
+        }
+
+    kataster_a = m1_a.get("kataster") or {}
+    ring_a = kataster_a.get("parzellengeometrie")
+    geo_a = m1_a.get("geocoding") or {}
+    e_a, n_a = geo_a.get("lv95_e"), geo_a.get("lv95_n")
+    kanton = (m1_a.get("gemeinde") or {}).get("kanton")
+
+    # --- Parzelle B holen (dieselben amtlichen Layer wie Modul 1) ---------
+    kataster_b = get_parcel_data(e_b, n_b)
+    if not kataster_b.get("found"):
+        return {
+            "status": "nicht_bestimmbar",
+            "grund": (f"An dieser Stelle liegt keine Parzelle in den offenen "
+                      f"Katasterdaten: {kataster_b.get('reason') or 'kein Treffer'}."),
+            "parzelle_b": kataster_b,
+        }
+    if kataster_b.get("egrid") and kataster_b["egrid"] == kataster_a.get("egrid"):
+        return {
+            "status": "nicht_zulaessig",
+            "grund": "Das ist dieselbe Parzelle wie A -- eine Kombination mit sich selbst.",
+            "parzelle_b": {k: kataster_b.get(k) for k in ("egrid", "parzellennummer")},
+        }
+
+    # --- 0 Ist B ueberhaupt eine Bauparzelle? ------------------------------
+    # Die Kantenklassifikation von A weiss bereits, welche Nachbarparzelle
+    # eine STRASSENparzelle ist (eine Strassenachse laeuft hindurch). Ohne
+    # diese Pruefung liesse sich A mit der Gemeindestrasse kombinieren: die
+    # Zonenplaene legen die Zone regelmaessig ueber die Strassenflaeche, die
+    # Zonenpruefung schlaegt also nicht an. Real beobachtet an Rosenweg 4 --
+    # die Strassenparzelle 1143 ergab 385'071 CHF "Mehrwert".
+    strassen_grund = ist_strassenparzelle(
+        m1_a.get("kantenklassifikation"), kataster_b.get("egrid"),
+        kataster_b.get("parzellennummer"))
+    if strassen_grund:
+        return {
+            "status": "nicht_zulaessig",
+            "grund": strassen_grund,
+            "parzelle_b": {k: kataster_b.get(k) for k in
+                           ("egrid", "parzellennummer", "flaeche_m2")},
+        }
+
+    # --- 1 Geometrie und Angrenzung ---------------------------------------
+    geometrie = vereinige(ring_a, kataster_b.get("parzellengeometrie"))
+    antwort: dict[str, Any] = {
+        "parzelle_a": {
+            "egrid": kataster_a.get("egrid"),
+            "parzellennummer": kataster_a.get("parzellennummer"),
+            "flaeche_m2": kataster_a.get("flaeche_m2"),
+        },
+        "parzelle_b": {
+            "egrid": kataster_b.get("egrid"),
+            "parzellennummer": kataster_b.get("parzellennummer"),
+            "flaeche_m2": kataster_b.get("flaeche_m2"),
+            "flaeche_quelle": kataster_b.get("flaeche_quelle"),
+            "parzellengeometrie": kataster_b.get("parzellengeometrie"),
+        },
+        "geometrie": geometrie,
+    }
+    if geometrie["status"] != STATUS_MOEGLICH:
+        antwort["status"] = geometrie["status"]
+        antwort["grund"] = geometrie["grund"]
+        return antwort
+
+    # --- 2 Zone -----------------------------------------------------------
+    klass_a = m1_a.get("nutzungsklassifikation") or {}
+    klass_b = klassifiziere_nutzung(e_b, n_b, kanton)
+    antwort["nutzungsklassifikation_b"] = klass_b
+    zonen = pruefe_zonen(klass_a.get("basiszone"), klass_b.get("basiszone"))
+    antwort["zonen"] = zonen
+    if zonen["status"] != STATUS_MOEGLICH:
+        antwort["status"] = zonen["status"]
+        antwort["grund"] = zonen["grund"]
+        return antwort
+
+    # Ein Sondernutzungsplan auf B wuerde dieselbe Sperre ausloesen wie auf A.
+    snp_b = klass_b.get("sondernutzungsplaene_massgebend") or []
+    if snp_b:
+        antwort["status"] = "nicht_bestimmbar"
+        antwort["grund"] = (
+            "Parzelle B liegt in einem Sondernutzungs-/Gestaltungsplan-Perimeter. "
+            "Dessen Inhalt kann von der ordentlichen Bau- und Zonenordnung abweichen "
+            "und wird von dieser Engine nicht ausgewertet -- fuer A gilt dieselbe Regel."
+        )
+        return antwort
+
+    # --- 3 Die vereinigte Kontur durch dieselbe Kette ---------------------
+    union_ring = [tuple(p) for p in geometrie["ring"]]
+    egrids = {g for g in (kataster_a.get("egrid"), kataster_b.get("egrid")) if g}
+
+    klassifikation_ab = None
+    kanten_fehler = None
+    try:
+        from .kantenklassifikation import KantenklassifikationError, klassifiziere_kanten
+
+        klassifikation_ab = klassifiziere_kanten(
+            union_ring, e_a, n_a, eigenes_egrid=egrids or None
+        )
+        if not klassifikation_ab.get("kanten"):
+            klassifikation_ab = None
+    except Exception as exc:  # noqa: BLE001 -- Rueckfall auf die Bandbreite, kein Abbruch
+        kanten_fehler = f"{type(exc).__name__}: {exc}"
+        klassifikation_ab = None
+    antwort["kantenklassifikation_ab"] = klassifikation_ab
+    antwort["kantenklassifikation_fehler"] = kanten_fehler
+
+    restriktionen_ab = m1_a.get("restriktionsgeometrie")
+    try:
+        restriktionen_ab = hole_restriktionen_fuer_parzelle(e_a, n_a, kanton, union_ring)
+    except Exception as exc:  # noqa: BLE001
+        antwort["restriktionen_fehler"] = f"{type(exc).__name__}: {exc}"
+
+    flaeche_ab = round((kataster_a.get("flaeche_m2") or 0) + (kataster_b.get("flaeche_m2") or 0), 1)
+    m1_ab = dict(m1_a)
+    m1_ab["kataster"] = {**kataster_a,
+                         "parzellengeometrie": geometrie["ring"],
+                         "flaeche_m2": flaeche_ab or geometrie["flaeche_m2"]}
+    m1_ab["restriktionsgeometrie"] = restriktionen_ab
+    m1_ab["kantenklassifikation"] = klassifikation_ab or {"kanten": []}
+
+    kette_a = _kette_fuer_parzelle(
+        m1_a, zonen_zuordnung, markt, kostenpositionen, marktlage, szenario_kwargs,
+        (m1_a.get("kantenklassifikation") or {}).get("kanten") and m1_a.get("kantenklassifikation"),
+    )
+    kette_ab = _kette_fuer_parzelle(
+        m1_ab, zonen_zuordnung, markt, kostenpositionen, marktlage, szenario_kwargs,
+        klassifikation_ab,
+    )
+    antwort["a"] = kette_a
+    antwort["ab"] = kette_ab
+
+    # --- 4 Erschliessung --------------------------------------------------
+    antwort["erschliessung"] = _erschliessung(
+        m1_a.get("kantenklassifikation"), klassifikation_ab)
+
+    # --- 5 Bestand auf B --------------------------------------------------
+    try:
+        gwr_b = get_gwr_data(e_b, n_b)
+    except Exception:  # noqa: BLE001
+        gwr_b = {"found": False}
+    antwort["bestand_b"] = _bestand_b(gwr_b)
+
+    # --- 6 Der Vergleich --------------------------------------------------
+    antwort["vergleich"] = vergleiche(
+        kette_a, kette_ab,
+        flaeche_a_m2=kataster_a.get("flaeche_m2"),
+        flaeche_b_m2=kataster_b.get("flaeche_m2"),
+        kaufpreis_b_chf=kaufpreis_b_chf,
+        zusatzkosten_chf=zusatzkosten_chf,
+    )
+    antwort["status"] = STATUS_MOEGLICH
+    return antwort
+
+
+def _erschliessung(klass_a: Optional[dict], klass_ab: Optional[dict]) -> dict[str, Any]:
+    """Bleibt die kombinierte Parzelle erschlossen?
+
+    Geprueft wird nur, was die Kantenklassifikation hergibt: hat die Kontur
+    eine Kante an einer Strassenparzelle. Eine Erschliessung ueber ein
+    Fuss-/Fahrwegrecht steht in keinem dieser Layer -- sie wird deshalb NICHT
+    ausgeschlossen, sondern als offener Punkt benannt.
+    """
+    def strassenkanten(k: Optional[dict]) -> int:
+        return sum(1 for kante in ((k or {}).get("kanten") or [])
+                   if kante.get("art") == "strasse")
+
+    a, ab = strassenkanten(klass_a), strassenkanten(klass_ab)
+    if klass_ab is None:
+        return {
+            "status": "nicht_bestimmbar",
+            "strassenkanten_a": a,
+            "grund": ("Fuer die kombinierte Kontur konnte keine Kantenklassifikation "
+                      "erstellt werden -- ob sie an eine Strasse grenzt, ist damit offen."),
+        }
+    if ab > 0:
+        return {
+            "status": "erschlossen",
+            "strassenkanten_a": a, "strassenkanten_ab": ab,
+            "grund": (f"Die kombinierte Parzelle grenzt mit {ab} Kante(n) an eine "
+                      f"Strassenparzelle (A allein: {a})."),
+        }
+    return {
+        "status": "offen",
+        "strassenkanten_a": a, "strassenkanten_ab": ab,
+        "grund": ("Keine Kante der kombinierten Parzelle grenzt an eine Strassenparzelle. "
+                  "Das schliesst eine Erschliessung nicht aus -- ein Fuss-/Fahrwegrecht "
+                  "steht in keinem oeffentlichen Layer -- aber sie ist hier nicht "
+                  "nachgewiesen und muss manuell geprueft werden."),
+    }
+
+
+def _bestand_b(gwr: Optional[dict]) -> dict[str, Any]:
+    """Steht auf B ein Gebaeude? Wichtig fuer Abbruchkosten -- die hier
+    NICHT geschaetzt, sondern als Benutzerannahme erfragt werden."""
+    if not (gwr or {}).get("found"):
+        return {
+            "bebaut": False,
+            "hinweis": ("Auf B ist im GWR kein Gebaeude verzeichnet. Der Layer trifft "
+                        "allerdings nur, wenn der Abfragepunkt auf dem Gebaeude liegt -- "
+                        "'kein Treffer' heisst nicht zwingend 'unbebaut'."),
+        }
+    return {
+        "bebaut": True,
+        "egid": gwr.get("egid"),
+        "baujahr": gwr.get("baujahr"),
+        "grundflaeche_m2": gwr.get("grundflaeche_m2"),
+        "hinweis": (
+            "Auf B steht ein Gebaeude"
+            + (f" (Baujahr {gwr.get('baujahr')})" if gwr.get("baujahr") else "")
+            + ". Abbruch, Rueckbau oder Weiterverwendung sind hier nicht bewertet -- "
+              "allfaellige Kosten gehoeren in das Feld 'zusaetzliche Kosten'. Geschaetzt "
+              "wird hier nichts."
+        ),
+    }
+
 def berechne_wirtschaftlichkeit_je_szenario(
     analyse: Analyse,
     markt: Marktannahmen,

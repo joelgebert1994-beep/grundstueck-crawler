@@ -238,6 +238,58 @@ Referenzen"), und die Rückwärtsrechnung wie der HBU bekommen keine
 Unterscheidungsschwelle — die Rangfolge gilt dann als nicht marktseitig
 belegt.
 
+
+#### 7b Parzellenkombination A vs. A+B (Block 12)
+
+Die Nachbarparzelle wird auf der Karte gewählt. Danach läuft **dieselbe
+Kette zweimal** — einmal auf A, einmal auf der vereinigten Kontur:
+G1 → SIA 416 → Szenarien → Wirtschaftlichkeit → HBU. Keine zweite
+Rechenlogik; `/entwicklung` und `/kombination` lesen Markt-, Kosten- und
+Szenarioeingaben über dieselben zwei Hilfsfunktionen, damit die Differenz
+den Unterschied der **Parzellen** misst und nicht den der Annahmen.
+
+**Prüfstufen in fester Reihenfolge** (Abbruch mit Grund, wie beim HBU):
+
+| Stufe | Bedingung | Sonst |
+|---|---|---|
+| 0 | B ist keine Strassenparzelle | `nicht_zulaessig` |
+| 1 | A und B grenzen aneinander (≥ 1 m gemeinsame Grenze, kein Loch dazwischen) | `nicht_zulaessig` |
+| 2 | dieselbe Bauzone | `nicht_bestimmbar` — rechtlich ginge es, aber es müsste je Zonenanteil gerechnet werden |
+| 3 | kein Sondernutzungsplan auf B | `nicht_bestimmbar` |
+| 4 | G1 auf der vereinigten Kontur rechenbar | `nicht_bestimmbar` |
+
+**Mehr Land ist nicht automatisch mehr Potenzial.** Gemessen wird die
+**Ausbeute**: `(ΔGF / Fläche B) ÷ (GF A / Fläche A)`. Der Massstab ist A
+selbst, keine gesetzte Schwelle.
+
+| Einstufung | Bedingung |
+|---|---|
+| `zusatzpotenzial` | Ausbeute ≥ 1.0 — B trägt mindestens so viel wie A |
+| `wenig_zusatzpotenzial` | 0 < Ausbeute < 1.0 — **beziffert** („B wird zu 34 % so gut ausgenutzt wie A") statt in viel/wenig eingeteilt |
+| `kein_zusatzpotenzial` | ΔGF ≤ 0 |
+| `nicht_bestimmbar` | eine Seite liefert nur eine Bandbreite |
+
+Warum das auseinandergeht, steht dabei: `geschossflaeche_limitiert_durch`
+sagt je Seite, ob die Ausnützungsziffer, die Geometrie oder die
+Vollgeschosszahl bindet.
+
+**Wirtschaftlicher Zusatznutzen** — ohne erfundenen Bodenwert:
+
+```
+Residualwert(A+B) − Residualwert(A) = Höchstpreis für B
+                                    − Kaufpreis B      (Benutzerannahme)
+                                    − Zusatzkosten     (Benutzerannahme)
+                                    = wirtschaftlicher Zusatznutzen
+```
+
+Fehlt der Kaufpreis, steht der Mehrwert und der Zusatznutzen bleibt offen.
+
+**Am echten Fall (Rosenweg 4 + Parzelle 316, Buchs AG):** Fläche 599 → 1'443 m²,
+Baubereich **117 → 683 m²** (der Grenzabstand an der 29.8 m langen gemeinsamen
+Grenze entfällt), Geschossfläche 299 → 721 m², tragbarer Landwert
+511'494 → 1'232'696 CHF. Die Aufstockung gewinnt dabei nur 78'651 CHF, der
+Anbau 721'795 — sie nutzt die zusätzliche Fläche schlicht nicht.
+
 ### 8 Zusammenarbeit
 
 | Funktion | Damals | Heute | Bemerkung |
@@ -307,7 +359,7 @@ Bei LUUCY durchweg **nicht gefunden**. Reihenfolge = Wirkung je Aufwand.
 | **Rückwärtsrechnung** | ✅ | Block 9 — macht aus einer Absage eine Verhandlungsgrundlage |
 | **Highest & Best Use** | ✅ | Block 10 — führt Szenarien, Wirtschaftlichkeit und Marktreferenz zu einer Empfehlung zusammen, ohne neue Rechnung |
 | **Sanierung als Szenario** | ✅ | Block 8 |
-| **Parzellenkombination A vs. A+B** | 📋 | erkennt Zukaufschancen |
+| **Parzellenkombination A vs. A+B** | ✅ | Block 12 · dieselbe Kette zweimal · Ausbeute statt blosser Flächenaddition · Strassenparzellen gesperrt — siehe 7b |
 | **Parzellenteilung** | 📋 | |
 | **Grundstückssuche** | 📋 | LUUCY analysiert Bekanntes, wir finden Unbekanntes |
 | **Massensuche / Screening** | 📋 | |
@@ -353,18 +405,17 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 ## Teil 6 — Was als Nächstes kommt
 
-1. **Parzellenkombination A vs. A+B** — nutzt die vorhandene
-   Nachbarparzellen-Geometrie.
-2. **Grundstückssuche / Screening** — der Sprung von „ein Grundstück prüfen"
+1. **Grundstückssuche / Screening** — der Sprung von „ein Grundstück prüfen"
    zu „Grundstücke finden".
-3. **Anomalieprüfung** — „AZ = 20.0" wurde real gemeldet und lief durch.
-4. **Baugesuche / Referenzprojekte in der Umgebung.**
-5. **Verkaufspreis-Referenzen beschaffen** — der einzige echte Datenmangel,
+2. **Anomalieprüfung** — „AZ = 20.0" wurde real gemeldet und lief durch.
+3. **Baugesuche / Referenzprojekte in der Umgebung.**
+4. **Verkaufspreis-Referenzen beschaffen** — der einzige echte Datenmangel,
    der übrig bleibt (siehe 7a). Kein Code-, sondern ein Datenthema.
+5. **Parzellenteilung** — die Gegenrichtung zur Kombination.
 
 Erledigt seit der letzten Fassung: Sanierung als Szenario (Block 8),
 Rückwärtsrechnung (Block 9), Highest & Best Use (Block 10),
-Marktdatenbasis (Block 11).
+Marktdatenbasis (Block 11), Parzellenkombination (Block 12).
 
 ---
 
@@ -372,6 +423,7 @@ Marktdatenbasis (Block 11).
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 13.09.2026 | Block 12 | Parzellenkombination A vs. A+B: dieselbe Kette zweimal statt einer zweiten Rechenlogik · Ausbeute als Massstab statt blosser Flächenaddition · Strassenparzellen gesperrt (die Zonenprüfung fing sie nicht ab) · Kaufpreis B und Zusatzkosten als eigene Annahmen |
 | 13.09.2026 | Block 11 | Marktdatenbasis: 1'385 Vergleichsobjekte aus dem AkquiseRadar (nur lesend) · Preisart Angebot/Abschluss · Eignungsregel je Marktgrösse · Plausibilitäts- und Ausreisserprüfung · Systemvorschlag erst ab 3 Referenzen · Referenzgebiet mit ausgewiesener Ausweitung · eine zweite Stelle, die denselben Systemvorschlag bildete, aufgelöst |
 | 13.09.2026 | Block 10 | Highest & Best Use: vier Filterstufen statt gewichteter Punktzahl · „praktisch gleichwertig" aus der Streuung der Vergleichsobjekte abgeleitet · am echten Fall zwei eigene Fehler gefunden: „nicht bestimmbar" wurde als rechtliches Scheitern gefuehrt, und gleiche Landwerte bekamen verschiedene Plaetze |
 | 13.09.2026 | Block 9 | Rückwärtsrechnung „Was müsste sich ändern?" — plus zwei Fehler gefunden, die nur über den Endpunkt auftraten |

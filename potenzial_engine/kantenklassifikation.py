@@ -162,7 +162,12 @@ def _hole_strassenachsen(e: float, n: float) -> list[dict[str, Any]]:
     return achsen
 
 
-def _hole_katasterpolygone(e: float, n: float, eigenes_egrid: Optional[str]) -> list[dict[str, Any]]:
+def _hole_katasterpolygone(e: float, n: float, eigenes_egrid) -> list[dict[str, Any]]:
+    # `eigenes_egrid` darf EIN EGRID oder eine Menge sein: bei einer
+    # Parzellenkombination gehoeren zwei Parzellen zur eigenen Kontur, und
+    # eine davon als "Nachbar" zu melden waere falsch.
+    eigene = ({eigenes_egrid} if isinstance(eigenes_egrid, str)
+              else set(eigenes_egrid or ()))
     eigen_punkt = Point(e, n)
     polygone = []
     for r in _identify(e, n, LAYER_CADASTRE_GEOM, tolerance=_UMFELD_TOLERANZ_PX, return_geometry=True):
@@ -181,7 +186,7 @@ def _hole_katasterpolygone(e: float, n: float, eigenes_egrid: Optional[str]) -> 
         egrid = attrs.get("egris_egrid")
         # Die eigene Parzelle raus: bevorzugt ueber das EGRID (eindeutig),
         # sonst ueber die Lage des Anfragepunkts.
-        ist_eigen = (egrid == eigenes_egrid) if (egrid and eigenes_egrid) else p.contains(eigen_punkt)
+        ist_eigen = (egrid in eigene) if (egrid and eigene) else p.contains(eigen_punkt)
         if ist_eigen:
             continue
         polygone.append({"geometrie": p, "nummer": attrs.get("number"), "egrid": egrid})
@@ -309,7 +314,7 @@ def klassifiziere_kanten(
     e: float,
     n: float,
     *,
-    eigenes_egrid: Optional[str] = None,
+    eigenes_egrid: Any = None,
     min_kantenlaenge_m: float = MIN_KANTENLAENGE_M,
 ) -> dict[str, Any]:
     """Klassifiziert jede Kante der Parzelle als Strasse/Nachbar/unbestimmt.

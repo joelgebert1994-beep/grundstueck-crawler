@@ -244,23 +244,15 @@ def _zahl(wert, vorgabe=None):
         raise ValueError(f"{wert!r} ist keine Zahl.") from None
 
 
-def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
-    """Szenarien und Wirtschaftlichkeit aus den Benutzereingaben.
+def _szenario_kwargs(daten: dict) -> dict:
+    """Die Szenario-Argumente aus dem Request -- an EINER Stelle gelesen.
 
-    Erwartet im Body optional:
-      wohnungsmix  [{typ, flaeche_m2, anteil | anzahl}, ...]
-      verkauf_chf_pro_m2, verkauf_basis, miete_chf_pro_m2_jahr,
-      bodenpreis_chf_pro_m2, landpreis_total_chf, zielmarge, land_ansatz
-      bkp  {schluessel: wert}   -- ueberschreibt einzelne Kostenansaetze
-      annahmen {schluessel: wert} -- ueberschreibt Flaechen-Annahmen
-      attika_zulaessig, gebaeudeabstand_m
+    Sowohl /entwicklung als auch /kombination muessen die Szenarien mit
+    exakt denselben Annahmen rechnen; sonst vergleicht die Kombination A und
+    A+B unter verschiedenen Voraussetzungen und die Differenz misst den
+    Unterschied der Annahmen statt den der Parzellen.
     """
-    from potenzial_engine import wirtschaftlichkeit as wi
     from potenzial_engine.flaechenmodell import WohnungstypVorgabe
-    from potenzial_engine.pipeline import (
-        berechne_szenarien as _szen,
-        berechne_wirtschaftlichkeit_je_szenario as _wirt,
-    )
 
     mix = None
     for eintrag in daten.get("wohnungsmix") or []:
@@ -276,8 +268,7 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
 
     annahmen = {k: _zahl(v) for k, v in (daten.get("annahmen") or {}).items() if _zahl(v) is not None}
 
-    szenarien = _szen(
-        analyse,
+    return dict(
         benutzerwerte=annahmen or None,
         wohnungsmix=mix,
         # Die Oberflaeche belegt den Mix vor und schickt ihn IMMER mit, damit
@@ -296,6 +287,17 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         # Fehlt sie, bleibt die Sanierung bewusst unberechnet statt geschaetzt.
         bestand_flaeche_nwf_m2=_zahl(daten.get("bestand_flaeche_nwf_m2")),
     )
+
+
+def _markt_und_kosten(analyse: "Analyse", daten: dict) -> dict:
+    """Marktlage, Marktannahmen und Kostenpositionen aus dem Request.
+
+    An EINER Stelle, weil /entwicklung und /kombination damit rechnen
+    muessen: vergliche die Kombination A und A+B mit unterschiedlichen
+    Verkaufspreisen oder Kostenansaetzen, misse die Differenz den Unterschied
+    der Annahmen statt den der Parzellen.
+    """
+    from potenzial_engine import wirtschaftlichkeit as wi
 
     # Referenzlage aus den gespeicherten Vergleichsobjekten: gefiltert auf
     # Gemeinde und Kanton des Grundstuecks, ausgewertet mit Sicherheitsgrad.
@@ -359,6 +361,45 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
             for p in positionen
         ]
 
+    return {
+        "markt": markt,
+        "positionen": positionen,
+        "lage": lage,
+        "gebiete": gebiete,
+        "referenz_fehler": referenz_fehler,
+        "gemeinde": gemeinde,
+        "kanton": kanton,
+        "plz": plz,
+    }
+
+
+def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
+    """Szenarien und Wirtschaftlichkeit aus den Benutzereingaben.
+
+    Erwartet im Body optional:
+      wohnungsmix  [{typ, flaeche_m2, anteil | anzahl}, ...]
+      verkauf_chf_pro_m2, verkauf_basis, miete_chf_pro_m2_jahr,
+      bodenpreis_chf_pro_m2, landpreis_total_chf, zielmarge, land_ansatz
+      bkp  {schluessel: wert}   -- ueberschreibt einzelne Kostenansaetze
+      annahmen {schluessel: wert} -- ueberschreibt Flaechen-Annahmen
+      attika_zulaessig, gebaeudeabstand_m
+    """
+    from potenzial_engine import wirtschaftlichkeit as wi
+    from potenzial_engine.flaechenmodell import WohnungstypVorgabe
+    from potenzial_engine.pipeline import (
+        berechne_szenarien as _szen,
+        berechne_wirtschaftlichkeit_je_szenario as _wirt,
+    )
+
+    szenario_kwargs = _szenario_kwargs(daten)
+    szenarien = _szen(analyse, **szenario_kwargs)
+
+    mk = _markt_und_kosten(analyse, daten)
+    markt, positionen = mk["markt"], mk["positionen"]
+    lage, gebiete = mk["lage"], mk["gebiete"]
+    referenz_fehler = mk["referenz_fehler"]
+    gemeinde, kanton, plz = mk["gemeinde"], mk["kanton"], mk["plz"]
+
     wirtschaft = _wirt(analyse, markt, kostenpositionen=positionen,
                        szenarien_ergebnis=szenarien,
                        # Fuer die Einordnung des rueckwaerts ermittelten
@@ -371,6 +412,45 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         "marktlage_fehler": referenz_fehler,
         "referenzgebiet": {"gemeinde": gemeinde, "kanton": kanton, "plz": plz,
                            "je_groesse": gebiete},
+    }
+
+
+def _rechne_kombination(analyse: "Analyse", daten: dict) -> dict:
+    """Parzelle A allein gegen die Kombination A+B.
+
+    Nimmt dieselben Markt-, Kosten- und Szenario-Eingaben entgegen wie
+    /entwicklung und liest sie ueber DIESELBEN Hilfsfunktionen. Nur so misst
+    die Differenz zwischen A und A+B den Unterschied der Parzellen und nicht
+    den der Annahmen.
+
+    Zusaetzlich im Body:
+      e_b, n_b            Punkt in Parzelle B (LV95) -- ein Kartenklick
+      kaufpreis_b_chf     Benutzerannahme, wird nie geschaetzt
+      zusatzkosten_chf    Abbruch, Erschliessung, Umlegung -- ebenso
+    """
+    from potenzial_engine.pipeline import berechne_kombination
+
+    e_b, n_b = _zahl(daten.get("e_b")), _zahl(daten.get("n_b"))
+    if e_b is None or n_b is None:
+        raise ValueError("e_b und n_b (LV95) sind Pflichtfelder -- ohne einen Punkt in "
+                         "Parzelle B gibt es nichts zu kombinieren.")
+
+    mk = _markt_und_kosten(analyse, daten)
+    ergebnis = berechne_kombination(
+        analyse,
+        e_b=e_b, n_b=n_b,
+        markt=mk["markt"],
+        kostenpositionen=mk["positionen"],
+        kaufpreis_b_chf=_zahl(daten.get("kaufpreis_b_chf")),
+        zusatzkosten_chf=_zahl(daten.get("zusatzkosten_chf")),
+        marktlage={g: r.to_dict() for g, r in mk["lage"].items()},
+        **_szenario_kwargs(daten),
+    )
+    return {
+        "kombination": ergebnis,
+        "marktlage": {g: r.to_dict() for g, r in mk["lage"].items()},
+        "referenzgebiet": {"gemeinde": mk["gemeinde"], "kanton": mk["kanton"],
+                           "plz": mk["plz"], "je_groesse": mk["gebiete"]},
     }
 
 
@@ -699,6 +779,38 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "fehler": f"Unerwarteter Fehler: {exc}"}, status=500)
             return
 
+        self._send_json({"ok": True, **antwort})
+
+    def _handle_kombination(self) -> None:
+        """A gegen A+B rechnen -- ohne erneute Analyse von A.
+
+        Der teure Teil (Geodaten, OEREB, Reglementsauswertung) bleibt
+        unberuehrt; fuer B werden nur Kontur, Flaeche und Zonenbezeichnung
+        ueber dieselben amtlichen Layer nachgeholt.
+        """
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        job_id = (daten.get("job_id") or "").strip()
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            kontext = job.get("kontext") if job else None
+        if job is None or job["status"] != "done" or not kontext:
+            self._send_json(
+                {"ok": False, "fehler": "Keine abgeschlossene Analyse zu dieser job_id (evtl. abgelaufen)."},
+                status=404)
+            return
+        try:
+            antwort = _rechne_kombination(
+                Analyse(ergebnis=job["ergebnis"], kontext=kontext), daten
+            )
+        except (ValueError, TypeError, KeyError) as exc:
+            self._send_json({"ok": False, "fehler": f"Ungueltige Eingabe: {exc}"}, status=400)
+            return
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self._send_json({"ok": False, "fehler": f"Unerwarteter Fehler: {exc}"}, status=500)
+            return
         self._send_json({"ok": True, **antwort})
 
     def _projekt_antwort(self, fehler_status: int = 400):
@@ -1147,6 +1259,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/marktdaten/loeschen":
             self._handle_marktdaten_loeschen()
+            return
+        if self.path == "/kombination":
+            self._handle_kombination()
             return
         if self.path == "/entwicklung":
             self._handle_entwicklung()

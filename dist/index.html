@@ -664,6 +664,15 @@ function setLayerVerfuegbar(name, anzahl) {
    Nutzt dieselben swisstopo-Layer wie Modul 1 -- keine neue Datenquelle. */
 map.on("click", function (ev) {
   if (!ergebnisAktuell) return;
+  // Im Kombinationsmodus meint derselbe Klick etwas anderes: er waehlt die
+  // Nachbarparzelle B statt eine Direktabfrage auszuloesen.
+  if (typeof kombModus !== "undefined" && kombModus) {
+    var lvB = wgs84ToLv95(ev.latlng.lat, ev.latlng.lng);
+    kombPunkt = { e: Number(lvB[0].toFixed(1)), n: Number(lvB[1].toFixed(1)) };
+    kombModus = false;
+    kombRechne();
+    return;
+  }
   if (pickMarker) map.removeLayer(pickMarker);
   pickMarker = L.circleMarker(ev.latlng, { radius: 6, color: "#0d5c68", weight: 2, fillColor: "#fff", fillOpacity: 1 })
     .addTo(map).bindPopup("<b>Abfrage läuft …</b>").openPopup();
@@ -691,6 +700,285 @@ map.on("click", function (ev) {
     })
     .catch(function () { pickMarker.setPopupContent("<b>Abfrage fehlgeschlagen.</b>"); });
 });
+
+/* ===================== Parzellenkombination A vs. A+B =====================
+
+   Die Nachbarparzelle wird auf der Karte gewaehlt -- dieselbe Geste wie die
+   Direktabfrage, nur mit anderem Ziel. Gerechnet wird auf dem Server ueber
+   /kombination, das dieselben Markt-, Kosten- und Szenarioeingaben liest wie
+   /entwicklung. Hier wird nichts nachgerechnet, nur gezeigt.
+*/
+var kombModus = false, kombPunkt = null, kombErgebnis = null;
+var kombLaeuft = false, kombMeldung = "";
+var kombEingaben = { kaufpreis_b_chf: null, zusatzkosten_chf: null };
+
+var KOMB_POTENZIAL = {
+  zusatzpotenzial: ["bringt zusätzliches Potenzial", "ok"],
+  wenig_zusatzpotenzial: ["bringt wenig zusätzliches Potenzial", "warn"],
+  kein_zusatzpotenzial: ["bringt kein zusätzliches Potenzial", "stop"],
+  nicht_bestimmbar: ["nicht bestimmbar", "mute"]
+};
+var KOMB_STATUS = {
+  moeglich: ["Kombination gerechnet", "ok"],
+  nicht_zulaessig: ["fachlich nicht zulässig", "stop"],
+  nicht_bestimmbar: ["nicht bestimmbar", "warn"]
+};
+
+function kombRechne() {
+  if (!jobIdAktuell || !kombPunkt || kombLaeuft) return;
+  kombLaeuft = true;
+  kombMeldung = "";
+  kombZeichne();
+  apiAbruf("/api/kombination", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    // Dieselben Eingaben wie /entwicklung -- sonst verglichen A und A+B
+    // unter verschiedenen Annahmen, und die Differenz maesse den Unterschied
+    // der Annahmen statt den der Parzellen.
+    body: JSON.stringify(Object.assign(
+      { job_id: jobIdAktuell, wohnungsmix_vom_benutzer: !!wBeruehrt.wohnungsmix },
+      wEingaben,
+      { e_b: kombPunkt.e, n_b: kombPunkt.n,
+        kaufpreis_b_chf: kombEingaben.kaufpreis_b_chf,
+        zusatzkosten_chf: kombEingaben.zusatzkosten_chf }))
+  }).then(function (a) {
+    kombLaeuft = false;
+    if (!a.ok) {
+      kombMeldung = a.fehler || "Kombination nicht berechenbar.";
+      kombErgebnis = null;
+    } else {
+      kombErgebnis = a.daten.kombination;
+    }
+    kombZeichne();
+    kombZeichneKarte();
+  });
+}
+
+function kombBlock() {
+  var kopf = '<h4 class="subhead">Parzellenkombination A + B</h4>';
+
+  var waehlen =
+    '<div class="szwahl">' +
+      '<button class="szbtn' + (kombModus ? " aktiv" : "") + '" id="komb-modus">' +
+        (kombModus ? "Klicken Sie jetzt auf die Nachbarparzelle" : "Nachbarparzelle auf der Karte wählen") +
+      "</button>" +
+      (kombErgebnis || kombPunkt
+        ? '<button class="szbtn" id="komb-weg">Kombination verwerfen</button>' : "") +
+    "</div>";
+
+  var felder =
+    '<div class="wgrid">' +
+      '<label class="wfeld"><span class="wlab">Kaufpreis B</span><span class="winput">' +
+        '<input type="number" id="komb-preis" step="10000" value="' +
+        (kombEingaben.kaufpreis_b_chf === null ? "" : kombEingaben.kaufpreis_b_chf) +
+        '"><em>CHF</em></span></label>' +
+      '<label class="wfeld"><span class="wlab">Zusätzliche Kosten</span><span class="winput">' +
+        '<input type="number" id="komb-kosten" step="10000" value="' +
+        (kombEingaben.zusatzkosten_chf === null ? "" : kombEingaben.zusatzkosten_chf) +
+        '"><em>CHF</em></span></label>' +
+    "</div>" +
+    '<div class="note">Kaufpreis und Zusatzkosten (Abbruch, Erschliessung, Umlegung) sind ' +
+    'eigene Annahmen. Sie werden nicht geschätzt — ohne sie steht der Mehrwert da, ' +
+    'der Zusatznutzen bleibt offen.</div>';
+
+  if (kombLaeuft) {
+    return kopf + waehlen + felder + '<div class="note">Kombination wird gerechnet …</div>';
+  }
+  if (kombMeldung) {
+    return kopf + waehlen + felder + '<div class="note stop">' + esc(kombMeldung) + "</div>";
+  }
+  if (!kombErgebnis) {
+    return kopf + waehlen + felder +
+      '<div class="note">Noch keine Nachbarparzelle gewählt. Die Kombination zeigt, ob ' +
+      'zusätzliche Landfläche tatsächlich zusätzliches Potenzial bringt — mehr Land ' +
+      'allein genügt dafür nicht.</div>';
+  }
+
+  var k = kombErgebnis;
+  var st = KOMB_STATUS[k.status] || [k.status, "mute"];
+  var b = k.parzelle_b || {};
+  var kopfzeile =
+    '<div class="hbu ' + (k.status === "moeglich" ? "ja" : "offen") + '">' +
+      '<div class="hbukopf"><span class="badge ' + st[1] + '">' + esc(st[0]) + "</span>" +
+      "<b>Parzelle " + esc(b.parzellennummer || b.egrid || "B") + "</b>" +
+      (leer(b.flaeche_m2) ? "" : '<span class="hbuwert">' + fmt(b.flaeche_m2, 0) + " m²</span>") +
+      "</div>" +
+      (k.grund ? '<p class="hbutext">' + esc(k.grund) + "</p>" : "") +
+    "</div>";
+
+  if (k.status !== "moeglich") {
+    return kopf + waehlen + felder + kopfzeile + kombPruefstufen(k);
+  }
+
+  var v = k.vergleich || {};
+  var p = v.potenzial || {};
+  var w = v.wirtschaft || {};
+  var pot = KOMB_POTENZIAL[p.status] || [p.status, "mute"];
+
+  var zahlen = function (titel, a, ab, einheit, dez) {
+    return '<tr><td>' + esc(titel) + "</td><td>" + (leer(a) ? "–" : fmt(a, dez || 0)) + "</td>" +
+      "<td>" + (leer(ab) ? "–" : fmt(ab, dez || 0)) + "</td>" +
+      '<td class="' + (leer(a) || leer(ab) ? "" : (ab - a > 0 ? "wpos" : (ab - a < 0 ? "wneg" : ""))) + '">' +
+      (leer(a) || leer(ab) ? "–" : (ab - a >= 0 ? "+" : "") + fmt(ab - a, dez || 0)) + "</td>" +
+      "<td>" + esc(einheit) + "</td></tr>";
+  };
+
+  var bb = v.baubereich || {};
+  var tabelle =
+    '<div class="scroller"><table class="src"><thead><tr>' +
+      "<th>Kennzahl</th><th>A allein</th><th>A + B</th><th>Differenz</th><th></th>" +
+    "</tr></thead><tbody>" +
+      zahlen("Grundstücksfläche", (v.flaeche || {}).a_m2, (v.flaeche || {}).ab_m2, "m²") +
+      zahlen("Baubereich", (bb.a || {}).baubereich_m2, (bb.ab || {}).baubereich_m2, "m²") +
+      zahlen("Fussabdruck", (bb.a || {}).fussabdruck_m2, (bb.ab || {}).fussabdruck_m2, "m²") +
+      zahlen("Vollgeschosse", (bb.a || {}).geschosszahl, (bb.ab || {}).geschosszahl, "") +
+      zahlen("Geschossfläche", (v.geschossflaeche || {}).a_m2, (v.geschossflaeche || {}).ab_m2, "m²") +
+      zahlen("Max. tragbarer Landwert", w.residualwert_a_chf, w.residualwert_ab_chf, "CHF") +
+    "</tbody></table></div>" +
+    ((v.geschossflaeche || {}).limitiert_durch_ab
+      ? '<div class="note">Die Geschossfläche wird begrenzt durch <b>' +
+        esc(v.geschossflaeche.limitiert_durch_a || "–") + "</b> (A) beziehungsweise <b>" +
+        esc(v.geschossflaeche.limitiert_durch_ab) + "</b> (A+B). Genau daran hängt, ob " +
+        "zusätzliche Fläche überhaupt etwas bringt.</div>"
+      : "");
+
+  var potenzial =
+    '<div class="hbu ' + (p.status === "zusatzpotenzial" ? "ja" : "offen") + '">' +
+      '<div class="hbukopf"><span class="badge ' + pot[1] + '">' + esc(pot[0]) + "</span>" +
+      (leer(p.ausbeute) ? "" : '<span class="hbuwert">Ausbeute ' +
+        (p.ausbeute * 100).toFixed(0) + " % gegenüber A</span>") + "</div>" +
+      '<p class="hbutext">' + esc(p.begruendung || p.grund || "") + "</p>" +
+    "</div>";
+
+  var wirtschaft =
+    '<div class="hbu ' + (w.lohnt_sich === true ? "ja" : (w.lohnt_sich === false ? "offen" : "")) + '">' +
+      '<div class="hbukopf"><b>Wirtschaftlicher Zusatznutzen</b>' +
+      (leer(w.zusatznutzen_chf) ? '<span class="badge mute">nicht bestimmbar</span>'
+        : '<span class="badge ' + (w.lohnt_sich ? "ok" : "stop") + '">CHF ' +
+          chf(w.zusatznutzen_chf, true) + "</span>") + "</div>" +
+      (w.rechnung ? '<p class="hbutext">' + esc(w.rechnung) + "</p>" : "") +
+      (w.grund ? '<p class="hbutext">' + esc(w.grund) + "</p>" : "") +
+    "</div>";
+
+  var hbuZeile = (v.hbu || {}).hinweis
+    ? '<div class="note">' + esc(v.hbu.hinweis) + "</div>" : "";
+
+  var szenarien = (v.szenarien || []).length
+    ? '<details class="more"><summary>Szenarien einzeln</summary><div>' +
+      '<div class="scroller"><table class="src"><thead><tr><th>Szenario</th>' +
+      "<th>A allein</th><th>A + B</th><th>Differenz</th></tr></thead><tbody>" +
+      v.szenarien.map(function (z) {
+        return "<tr><td>" + esc(z.bezeichnung || SZ_LABEL[z.id] || z.id) + "</td>" +
+          "<td>" + (leer(z.residualwert_a_chf) ? "–" : chf(z.residualwert_a_chf)) + "</td>" +
+          "<td>" + (leer(z.residualwert_ab_chf) ? "–" : chf(z.residualwert_ab_chf)) + "</td>" +
+          '<td class="' + (leer(z.differenz_chf) ? "" : (z.differenz_chf > 0 ? "wpos" : (z.differenz_chf < 0 ? "wneg" : ""))) + '">' +
+          (leer(z.differenz_chf) ? "–" : (z.differenz_chf >= 0 ? "+" : "") + chf(z.differenz_chf)) +
+          "</td></tr>";
+      }).join("") + "</tbody></table></div></div></details>"
+    : "";
+
+  return kopf + waehlen + felder + kopfzeile + potenzial + tabelle +
+    wirtschaft + hbuZeile + kombPruefstufen(k) + szenarien;
+}
+
+// Die Pruefstufen sichtbar machen -- wie beim HBU zaehlt nicht nur das
+// Ergebnis, sondern woran es haengt.
+function kombPruefstufen(k) {
+  var g = k.geometrie || {}, z = k.zonen || {}, e = k.erschliessung || {}, bb = k.bestand_b || {};
+  var zeilen = [];
+  if (g.beruehrungslaenge_m !== undefined) {
+    zeilen.push(["Gemeinsame Grenze", fmt(g.beruehrungslaenge_m, 1) + " m",
+                 g.status === "moeglich" ? "ok" : "stop", g.hinweis || g.grund]);
+  }
+  if (z.status) {
+    zeilen.push(["Zone", z.gleich === true ? "dieselbe" : (z.gleich === false ? "verschieden" : "unbekannt"),
+                 z.gleich === true ? "ok" : "warn", z.grund]);
+  }
+  if (e.status) {
+    zeilen.push(["Erschliessung", e.status === "erschlossen" ? "nachgewiesen" : e.status,
+                 e.status === "erschlossen" ? "ok" : "warn", e.grund]);
+  }
+  if (bb.hinweis) {
+    zeilen.push(["Bestand auf B", bb.bebaut ? "bebaut" : "kein Gebäude verzeichnet",
+                 bb.bebaut ? "warn" : "mute", bb.hinweis]);
+  }
+  if (!zeilen.length) return "";
+  return '<details class="more"><summary>Prüfung im Einzelnen</summary><div>' +
+    zeilen.map(function (z2) {
+      return '<div class="note"><b>' + esc(z2[0]) + ":</b> " +
+        '<span class="badge ' + z2[2] + '">' + esc(z2[1]) + "</span>" +
+        (z2[3] ? "<br>" + esc(z2[3]) : "") + "</div>";
+    }).join("") + "</div></details>";
+}
+
+function kombVerdrahten() {
+  var an = function (id, was) {
+    var el = document.getElementById(id);
+    if (el) el.onclick = was;
+  };
+  an("komb-modus", function () {
+    kombModus = !kombModus;
+    kombZeichne();
+  });
+  an("komb-weg", function () {
+    kombModus = false; kombPunkt = null; kombErgebnis = null; kombMeldung = "";
+    kombZeichne(); kombZeichneKarte();
+  });
+  [["komb-preis", "kaufpreis_b_chf"], ["komb-kosten", "zusatzkosten_chf"]].forEach(function (paar) {
+    var el = document.getElementById(paar[0]);
+    if (!el || el.dataset.verdrahtet) return;
+    el.dataset.verdrahtet = "1";
+    el.addEventListener("change", function () {
+      kombEingaben[paar[1]] = el.value === "" ? null : Number(el.value);
+      if (kombPunkt) kombRechne(); else kombZeichne();
+    });
+  });
+}
+
+function kombZeichne() {
+  var ziel = document.getElementById("w-kombination");
+  if (!ziel) return;
+  ziel.innerHTML = kombBlock();
+  kombVerdrahten();
+}
+
+// B und die vereinigte Kontur auf der Karte. Eigene Ebene, damit die
+// Kombination die Analyse von A nicht ueberschreibt.
+var kombGruppe = L.layerGroup().addTo(map);
+var STIL_KOMB_B = { color: "#6a4c93", weight: 3, fillColor: "#6a4c93", fillOpacity: .18 };
+var STIL_KOMB_AB = { color: "#1f7a4d", weight: 2, fillColor: "#1f7a4d", fillOpacity: .10,
+                     dashArray: "7,4" };
+
+function kombRingZuLatLng(ring) {
+  return (ring || []).map(function (p) { return lv95ToWgs84(p[0], p[1]); });
+}
+
+function kombZeichneKarte() {
+  if (typeof kombGruppe === "undefined") return;
+  kombGruppe.clearLayers();
+  if (!kombErgebnis) return;
+  var b = (kombErgebnis.parzelle_b || {}).parzellengeometrie;
+  if (b && b.length) {
+    L.polygon(kombRingZuLatLng(b), STIL_KOMB_B)
+      .bindPopup("<b>Parzelle B</b><br>" +
+        esc((kombErgebnis.parzelle_b || {}).parzellennummer || "") + " · " +
+        fmt((kombErgebnis.parzelle_b || {}).flaeche_m2, 0) + " m²")
+      .addTo(kombGruppe);
+  }
+  var u = (kombErgebnis.geometrie || {}).ring;
+  if (u && u.length) {
+    L.polygon(kombRingZuLatLng(u), STIL_KOMB_AB)
+      .bindPopup("<b>A + B vereinigt</b><br>" +
+        fmt((kombErgebnis.geometrie || {}).flaeche_m2, 0) + " m²")
+      .addTo(kombGruppe);
+  }
+  var ab = ((kombErgebnis.ab || {}).g1 || {}).ergebnis || {};
+  (ab.baubereich_koordinaten || []).forEach(function (ring) {
+    L.polygon(kombRingZuLatLng(ring),
+      { color: "#1f7a4d", weight: 2, fillColor: "#1f7a4d", fillOpacity: .35 })
+      .bindPopup("<b>Baubereich A+B</b><br>" + fmt(ab.baubereich_m2, 0) + " m²")
+      .addTo(kombGruppe);
+  });
+}
 
 /* ===================== Adresssuche ===================== */
 var GEOADMIN_SEARCH = "https://api3.geo.admin.ch/rest/services/api/SearchServer";
@@ -2660,7 +2948,48 @@ function dossierBauen(bilder) {
         : "") +
       '<p class="dhinweis">' + esc((hbu.kriterium || {}).begruendung || "") + "</p>";
   }
-  var vergleich = vergleichTab + hbuAbschnitt;
+  // Die Parzellenkombination gehoert an dieselbe Stelle wie der HBU: sie ist
+  // eine Schlussfolgerung aus dem Vergleich, kein eigener Befund. Sie steht
+  // nur im Bericht, wenn tatsaechlich eine gerechnet wurde.
+  var kombAbschnitt = "";
+  if (typeof kombErgebnis !== "undefined" && kombErgebnis) {
+    var kb = kombErgebnis;
+    var kbB = kb.parzelle_b || {};
+    var kv = kb.vergleich || {};
+    kombAbschnitt = '<h3 class="dsub">Parzellenkombination A + B</h3>';
+    if (kb.status !== "moeglich") {
+      kombAbschnitt += '<p class="dtext"><b>Parzelle ' + esc(kbB.parzellennummer || "B") +
+        ": " + esc((KOMB_STATUS[kb.status] || [kb.status])[0]) + ".</b> " +
+        esc(kb.grund || "") + "</p>";
+    } else {
+      var kp = kv.potenzial || {}, kw = kv.wirtschaft || {}, kbb = kv.baubereich || {};
+      kombAbschnitt +=
+        '<p class="dtext"><b>Parzelle ' + esc(kbB.parzellennummer || "B") + "</b> (" +
+        fmt(kbB.flaeche_m2, 0) + " m², gemeinsame Grenze " +
+        fmt((kb.geometrie || {}).beruehrungslaenge_m, 1) + " m) — " +
+        esc((KOMB_POTENZIAL[kp.status] || [kp.status])[0]) + ".</p>" +
+        '<p class="dtext">' + esc(kp.begruendung || kp.grund || "") + "</p>" +
+        dossierTabelle(["Kennzahl", "A allein", "A + B", "Differenz"], [
+          ["Grundstücksfläche m²", fmt((kv.flaeche || {}).a_m2, 0),
+           fmt((kv.flaeche || {}).ab_m2, 0), "+" + fmt((kv.flaeche || {}).b_m2, 0)],
+          ["Baubereich m²", fmt((kbb.a || {}).baubereich_m2, 0),
+           fmt((kbb.ab || {}).baubereich_m2, 0),
+           fmtDiff((kbb.a || {}).baubereich_m2, (kbb.ab || {}).baubereich_m2)],
+          ["Geschossfläche m²", fmt((kv.geschossflaeche || {}).a_m2, 0),
+           fmt((kv.geschossflaeche || {}).ab_m2, 0),
+           fmtDiff((kv.geschossflaeche || {}).a_m2, (kv.geschossflaeche || {}).ab_m2)],
+          ["Max. tragbarer Landwert CHF", chf(kw.residualwert_a_chf, true),
+           chf(kw.residualwert_ab_chf, true),
+           fmtDiff(kw.residualwert_a_chf, kw.residualwert_ab_chf)],
+        ]) +
+        (kw.rechnung ? '<p class="dtext">' + esc(kw.rechnung) + "</p>" : "") +
+        (kw.grund ? '<p class="dtext">' + esc(kw.grund) + "</p>" : "") +
+        ((kv.hbu || {}).hinweis ? '<p class="dhinweis">' + esc(kv.hbu.hinweis) + "</p>" : "") +
+        '<p class="dhinweis">Kaufpreis und Zusatzkosten für B sind eigene Annahmen, ' +
+        'keine Marktwerte.</p>';
+    }
+  }
+  var vergleich = vergleichTab + hbuAbschnitt + kombAbschnitt;
 
   // --- 11 Risiken und Hinweise -------------------------------------------
   var offen = []
@@ -2713,7 +3042,7 @@ function dossierBauen(bilder) {
     dossierAbschnitt(7, "Markt", marktAbschnitt, true) +
     dossierAbschnitt(8, "Kosten nach BKP", kosten) +
     dossierAbschnitt(9, "Wirtschaftlichkeit", wirtschaft, true) +
-    dossierAbschnitt(10, "Szenarienvergleich", vergleich, true,
+    dossierAbschnitt(10, "Szenarienvergleich und beste Nutzung", vergleich, true,
       "Kein Vergleich und keine Nutzungsempfehlung — es wurde nur ein Szenario gerechnet und die Wirtschaftlichkeit nicht durchgerechnet. Beides entsteht erst, wenn mehrere Varianten vorliegen.") +
     dossierAbschnitt(11, "Risiken und Hinweise", risiken) +
     dossierAbschnitt(12, "Quellen und Belege", quellenTab, true) +
@@ -2725,6 +3054,12 @@ function dossierBauen(bilder) {
 // Ein Quellenwert kann eine Zahl, ein Text, eine Liste oder ein Objekt sein.
 // Ohne eigene Behandlung landet "[object Object]" im Bericht -- in einem
 // Dokument, das an Eigentuemer und Investoren geht, nicht akzeptabel.
+function fmtDiff(a, b) {
+  if (leer(a) || leer(b)) return "–";
+  var d = b - a;
+  return (d >= 0 ? "+" : "") + fmt(d, 0);
+}
+
 function dwert(w, tiefe) {
   tiefe = tiefe || 0;
   if (w === null || w === undefined || w === "") return "–";
@@ -4936,6 +5271,7 @@ function secWirtschaft(erg) {
     '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
     '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
     '<div id="w-hbu">' + hbuBlock() + "</div>" +
+    '<div id="w-kombination">' + kombBlock() + "</div>" +
     '<div class="wspalten">' +
       '<div id="w-markt">' + marktBlock(erg) + "</div>" +
       '<div id="mkt-verwaltung"></div>' +
@@ -5046,6 +5382,8 @@ function wZeichneNeu() {
   setze("w-ergebnis", ergebnisBlock());
   setze("w-vergleich", wVergleichBlock());
   setze("w-hbu", hbuBlock());
+  setze("w-kombination", kombBlock());
+  kombVerdrahten();
   setze("w-bkp", bkpBlock());
   setze("w-markt", marktBlock(ergebnisAktuell || {}));
   // Die Verwaltung wird NICHT aus wErgebnis gespeist, sondern aus
