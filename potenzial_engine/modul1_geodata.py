@@ -48,6 +48,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 from typing import Any, Optional
 
@@ -143,8 +145,39 @@ BROWSER_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
-session = requests.Session()
-session.headers.update({"User-Agent": USER_AGENT})
+# Je Thread eine eigene Sitzung. `requests.Session` ist nicht als
+# thread-sicher zugesichert, und Modul 1 fragt seine Quellen jetzt
+# nebenlaeufig ab -- eine gemeinsame Sitzung waere genau die Art von Fehler,
+# die sich sporadisch und unreproduzierbar zeigt. Der Verbindungspool geht
+# dabei nicht verloren: jeder Thread behaelt seinen eigenen ueber die ganze
+# Analyse.
+_sitzungen = threading.local()
+
+
+class _SitzungProThread:
+    """Verhaelt sich wie die fruehere Modulvariable `session`."""
+
+    @staticmethod
+    def _aktuelle() -> requests.Session:
+        vorhanden = getattr(_sitzungen, "session", None)
+        if vorhanden is None:
+            vorhanden = requests.Session()
+            vorhanden.headers.update({"User-Agent": USER_AGENT})
+            _sitzungen.session = vorhanden
+        return vorhanden
+
+    def get(self, *a, **kw):
+        return self._aktuelle().get(*a, **kw)
+
+    def post(self, *a, **kw):
+        return self._aktuelle().post(*a, **kw)
+
+    @property
+    def headers(self):
+        return self._aktuelle().headers
+
+
+session = _SitzungProThread()
 
 
 def _get_mit_wiederholung(
@@ -1198,7 +1231,60 @@ def get_umgebung(lat: float, lon: float) -> Umgebung:
 # Orchestrierung
 # ---------------------------------------------------------------------------
 
+def _nebenlaeufig(pool, aufgabe):
+    """Reicht eine Abfrage in den Pool ein und merkt sich ihren Namen."""
+    return pool.submit(aufgabe)
+
+
+def _abholen(future, standard=None, weiterwerfen: bool = True):
+    """Holt ein Teilergebnis ab.
+
+    `weiterwerfen=False` fuer Quellen, die schon bisher einzeln abgesichert
+    waren -- dort aendert sich nichts. Fuer alle anderen wird die Ausnahme
+    unveraendert weitergereicht, damit sich das Fehlerverhalten der Analyse
+    durch die Nebenlaeufigkeit NICHT aendert: was frueher abgebrochen hat,
+    bricht weiterhin ab. Die uebrigen Abfragen sind zu diesem Zeitpunkt
+    trotzdem gelaufen -- eine langsame oder defekte Quelle blockiert die
+    anderen nicht mehr.
+    """
+    try:
+        return future.result()
+    except Exception:  # noqa: BLE001
+        if weiterwerfen:
+            raise
+        return standard
+
+
 def run_modul1(address: str) -> dict[str, Any]:
+    """Alle amtlichen Quellen fuer eine Adresse.
+
+    Die Abfragen laufen NEBENLAEUFIG, soweit sie voneinander unabhaengig
+    sind. Anlass ist eine Messung: die neun Einzelabfragen brauchten
+    zusammen rund 14 s, davon allein 5.1 s fuer die Umgebungsdaten --
+    obwohl keine auf die andere wartet. Gerechnet wird dabei nichts anderes
+    und nichts anders; es ist dieselbe Kette, nur nicht mehr hintereinander.
+
+    Die Abhaengigkeiten, und nur sie, geben die Reihenfolge vor:
+
+        Geocoding                          liefert e/n, lat/lon, Kantonstipp
+          |
+          +-- Kataster        (e, n)       liefert EGRID und Parzellenkontur
+          +-- Gemeinde        (e, n)       liefert den Kanton
+          +-- GWR             (e, n)
+          +-- Radon           (e, n)
+          +-- Topografie      (e, n)
+          +-- Umgebung        (lat, lon)   die langsamste Einzelquelle
+                |
+                +-- OEREB                  braucht EGRID UND Kanton
+                +-- Nutzungsplanung        braucht den Kanton
+                +-- Restriktionen          braucht Kanton und Parzellenkontur
+                +-- Kantenklassifikation   braucht Parzellenkontur und EGRID
+                +-- Bestand                braucht die Parzellenkontur
+
+    Die zweite Welle startet, sobald Kataster und Gemeinde da sind (beide
+    unter einer Sekunde) -- die langsame Umgebungsabfrage laeuft daneben
+    weiter, statt alles aufzuhalten.
+    """
     started = time.time()
     result: dict[str, Any] = {"input_address": address}
 
@@ -1209,20 +1295,96 @@ def run_modul1(address: str) -> dict[str, Any]:
     if e is None or n is None:
         raise Modul1Error("Geocoding lieferte keine gueltigen LV95-Koordinaten.")
 
-    result["kataster"] = get_parcel_data(e, n)
-    result["gemeinde"] = get_municipality_data(e, n)
-    result["gwr"] = get_gwr_data(e, n)
-    result["radon"] = get_radon_data(e, n)
-    result["topographie"] = get_topography(e, n).model_dump()
-
     lat, lon = geo.get("wgs84_lat"), geo.get("wgs84_lon")
-    result["umgebung"] = get_umgebung(lat, lon).model_dump() if lat and lon else Umgebung().model_dump()
-
-    egrid = result["kataster"].get("egrid")
     canton_hint = geo.get("canton_hint")
-    kanton = result["gemeinde"].get("kanton") or (canton_hint.upper() if canton_hint else None)
-    result["oereb"] = get_oereb_data(egrid, kanton)
-    result["nutzungsklassifikation"] = klassifiziere_nutzung(e, n, kanton)
+
+    with ThreadPoolExecutor(max_workers=11, thread_name_prefix="modul1") as pool:
+        # --- Welle 1: alles, was nur die Koordinate braucht ---------------
+        f_kataster = _nebenlaeufig(pool, lambda: get_parcel_data(e, n))
+        f_gemeinde = _nebenlaeufig(pool, lambda: get_municipality_data(e, n))
+        f_gwr = _nebenlaeufig(pool, lambda: get_gwr_data(e, n))
+        f_radon = _nebenlaeufig(pool, lambda: get_radon_data(e, n))
+        f_topo = _nebenlaeufig(pool, lambda: get_topography(e, n).model_dump())
+        f_umgebung = _nebenlaeufig(
+            pool,
+            (lambda: get_umgebung(lat, lon).model_dump()) if (lat and lon)
+            else (lambda: Umgebung().model_dump()))
+
+        # Nur auf die beiden warten, von denen die zweite Welle abhaengt.
+        result["kataster"] = _abholen(f_kataster)
+        result["gemeinde"] = _abholen(f_gemeinde)
+
+        egrid = result["kataster"].get("egrid")
+        kanton = result["gemeinde"].get("kanton") or (canton_hint.upper() if canton_hint else None)
+        parzellengeometrie = (result["kataster"].get("parzellengeometrie")
+                              if result["kataster"].get("found") else None)
+
+        # --- Welle 2: alles, was EGRID, Kanton oder Kontur braucht --------
+        f_oereb = _nebenlaeufig(pool, lambda: get_oereb_data(egrid, kanton))
+        f_nutzung = _nebenlaeufig(pool, lambda: klassifiziere_nutzung(e, n, kanton))
+
+        f_restrikt = f_kanten = f_bestand = None
+        if parzellengeometrie:
+            f_restrikt = _nebenlaeufig(
+                pool, lambda: hole_restriktionen_fuer_parzelle(e, n, kanton, parzellengeometrie))
+
+            # Lokaler Import: kantenklassifikation.py liest seinerseits aus
+            # diesem Modul (_identify, LAYER_CADASTRE_GEOM) -- ein Modulzyklus
+            # auf Dateiebene waere sonst unvermeidlich.
+            from .kantenklassifikation import KantenklassifikationError, klassifiziere_kanten
+            from .bestand import hole_bestand
+
+            def _kanten():
+                # G2 -- welche Kante grenzt an Strasse, welche an einen
+                # Nachbarn. Erst damit kann G1 kantenspezifisch statt als
+                # Bandbreite rechnen. Ein Fehler hier darf die Analyse nicht
+                # stoppen: die Bandbreite bleibt als Rueckfallebene bestehen,
+                # der Grund wird festgehalten statt verschluckt.
+                try:
+                    return klassifiziere_kanten(parzellengeometrie, e, n, eigenes_egrid=egrid)
+                except (KantenklassifikationError, requests.exceptions.RequestException) as exc:
+                    return {"gefunden": False,
+                            "reason": f"{type(exc).__name__}: {exc}",
+                            "kanten": []}
+
+            def _bestand():
+                # Bestand: alle Gebaeude der Parzelle mit Grundriss und
+                # GWR-Merkmalen. Loest die alte Einzelabfrage get_gwr_data()
+                # NICHT ab (sie bleibt fuer Abwaertskompatibilitaet unter
+                # result["gwr"]), liefert aber die parzellenweite Sicht, die
+                # die Entwicklungsszenarien brauchen.
+                try:
+                    return hole_bestand(e, n, parzellengeometrie)
+                except (Exception,) as exc:  # noqa: BLE001 -- darf nie stoppen
+                    return {"gefunden": False,
+                            "reason": f"{type(exc).__name__}: {exc}",
+                            "gebaeude": []}
+
+            f_kanten = _nebenlaeufig(pool, _kanten)
+            f_bestand = _nebenlaeufig(pool, _bestand)
+
+        # --- Einsammeln, in der bisherigen Reihenfolge ---------------------
+        result["gwr"] = _abholen(f_gwr)
+        result["radon"] = _abholen(f_radon)
+        result["topographie"] = _abholen(f_topo)
+        result["umgebung"] = _abholen(f_umgebung)
+        result["oereb"] = _abholen(f_oereb)
+        result["nutzungsklassifikation"] = _abholen(f_nutzung)
+
+        result["restriktionsgeometrie"] = _abholen(f_restrikt) if f_restrikt else {
+            "gefunden": False,
+            "reason": "Keine Parzellengeometrie verfuegbar (siehe kataster.found) -- Restriktionsabfrage uebersprungen.",
+        }
+        result["kantenklassifikation"] = _abholen(f_kanten, weiterwerfen=False) if f_kanten else {
+            "gefunden": False,
+            "reason": "Keine Parzellengeometrie verfuegbar -- Kantenklassifikation uebersprungen.",
+            "kanten": [],
+        }
+        result["bestand"] = _abholen(f_bestand, weiterwerfen=False) if f_bestand else {
+            "gefunden": False,
+            "reason": "Keine Parzellengeometrie verfuegbar -- Bestandsermittlung uebersprungen.",
+            "gebaeude": [],
+        }
 
     # Rechtsvorschriften zusaetzlich nach der (unabhaengig von geodienste.ch/
     # ZH-WFS bestimmten) tatsaechlichen Basiszone priorisieren -- siehe
@@ -1236,67 +1398,10 @@ def run_modul1(address: str) -> dict[str, Any]:
             result["oereb"].get("rechtsvorschriften", []), basiszone_name
         )
 
-    parzellengeometrie = result["kataster"].get("parzellengeometrie") if result["kataster"].get("found") else None
-    if parzellengeometrie:
-        result["restriktionsgeometrie"] = hole_restriktionen_fuer_parzelle(e, n, kanton, parzellengeometrie)
-    else:
-        result["restriktionsgeometrie"] = {
-            "gefunden": False,
-            "reason": "Keine Parzellengeometrie verfuegbar (siehe kataster.found) -- Restriktionsabfrage uebersprungen.",
-        }
-
-    # G2 -- welche Kante grenzt an Strasse, welche an einen Nachbarn. Erst
-    # damit kann G1 kantenspezifisch statt als Bandbreite rechnen. Ein Fehler
-    # hier darf die Analyse nicht stoppen: die Bandbreite bleibt als
-    # Rueckfallebene bestehen, der Grund wird festgehalten statt verschluckt.
-    if parzellengeometrie:
-        # Lokaler Import: kantenklassifikation.py liest seinerseits aus diesem
-        # Modul (_identify, LAYER_CADASTRE_GEOM) -- ein Modulzyklus auf
-        # Dateiebene waere sonst unvermeidlich.
-        from .kantenklassifikation import KantenklassifikationError, klassifiziere_kanten
-
-        try:
-            result["kantenklassifikation"] = klassifiziere_kanten(
-                parzellengeometrie, e, n, eigenes_egrid=egrid
-            )
-        except (KantenklassifikationError, requests.exceptions.RequestException) as exc:
-            result["kantenklassifikation"] = {
-                "gefunden": False,
-                "reason": f"{type(exc).__name__}: {exc}",
-                "kanten": [],
-            }
-    else:
-        result["kantenklassifikation"] = {
-            "gefunden": False,
-            "reason": "Keine Parzellengeometrie verfuegbar -- Kantenklassifikation uebersprungen.",
-            "kanten": [],
-        }
-
-    # Bestand: alle Gebaeude der Parzelle mit Grundriss und GWR-Merkmalen.
-    # Loest die alte Einzelabfrage get_gwr_data() NICHT ab (sie bleibt fuer
-    # Abwaertskompatibilitaet unter result["gwr"]), liefert aber die
-    # parzellenweite Sicht, die die Entwicklungsszenarien brauchen.
-    if parzellengeometrie:
-        from .bestand import hole_bestand
-
-        try:
-            result["bestand"] = hole_bestand(e, n, parzellengeometrie)
-        except (Exception,) as exc:  # noqa: BLE001 -- Bestand darf die Analyse nicht stoppen
-            result["bestand"] = {
-                "gefunden": False,
-                "reason": f"{type(exc).__name__}: {exc}",
-                "gebaeude": [],
-            }
-    else:
-        result["bestand"] = {
-            "gefunden": False,
-            "reason": "Keine Parzellengeometrie verfuegbar -- Bestandsermittlung uebersprungen.",
-            "gebaeude": [],
-        }
-
     result["_meta"] = {
         "duration_seconds": round(time.time() - started, 2),
         "modul": "Modul 1 - Geo-Data & Registry Ingestion",
+        "nebenlaeufig": True,
     }
     return result
 
