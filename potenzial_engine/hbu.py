@@ -87,7 +87,11 @@ def _streuung_aus_markt(marktlage: Optional[dict[str, Any]]) -> Optional[float]:
     """
     verkauf = (marktlage or {}).get("verkauf") or {}
     spanne = verkauf.get("spanne")
-    median = verkauf.get("median")
+    # Bewusst der SYSTEMVORSCHLAG und nicht der rohe Median: der Vorschlag
+    # entsteht nur, wenn die Marktauswertung ihre Mindestanforderung erfuellt.
+    # Traegt die Datenbasis keinen Punktwert, traegt sie auch keine Schwelle
+    # dafuer, ab wann zwei Nutzungen unterscheidbar sind.
+    median = verkauf.get("systemvorschlag")
     if not spanne or len(spanne) != 2 or not median:
         return None
     halbe_breite = (spanne[1] - spanne[0]) / 2.0

@@ -55,6 +55,9 @@ def objekt(**kw):
         bezeichnung="MFH Testweg 1", quelle="Testquelle", datenstand=heute_minus(2),
         gemeinde="Buchs (AG)", kanton="AG", objektart="MFH",
         preis_chf_pro_m2=9000.0, datenqualitaet=md.QUALITAET_HOCH,
+        # Beurkundeter Abschluss: sonst greift die Eignungsregel, und diese
+        # Tests pruefen die Passung, nicht die Eignung (dafuer test_eignung).
+        preisart=md.PREISART_ABSCHLUSS,
     )
     daten.update(kw)
     return md.Vergleichsobjekt(**daten)
@@ -207,8 +210,18 @@ def test_sicherheit() -> None:
            f"2 Objekte: gering ({wenige.sicherheit})")
     pruefe(any("Bandbreite ist die Aussage" in b for b in wenige.begruendung),
            "mit dem Hinweis, dass die Bandbreite die Aussage ist")
-    pruefe(wenige.systemvorschlag is not None,
-           "der Median existiert trotzdem -- er ist nur schwach gestuetzt")
+    # Geaendert: unter der Mindestanzahl gibt es KEINEN Punktwert mehr. Zwei
+    # Beobachtungen haben einen Median, aber er sagt nur, was zufaellig in
+    # ihrer Mitte lag.
+    pruefe(wenige.systemvorschlag is None,
+           "unter 3 Referenzen gibt es keinen Systemvorschlag")
+    pruefe(wenige.spanne == (9000.0, 9100.0),
+           f"die Spanne bleibt -- sie ist dann die ganze Aussage ({wenige.spanne})")
+    pruefe(wenige.median == 9050.0,
+           "der Median bleibt als Rohwert nachvollziehbar, wird aber nicht vorgeschlagen")
+    pruefe(wenige.to_dict()["mindestanforderung"] == {
+               "erfuellt": False, "min_objekte": md.MIN_OBJEKTE_MITTEL, "vorhanden": 2},
+           "und die Mindestanforderung wird beziffert ausgewiesen")
 
     mittel = md.werte_referenzen_aus(
         [objekt(bezeichnung=f"O{i}", preis_chf_pro_m2=9000 + i * 50) for i in range(4)],
@@ -272,10 +285,20 @@ def test_uebergabe() -> None:
     pruefe(mit.systemvorschlag == 9000.0, "der Systemvorschlag bleibt daneben sichtbar")
     pruefe(mit.spanne == (8800.0, 9300.0), "und die Referenzspanne ebenfalls")
 
-    schwach = md.werte_referenzen_aus([objekt(preis_chf_pro_m2=9000)], md.GROESSE_VERKAUF)
-    mw = schwach.als_marktwert()
-    pruefe("schwach gestuetzt" in mw.begruendung,
-           f"bei geringer Sicherheit steht das im Klartext ({mw.begruendung[:60]})")
+    zuwenig = md.werte_referenzen_aus([objekt(preis_chf_pro_m2=9000)], md.GROESSE_VERKAUF)
+    mw = zuwenig.als_marktwert()
+    pruefe(mw.systemvorschlag is None and "Kein Systemvorschlag" in mw.begruendung,
+           f"unter der Mindestanzahl wird das im Klartext gesagt ({mw.begruendung[:48]})")
+
+    # Genug Referenzen, aber zu heterogen: dann gibt es einen Vorschlag, und
+    # er wird ausdruecklich als schwach gestuetzt gefuehrt.
+    schwach = md.werte_referenzen_aus(
+        [objekt(bezeichnung="A", preis_chf_pro_m2=6000),
+         objekt(bezeichnung="B", preis_chf_pro_m2=9000),
+         objekt(bezeichnung="C", preis_chf_pro_m2=14000)],
+        md.GROESSE_VERKAUF).als_marktwert()
+    pruefe("schwach gestuetzt" in schwach.begruendung,
+           f"bei geringer Sicherheit steht das im Klartext ({schwach.begruendung[:48]})")
 
     leer = md.werte_referenzen_aus([], md.GROESSE_VERKAUF).als_marktwert()
     pruefe(leer.wert is None and leer.herkunft == HERKUNFT_NICHT_BESTIMMBAR,
@@ -314,13 +337,246 @@ def test_marktlage() -> None:
     print()
 
 
+def test_objektart_normalisieren() -> None:
+    """Die Portale schreiben fuer dieselbe Sache fuenf verschiedene Woerter."""
+    print("=== Objektart: eine feste Sprache statt Inseratsvokabular ===")
+    faelle = {
+        "Haus": md.OBJEKTART_HAUS,
+        "Einfamilienhaus": md.OBJEKTART_EFH,
+        "Doppeleinfamilienhaus": md.OBJEKTART_EFH,
+        "Chalet": md.OBJEKTART_EFH,
+        "Terrassenhaus": md.OBJEKTART_EFH,
+        "Mehrfamilienhaus": md.OBJEKTART_MFH,
+        "MFH": md.OBJEKTART_MFH,
+        "Eigentumswohnung": md.OBJEKTART_WOHNUNG,
+        "4.5-Zimmer-Wohnung": md.OBJEKTART_WOHNUNG,
+        "Bauland": md.OBJEKTART_BAULAND,
+        "Bauparzelle": md.OBJEKTART_BAULAND,
+        "Gewerbegrundstück": md.OBJEKTART_BAULAND,
+        "Hotel": md.OBJEKTART_GEWERBE,
+        "": md.OBJEKTART_UNBEKANNT,
+        None: md.OBJEKTART_UNBEKANNT,
+    }
+    falsch = {k: md.normalisiere_objektart(k) for k, v in faelle.items()
+              if md.normalisiere_objektart(k) != v}
+    pruefe(not falsch, f"alle {len(faelle)} Schreibweisen richtig zugeordnet ({falsch})")
+
+    # Real beobachtet: eine ganze Homegate-Seite stand im Feld Objektart.
+    blob = "Mehrfamilienhaus\nDokumente (0)\nDein neues Eigenheim richtig versichern" * 20
+    pruefe(md.normalisiere_objektart(blob) == md.OBJEKTART_UNBEKANNT,
+           "ein Inseratstext im Feld Objektart gilt als unbekannt, nicht als eigene Gruppe")
+    print()
+
+
+def test_eignung() -> None:
+    """Der Methodenfehler, um den es geht: der Angebotspreis eines
+    bestehenden Hauses ist NICHT der Verkaufspreis neu gebauter Wohnungen."""
+    print("=== Eignung: nicht jeder CHF/m2 ist ein Verkaufspreis ===")
+
+    bestand = objekt(bezeichnung="MFH aus dem Inserat", objektart="Mehrfamilienhaus",
+                     herkunftsart=md.HERKUNFT_EXTERN, preisart=md.PREISART_ANGEBOT,
+                     preis_chf_pro_m2=9000)
+    grund = md.eignung(bestand, md.GROESSE_VERKAUF)
+    pruefe(grund is not None,
+           "ein importierter Bestands-Angebotspreis taugt nicht als Verkaufsreferenz")
+    pruefe("nicht der Verkaufspreis neu gebauter" in (grund or ""),
+           "und der Grund sagt warum")
+
+    wohnung = objekt(bezeichnung="ETW aus dem Inserat", objektart="Eigentumswohnung",
+                     herkunftsart=md.HERKUNFT_EXTERN, preisart=md.PREISART_ANGEBOT,
+                     preis_chf_pro_m2=9000)
+    pruefe(md.eignung(wohnung, md.GROESSE_VERKAUF) is None,
+           "ein Wohnungsinserat dagegen schon -- dort ist der Preis je m2 gemeint")
+
+    abschluss = objekt(bezeichnung="Beurkundet", objektart="Mehrfamilienhaus",
+                       herkunftsart=md.HERKUNFT_EXTERN, preisart=md.PREISART_ABSCHLUSS,
+                       preis_chf_pro_m2=9000)
+    pruefe(md.eignung(abschluss, md.GROESSE_VERKAUF) is None,
+           "ein beurkundeter Abschluss zaehlt unabhaengig von der Objektart")
+
+    # Die wichtigste Ausnahme: was der Benutzer selbst erfasst, gilt.
+    eigen = objekt(bezeichnung="Eigene Referenz", objektart="Mehrfamilienhaus",
+                   herkunftsart=md.HERKUNFT_MANUELL, preisart=md.PREISART_UNBEKANNT,
+                   preis_chf_pro_m2=9000)
+    pruefe(md.eignung(eigen, md.GROESSE_VERKAUF) is None,
+           "eine von Hand erfasste Referenz bleibt zugelassen -- der Benutzer entscheidet")
+    pruefe(md.eignung(bestand, md.GROESSE_BODEN) is None,
+           "Fuer Bodenpreis und Miete gibt es keine solche Einschraenkung")
+
+    # Und in der Auswertung: der ungeeignete faellt raus, der geeignete bleibt.
+    r = md.werte_referenzen_aus([bestand, eigen], md.GROESSE_VERKAUF)
+    pruefe([o.bezeichnung for o in r.objekte] == ["Eigene Referenz"],
+           f"in der Auswertung bleibt nur die geeignete ({[o.bezeichnung for o in r.objekte]})")
+    pruefe(any(a["art"] == "nicht_geeignet" for a in r.ausgeschlossen),
+           "der Ausschluss ist als 'nicht_geeignet' gekennzeichnet")
+    print()
+
+
+def test_plausibilitaet_und_ausreisser() -> None:
+    """Beide Faelle stammen aus dem echten Bestand des AkquiseRadars."""
+    print("=== Unplausible Werte und Ausreisser ===")
+
+    null = objekt(bezeichnung="Preis auf Anfrage", preis_chf_pro_m2=0.0)
+    absurd = objekt(bezeichnung="Falsche Bezugsflaeche", preis_chf_pro_m2=30333.0)
+    r = md.werte_referenzen_aus(
+        [null, absurd] + [objekt(bezeichnung=f"O{i}", preis_chf_pro_m2=9000 + i * 100)
+                          for i in range(3)],
+        md.GROESSE_VERKAUF)
+    gruende = {a["bezeichnung"]: a for a in r.ausgeschlossen}
+    pruefe(gruende.get("Preis auf Anfrage", {}).get("art") == "unplausibel",
+           "0 CHF/m2 ist kein Preis -- real beobachtet bei 'Preis auf Anfrage'")
+    pruefe(gruende.get("Falsche Bezugsflaeche", {}).get("art") == "unplausibel",
+           "30333 CHF/m2 ebenso -- dort war die Flaeche die Gebaeude- statt der Parzellenflaeche")
+    pruefe(len(r.objekte) == 3, f"die drei brauchbaren bleiben ({len(r.objekte)})")
+
+    # Ausreisser: statistisch, nicht gesetzt -- und erst ab genug Werten.
+    viele = [objekt(bezeichnung=f"N{i}", preis_chf_pro_m2=w) for i, w in
+             enumerate([8800, 8900, 9000, 9100, 9200, 9300])]
+    mit = md.werte_referenzen_aus(
+        viele + [objekt(bezeichnung="Ausreisser", preis_chf_pro_m2=19000)],
+        md.GROESSE_VERKAUF)
+    pruefe(any(a["bezeichnung"] == "Ausreisser" and a["art"] == "ausreisser"
+               for a in mit.ausgeschlossen),
+           "ein Wert weit ausserhalb des Quartilsbereichs wird aussortiert")
+    pruefe(mit.median == 9050.0, f"und verschiebt den Median nicht ({mit.median})")
+
+    wenige = md.werte_referenzen_aus(
+        [objekt(bezeichnung="A", preis_chf_pro_m2=8800),
+         objekt(bezeichnung="B", preis_chf_pro_m2=9000),
+         objekt(bezeichnung="Hoch", preis_chf_pro_m2=14000)],
+        md.GROESSE_VERKAUF)
+    pruefe(not any(a["art"] == "ausreisser" for a in wenige.ausgeschlossen),
+           "bei drei Werten wird NICHT aussortiert -- da ist nicht zu unterscheiden, "
+           "ob einer falsch ist oder der Markt streut")
+    pruefe(wenige.sicherheit == md.SICHERHEIT_GERING, "stattdessen sinkt die Sicherheit")
+    print()
+
+
+def test_plz_und_preisart() -> None:
+    print("=== PLZ und Preisart ===")
+    # Es gibt vier Gemeinden namens Buchs.
+    buchs_ag = objekt(bezeichnung="Buchs AG", plz="5033", gemeinde="Buchs",
+                      preis_chf_pro_m2=9000)
+    buchs_zh = objekt(bezeichnung="Buchs ZH", plz="8107", gemeinde="Buchs",
+                      preis_chf_pro_m2=14000)
+    r = md.werte_referenzen_aus([buchs_ag, buchs_zh], md.GROESSE_VERKAUF,
+                                md.Vergleichsfilter(gemeinde="Buchs", plz="5033"))
+    pruefe([o.bezeichnung for o in r.objekte] == ["Buchs AG"],
+           "gleicher Gemeindename, andere PLZ: nicht vergleichbar")
+    pruefe("andere PLZ" in r.ausgeschlossen[0]["grund"], "und der Grund nennt die PLZ")
+
+    # Reine Angebotsdaten koennen nie 'hoch' werden.
+    # Wohnungsinserate -- sonst greift schon die Eignungsregel.
+    angebote = [objekt(bezeichnung=f"A{i}", preis_chf_pro_m2=9000 + i * 20,
+                       objektart="Eigentumswohnung", preisart=md.PREISART_ANGEBOT)
+                for i in range(8)]
+    nur_angebot = md.werte_referenzen_aus(angebote, md.GROESSE_VERKAUF)
+    pruefe(nur_angebot.sicherheit == md.SICHERHEIT_MITTEL,
+           f"8 enge, aktuelle Angebotspreise ergeben hoechstens mittel ({nur_angebot.sicherheit})")
+    pruefe(any("beurkundeter Abschluss" in b for b in nur_angebot.begruendung),
+           "mit der Begruendung, dass Handaenderungsdaten fehlen")
+
+    mit_abschluss = md.werte_referenzen_aus(
+        angebote + [objekt(bezeichnung="Beurkundet", preis_chf_pro_m2=9080,
+                           preisart=md.PREISART_ABSCHLUSS)],
+        md.GROESSE_VERKAUF)
+    pruefe(mit_abschluss.sicherheit == md.SICHERHEIT_HOCH,
+           f"mit einem beurkundeten Abschluss wird hoch erreichbar ({mit_abschluss.sicherheit})")
+    pruefe(mit_abschluss.nach_preisart()[md.PREISART_ANGEBOT] == 8,
+           "und die Zusammensetzung nach Preisart bleibt sichtbar")
+    print()
+
+
+def test_aussenkante_marktdaten() -> None:
+    """Die Marktauswertung muss ueber den Endpunkt-Pfad ankommen.
+
+    Geprueft wird das VERHALTEN von `webapp._rechne_entwicklung` -- genau der
+    Funktion, die /entwicklung aufruft. Ein Test auf den Quelltext haette in
+    Block 10 einen Verdrahtungsfehler durchgelassen; seither wird hier
+    aufgerufen statt gelesen.
+    """
+    print("=== Aussenkante: Marktlage kommt ueber den Endpunkt-Pfad mit ===")
+
+    import webapp
+    from potenzial_engine import Analyse
+
+    # Eine Analyse, wie sie aus dem Zwischenspeicher zurueckgebaut wird.
+    analyse = Analyse(
+        ergebnis={
+            "adresse": "Rosenweg 4, 5033 Buchs AG",
+            "modul1_geodaten": {
+                "kataster": {"flaeche_m2": 600.0},
+                "gemeinde": {"gemeinde": "Buchs (AG)", "kanton": "AG"},
+                "geocoding": {"matched_label": "Rosenweg 4 5033 Buchs AG"},
+            },
+        },
+        kontext={"modul1": {}},
+    )
+    pruefe(webapp._plz_aus_analyse(analyse.ergebnis) == "5033",
+           "Die PLZ wird aus der geokodierten Adresse gelesen -- keine neue Abfrage")
+
+    antwort = webapp._rechne_entwicklung(analyse, {
+        "zielmarge": 0.15,
+        # Im Request mitgegebene Referenzen decken den Fall ab, dass die
+        # Datenschicht auf diesem Rechner leer ist.
+        "vergleichsobjekte": [
+            {"bezeichnung": f"Referenz {i}", "quelle": "Test",
+             "datenstand": heute_minus(1), "plz": "5033", "gemeinde": "Buchs (AG)",
+             "objektart": "Eigentumswohnung", "preisart": md.PREISART_ABSCHLUSS,
+             "preis_chf_pro_m2": 9000 + i * 50}
+            for i in range(3)
+        ],
+    })
+
+    gebiet = antwort.get("referenzgebiet") or {}
+    pruefe(gebiet.get("plz") == "5033",
+           f"Das Referenzgebiet nennt die PLZ ({gebiet.get('plz')})")
+    pruefe("je_groesse" in gebiet and set(gebiet["je_groesse"]) ==
+           {md.GROESSE_VERKAUF, md.GROESSE_MIETE, md.GROESSE_BODEN},
+           "und fuer jede Marktgroesse, welches Gebiet ausgewertet wurde")
+
+    lage = antwort.get("marktlage") or {}
+    fehlend = [f"{g}.{k}" for g in lage for k in
+               ("mindestanforderung", "nach_preisart", "ausgeschlossen_nach_art",
+                "systemvorschlag", "punktwert_belastbar")
+               if k not in lage[g]]
+    pruefe(not fehlend, f"Jede Marktgroesse traegt die Einstufung mit ({fehlend})")
+
+    verkauf = lage[md.GROESSE_VERKAUF]
+    pruefe(verkauf["mindestanforderung"]["min_objekte"] == md.MIN_OBJEKTE_MITTEL,
+           "Die Mindestanforderung steht in der Antwort und stammt aus EINER Konstante")
+    # Bewusst keine feste Zahl: auf diesem Rechner liegen zusaetzlich die
+    # gespeicherten Referenzen in der Datenschicht, und ein Test, der von
+    # deren Inhalt abhaengt, faellt beim naechsten Import um.
+    pruefe(verkauf["mindestanforderung"]["erfuellt"] is True
+           and verkauf["systemvorschlag"] is not None,
+           f"Drei passende Abschluesse ergeben einen Vorschlag ({verkauf['systemvorschlag']})")
+    pruefe(verkauf["spanne"] and verkauf["spanne"][0] <= verkauf["systemvorschlag"]
+           <= verkauf["spanne"][1],
+           "und er liegt innerhalb der Referenzspanne")
+
+    # Und die Wirtschaftlichkeit rechnet mit genau diesem Wert weiter -- nicht
+    # mit einem zweiten, anderswo gebildeten.
+    preis = (((antwort.get("wirtschaftlichkeit") or {}).get("szenarien") or {})
+             .get("ersatzneubau") or {}).get("verkauf") or {}
+    if preis.get("preis"):
+        pruefe(preis["preis"].get("systemvorschlag") == verkauf["systemvorschlag"],
+               "derselbe Vorschlag steht im Verkaufspreis der Rechnung")
+    print()
+
+
 def main() -> None:
     test_vergleichsobjekt()
     test_import()
     test_filter()
     test_sicherheit()
     test_uebergabe()
+    test_objektart_normalisieren()
+    test_eignung()
+    test_plausibilitaet_und_ausreisser()
+    test_plz_und_preisart()
     test_marktlage()
+    test_aussenkante_marktdaten()
 
     print("=" * 60)
     if FEHLER:

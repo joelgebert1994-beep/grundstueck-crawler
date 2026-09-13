@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -194,15 +195,42 @@ def _kern_marktdaten():
     return kern_db, kern_markt
 
 
-def _lade_vergleichsobjekte(gemeinde=None, kanton=None, objektart=None):
+def _lade_vergleichsobjekte(gemeinde=None, kanton=None, objektart=None, plz_praefix=None):
+    """Holt die gespeicherten Referenzen -- grob vorgefiltert.
+
+    Der Gemeindename taugt NICHT als Vorfilter: die Analyse sagt "Buchs (AG)",
+    die Portale sagen "Buchs AG" oder "Buchs ZH". Vorgefiltert wird deshalb
+    ueber die PLZ-Region, entschieden wird in der Engine.
+    """
     kern_db, kern_markt = _kern_marktdaten()
     if kern_markt is None:
         return [], "Datenschicht (kern) nicht verfuegbar -- keine gespeicherten Referenzen."
     try:
         con = kern_db.verbinde()
-        return kern_markt.lade(con, gemeinde=gemeinde, kanton=kanton, objektart=objektart), None
+        return kern_markt.lade(con, gemeinde=gemeinde if not plz_praefix else None,
+                               kanton=kanton if not plz_praefix else None,
+                               objektart=objektart, plz_praefix=plz_praefix), None
     except Exception as exc:  # noqa: BLE001
         return [], f"Referenzen nicht ladbar: {exc}"
+
+
+_PLZ_MUSTER = re.compile(r"\b(\d{4})\b")
+
+
+def _plz_aus_analyse(analyse_ergebnis: dict) -> Optional[str]:
+    """Die PLZ des Grundstuecks -- aus dem, was die Analyse ohnehin hat.
+
+    Der Kataster fuehrt keine PLZ; die geokodierte Adresse schon
+    ("Rosenweg 4 5033 Buchs AG"). Keine neue Abfrage, keine neue Quelle.
+    """
+    m1 = analyse_ergebnis.get("modul1_geodaten") or {}
+    for text in ((m1.get("geocoding") or {}).get("matched_label"),
+                 (m1.get("geocoding") or {}).get("query"),
+                 analyse_ergebnis.get("adresse")):
+        treffer = _PLZ_MUSTER.search(str(text or ""))
+        if treffer:
+            return treffer.group(1)
+    return None
 
 
 def _zahl(wert, vorgabe=None):
@@ -278,20 +306,26 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
     m1 = analyse.ergebnis.get("modul1_geodaten") or {}
     gemeinde = (m1.get("gemeinde") or {}).get("gemeinde")
     kanton = (m1.get("gemeinde") or {}).get("kanton")
-    gespeichert, referenz_fehler = _lade_vergleichsobjekte(gemeinde=gemeinde, kanton=kanton)
+    plz = _plz_aus_analyse(analyse.ergebnis)
+    gespeichert, referenz_fehler = _lade_vergleichsobjekte(
+        gemeinde=gemeinde, kanton=kanton,
+        plz_praefix=plz[:2] if plz else None)
 
     # Zusaetzlich im Request mitgegebene Referenzen (z.B. Einzelfall-Eingabe).
     aus_request, _ = mdt.aus_dicts(daten.get("vergleichsobjekte") or [])
     alle_objekte = list(gespeichert) + list(aus_request)
 
-    vergleichsfilter = mdt.Vergleichsfilter(
-        gemeinde=gemeinde, kanton=kanton,
-        objektart=daten.get("referenz_objektart") or None,
-    )
-    lage = {
-        g: mdt.werte_referenzen_aus(alle_objekte, g, vergleichsfilter)
+    # Am Ort auswerten -- und nur ausweiten, wenn es dort zu wenig gibt. Die
+    # Ausweitung wird je Groesse mitgeliefert, damit niemand eine regionale
+    # Aussage fuer eine oertliche haelt.
+    ausgewertet = {
+        g: mdt.werte_mit_ausweitung(
+            alle_objekte, g, gemeinde=gemeinde, plz=plz,
+            objektart=daten.get("referenz_objektart") or None)
         for g in (mdt.GROESSE_VERKAUF, mdt.GROESSE_MIETE, mdt.GROESSE_BODEN)
     }
+    lage = {g: r for g, (r, _) in ausgewertet.items()}
+    gebiete = {g: gebiet for g, (_, gebiet) in ausgewertet.items()}
 
     markt = wi.Marktannahmen(
         verkauf=wi.Verkaufsannahme(
@@ -335,7 +369,8 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         "wirtschaftlichkeit": wirtschaft,
         "marktlage": {g: r.to_dict() for g, r in lage.items()},
         "marktlage_fehler": referenz_fehler,
-        "referenzgebiet": {"gemeinde": gemeinde, "kanton": kanton},
+        "referenzgebiet": {"gemeinde": gemeinde, "kanton": kanton, "plz": plz,
+                           "je_groesse": gebiete},
     }
 
 
@@ -971,18 +1006,26 @@ class Handler(BaseHTTPRequestHandler):
 
         query = parse_qs(urlparse(self.path).query)
         einzel = lambda k: (query.get(k) or [None])[0]  # noqa: E731
-        gemeinde, kanton = einzel("gemeinde"), einzel("kanton")
+        gemeinde, kanton, plz = einzel("gemeinde"), einzel("kanton"), einzel("plz")
         objekte, fehler = _lade_vergleichsobjekte(
-            gemeinde=gemeinde, kanton=kanton, objektart=einzel("objektart"))
-        filter_ = mdt.Vergleichsfilter(gemeinde=gemeinde, kanton=kanton,
-                                       objektart=einzel("objektart"))
-        lage = {g: mdt.werte_referenzen_aus(objekte, g, filter_).to_dict()
-                for g in (mdt.GROESSE_VERKAUF, mdt.GROESSE_MIETE, mdt.GROESSE_BODEN)}
+            gemeinde=gemeinde, kanton=kanton, objektart=einzel("objektart"),
+            plz_praefix=plz[:2] if plz else None)
+        ausgewertet = {
+            g: mdt.werte_mit_ausweitung(objekte, g, gemeinde=gemeinde, plz=plz,
+                                        objektart=einzel("objektart"))
+            for g in (mdt.GROESSE_VERKAUF, mdt.GROESSE_MIETE, mdt.GROESSE_BODEN)
+        }
+        # Die Objektliste kann vierstellig werden. Geliefert wird deshalb eine
+        # begrenzte Auswahl plus die Gesamtzahl -- die Auswertung selbst
+        # beruht immer auf allen.
         self._send_json({
             "ok": True, "fehler": fehler,
             "anzahl": len(objekte),
-            "objekte": [o.to_dict() for o in objekte],
-            "marktlage": lage,
+            "objekte": [o.to_dict() for o in objekte[:200]],
+            "objekte_gekuerzt": len(objekte) > 200,
+            "marktlage": {g: r.to_dict() for g, (r, _) in ausgewertet.items()},
+            "referenzgebiet": {"gemeinde": gemeinde, "kanton": kanton, "plz": plz,
+                               "je_groesse": {g: gebiet for g, (_, gebiet) in ausgewertet.items()}},
         })
 
     def _handle_marktdaten_schreiben(self) -> None:
@@ -1033,6 +1076,36 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"ok": True, "gespeichert": bilanz, "abgelehnt": fehler,
                          "statistik": kern_markt.statistik(con)})
 
+    def _handle_marktdaten_radar(self) -> None:
+        """Vergleichsobjekte aus dem AkquiseRadar uebernehmen.
+
+        Der Radar wird dabei nur GELESEN. Er bleibt unveraendert -- die
+        Verbindung dorthin ist technisch schreibgeschuetzt.
+        """
+        kern_db, kern_markt = _kern_marktdaten()
+        if kern_markt is None:
+            self._send_json({"ok": False, "fehler": "Datenschicht (kern) nicht verfuegbar."},
+                            status=503)
+            return
+        try:
+            from kern import marktdaten_radar
+        except ImportError as exc:
+            self._send_json({"ok": False, "fehler": f"Radar-Import nicht verfuegbar: {exc}"},
+                            status=503)
+            return
+        try:
+            bericht = marktdaten_radar.importiere(kern_db.verbinde())
+        except FileNotFoundError as exc:
+            self._send_json(
+                {"ok": False, "fehler": f"AkquiseRadar-Datenbank nicht gefunden: {exc}"},
+                status=404)
+            return
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self._send_json({"ok": False, "fehler": f"Import fehlgeschlagen: {exc}"}, status=500)
+            return
+        self._send_json({"ok": True, **bericht})
+
     def _handle_marktdaten_loeschen(self) -> None:
         daten = self._lies_json_body()
         if daten is None:
@@ -1068,6 +1141,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/marktdaten":
             self._handle_marktdaten_schreiben()
+            return
+        if self.path == "/marktdaten/radar":
+            self._handle_marktdaten_radar()
             return
         if self.path == "/marktdaten/loeschen":
             self._handle_marktdaten_loeschen()

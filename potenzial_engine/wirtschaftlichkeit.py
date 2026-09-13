@@ -105,6 +105,12 @@ class Referenzwert:
         return asdict(self)
 
 
+# Ab wie vielen Referenzen ein Punktwert ueberhaupt eine Orientierung ist.
+# Bei zwei Beobachtungen sagt der Median nur, was zufaellig zwischen ihnen
+# lag -- die Bandbreite ist dann die ganze Aussage.
+MIN_REFERENZEN_FUER_VORSCHLAG = 3
+
+
 @dataclass
 class Marktwert:
     """Eine Marktgroesse mit allen drei Ebenen gleichzeitig sichtbar.
@@ -113,6 +119,12 @@ class Marktwert:
     Ausreisser robuster als der Mittelwert), sofern nicht ausdruecklich
     gesetzt. Er ist eine ORIENTIERUNG, kein Rechenwert, sobald der Benutzer
     eine eigene Annahme gesetzt hat.
+
+    Unter `MIN_REFERENZEN_FUER_VORSCHLAG` Referenzen entsteht KEIN Vorschlag.
+    Diese Schwelle steht hier und nicht in `marktdaten`, obwohl sie dort
+    fachlich beheimatet waere: sonst gaebe es zwei Stellen, die einen
+    Systemvorschlag bilden, und die zweite wuerde die erste stillschweigend
+    aushebeln -- genau das ist beim Einbau der Mindestanforderung passiert.
     """
     schluessel: str
     einheit: str
@@ -122,7 +134,8 @@ class Marktwert:
     begruendung: str = ""
 
     def __post_init__(self) -> None:
-        if self.systemvorschlag is None and self.referenzen:
+        if (self.systemvorschlag is None
+                and len(self.referenzen) >= MIN_REFERENZEN_FUER_VORSCHLAG):
             self.systemvorschlag = round(statistics.median(r.wert for r in self.referenzen), 2)
 
     @property

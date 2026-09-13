@@ -188,12 +188,55 @@ Die Spalte **Damals** ist die Einstufung der Erstanalyse (vor Block 1).
 | Verkauf / Miete / Rendite | D | ✅ | Stufe 5 |
 | Gewinn, Marge, Zielmarge | D | ✅ | Stufe 5 |
 | **Residualwert** | D | ✅ | stärkstes Alleinstellungsmerkmal |
-| Marktmodell (3 Ebenen) | B/D | ✅ | Struktur Block A · **Erfassung in der Oberfläche (Block 7)** — die Endpunkte gab es seit Block A, sie wurden nie aufgerufen |
-| Eigene Vergleichsobjekte | – | ✅ | Block A + Block 7: Einzelerfassung, CSV-Einfügen, Liste, Löschen — Quelle und Datenstand Pflicht |
+| Marktmodell (3 Ebenen) | B/D | ✅ | Struktur Block A · Erfassung in der Oberfläche (Block 7) · **Systemvorschlag erst ab 3 Referenzen, Preisart Angebot/Abschluss getrennt (Block 11)** |
+| Eigene Vergleichsobjekte | – | ✅ | Block A + Block 7: Einzelerfassung, CSV-Einfügen, Liste, Löschen — Quelle und Datenstand Pflicht · von Hand erfasste Referenzen behalten Vorrang vor jeder Eignungsregel (Block 11) |
+| **Marktdatenbasis gefüllt** | – | ✅ | Block 11 · 1'385 Vergleichsobjekte aus dem AkquiseRadar (nur lesend), mit Quelle, Beobachtungsdatum, Preisart und Datenqualität — siehe 7a |
+| **Ausreisser- und Plausibilitätsprüfung** | – | ✅ | Block 11 · Quartilsabstand ab 5 Werten, feste Plausibilitätsgrenzen, jeder Ausschluss mit Grund |
+| **Referenzgebiet mit Ausweitung** | – | ✅ | Block 11 · PLZ → PLZ-Region, ausgewiesen statt stillschweigend |
 | Lagerating | C | 📋 | |
 | Gemeindechecks | C | 📋 | |
 | **Rückwärtsrechnung** | – | ✅ | Block 9 · vier Stellschrauben, Einordnung gegen erfasste Vergleichsobjekte |
 | **Highest & Best Use** | – | ✅ | Block 10 · vier Filterstufen statt Score · Kriterium Residualwert · „nicht bestimmbar" statt Scheinrangfolge |
+
+
+#### 7a Marktdatenbasis — welche Quellen taugen wofür (Block 11)
+
+Die Struktur stand seit Block A, die Daten fehlten (3 Testobjekte). Gefüllt
+wurde sie aus der einzigen Quelle, die wirklich vorhanden ist: dem
+AkquiseRadar. **Gelesen wird ausschliesslich schreibgeschützt; der Radar
+bleibt unverändert.**
+
+| Marktgrösse | Radar geeignet? | Begründung |
+|---|---|---|
+| **Bodenpreis** CHF/m² | ✅ mit Vorbehalt | Bauland-Inserate nennen den Preis für genau die Fläche, um die es geht. Vorbehalt: Angebot ≠ Abschluss. |
+| **Verkaufspreis** Neubau CHF/m² | ❌ | Der Radar sammelt Akquisitionsziele (Häuser, Grundstücke), nicht Eigentumswohnungen: **1 Wohnungsinserat in 1'982 Objekten**. Ein Angebotspreis für ein ganzes Bestandshaus, geteilt durch die Wohnfläche, beantwortet „was kostet dieses Haus" — nicht „für wie viel lassen sich hier neu gebaute Wohnungen verkaufen". Das ist ein Methodenfehler, kein Datenmangel. |
+| **Mietzins** CHF/m²/Jahr | ❌ | 1 Objekt von 1'982 führt einen Mietzins. Der Radar sammelt Kaufinserate. |
+| **Bestandspreis** MFH/EFH | 🟡 vorhanden, nicht verwendet | 1'312 Objekte mit Preis und Wohnfläche. Als eigene Grösse („was kostet der Bestand heute") fachlich brauchbar, aber heute nirgends gebraucht — bewusst zurückgestellt statt zweckentfremdet. |
+
+**Für den Verkaufspreis geeignet wären:** eigene beurkundete Abschlüsse,
+Neubau-Vermarktungslisten, Auswertungen von Wüest Partner / IAZI /
+Fahrländer. Alle drei sind über die bestehende Einzelerfassung und den
+CSV-Import erfassbar — dafür braucht es keinen neuen Code, sondern Daten.
+
+**Bewusst nicht eingeführt:** kantonale Handänderungsstatistiken (nicht
+flächendeckend und nicht objektscharf), BFS-Preisindizes (Index, keine
+Niveaus), amtliche Schätzungen und Steuerwerte (keine Marktwerte).
+
+| Regel | Wert | Warum |
+|---|---|---|
+| Systemvorschlag ab | 3 Referenzen | Bei zwei Beobachtungen sagt der Median nur, was zufällig zwischen ihnen lag. Darunter: Bandbreite statt Punktwert. |
+| Sicherheit `hoch` ab | 6 Referenzen **und** mindestens ein beurkundeter Abschluss | Reine Angebotsdaten tragen einen systematischen, unbezifferbaren Aufschlag. |
+| Sicherheit `mittel` ab | 3 Referenzen, Streuung ≤ 45 % | |
+| Ausreisser | Quartilsabstand × 1.5, erst ab 5 Werten | Bei vier Beobachtungen ist nicht zu unterscheiden, ob eine falsch ist oder der Markt streut. |
+| Plausibilitätsgrenzen | Verkauf 1'000–30'000 · Miete 60–900 · Boden 50–20'000 | Keine Marktaussage, sondern Datenhygiene: real importiert wurden 0 CHF/m² („Preis auf Anfrage") und 30'333 CHF/m² (Gebäude- statt Parzellenfläche). |
+| Ortsschlüssel | PLZ vor Gemeindename | Es gibt vier Gemeinden namens Buchs. |
+| Ausweitung | PLZ → PLZ-Region (2 Stellen), dann Schluss | Wird ausgewiesen, nie stillschweigend. Eine gesamtschweizerische Auswertung gibt es nicht — Bodenpreise von 82 bis 4'956 CHF/m² in einem Median wären eine Zahl ohne Gegenstand. |
+
+**Was bei zu wenigen Daten passiert:** kein Systemvorschlag, die Bandbreite
+bleibt sichtbar, der Grund steht beziffert daneben („1 von 3 nötigen
+Referenzen"), und die Rückwärtsrechnung wie der HBU bekommen keine
+Unterscheidungsschwelle — die Rangfolge gilt dann als nicht marktseitig
+belegt.
 
 ### 8 Zusammenarbeit
 
@@ -310,17 +353,18 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 ## Teil 6 — Was als Nächstes kommt
 
-1. **Marktdatenbasis füllen** — die Struktur steht seit Block A, es fehlen
-   Vergleichsobjekte. Ohne sie bleibt jede Wirtschaftlichkeit eine Annahme.
-2. **Parzellenkombination A vs. A+B** — nutzt die vorhandene
+1. **Parzellenkombination A vs. A+B** — nutzt die vorhandene
    Nachbarparzellen-Geometrie.
-3. **Grundstückssuche / Screening** — der Sprung von „ein Grundstück prüfen"
+2. **Grundstückssuche / Screening** — der Sprung von „ein Grundstück prüfen"
    zu „Grundstücke finden".
-4. **Anomalieprüfung** — „AZ = 20.0" wurde real gemeldet und lief durch.
-5. **Baugesuche / Referenzprojekte in der Umgebung.**
+3. **Anomalieprüfung** — „AZ = 20.0" wurde real gemeldet und lief durch.
+4. **Baugesuche / Referenzprojekte in der Umgebung.**
+5. **Verkaufspreis-Referenzen beschaffen** — der einzige echte Datenmangel,
+   der übrig bleibt (siehe 7a). Kein Code-, sondern ein Datenthema.
 
-Erledigt seit der letzten Fassung: Rückwärtsrechnung (Block 9), Sanierung als
-Szenario (Block 8), Highest & Best Use (Block 10).
+Erledigt seit der letzten Fassung: Sanierung als Szenario (Block 8),
+Rückwärtsrechnung (Block 9), Highest & Best Use (Block 10),
+Marktdatenbasis (Block 11).
 
 ---
 
@@ -328,6 +372,7 @@ Szenario (Block 8), Highest & Best Use (Block 10).
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 13.09.2026 | Block 11 | Marktdatenbasis: 1'385 Vergleichsobjekte aus dem AkquiseRadar (nur lesend) · Preisart Angebot/Abschluss · Eignungsregel je Marktgrösse · Plausibilitäts- und Ausreisserprüfung · Systemvorschlag erst ab 3 Referenzen · Referenzgebiet mit ausgewiesener Ausweitung · eine zweite Stelle, die denselben Systemvorschlag bildete, aufgelöst |
 | 13.09.2026 | Block 10 | Highest & Best Use: vier Filterstufen statt gewichteter Punktzahl · „praktisch gleichwertig" aus der Streuung der Vergleichsobjekte abgeleitet · am echten Fall zwei eigene Fehler gefunden: „nicht bestimmbar" wurde als rechtliches Scheitern gefuehrt, und gleiche Landwerte bekamen verschiedene Plaetze |
 | 13.09.2026 | Block 9 | Rückwärtsrechnung „Was müsste sich ändern?" — plus zwei Fehler gefunden, die nur über den Endpunkt auftraten |
 | 12.09.2026 | Block 8 | Sanierung als eigenes Szenario — ohne erfundene Bestandsflächen oder Sanierungskosten |

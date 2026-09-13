@@ -64,8 +64,16 @@ def lauf(szenarien, wirtschaft, marktlage=None):
     )
 
 
-MARKT_ENG = {"verkauf": {"spanne": [8600, 9200], "median": 8900, "sicherheit": "mittel"}}
-MARKT_BREIT = {"verkauf": {"spanne": [6000, 12000], "median": 9000, "sicherheit": "gering"}}
+# Wie die Marktauswertung sie wirklich liefert: `systemvorschlag` entsteht
+# nur, wenn die Mindestanzahl an Referenzen erreicht ist -- daran haengt auch
+# die Unterscheidungsschwelle des HBU.
+MARKT_ENG = {"verkauf": {"spanne": [8600, 9200], "median": 8900,
+                         "systemvorschlag": 8900, "sicherheit": "mittel"}}
+MARKT_BREIT = {"verkauf": {"spanne": [6000, 12000], "median": 9000,
+                           "systemvorschlag": 9000, "sicherheit": "gering"}}
+# Zu wenige Referenzen: Spanne ja, Punktwert nein.
+MARKT_ZU_DUENN = {"verkauf": {"spanne": [8600, 9200], "median": 8900,
+                              "systemvorschlag": None, "sicherheit": "gering"}}
 
 
 # ---------------------------------------------------------------------------
@@ -235,9 +243,17 @@ def test_vorbehalte() -> None:
 
     schwach = lauf([szenario("a")], {"a": wirt(400000)},
                    {"verkauf": {"spanne": [8000, 9000], "median": 8500,
-                                "sicherheit": "gering"}})
+                                "systemvorschlag": 8500, "sicherheit": "gering"}})
     pruefe(any("gering" in v for v in schwach["vorbehalte"]),
            "Eine schwache Marktreferenz wird benannt")
+
+    # Zu duenn fuer einen Punktwert: dann gibt es auch keine Schwelle, ab der
+    # zwei Nutzungen unterscheidbar waeren -- und das steht als Vorbehalt da.
+    duenn = lauf([szenario("a")], {"a": wirt(400000)}, MARKT_ZU_DUENN)
+    pruefe(duenn["belastbarkeit"]["marktreferenz_vorhanden"] is False,
+           "Ohne tragfaehigen Systemvorschlag gilt die Marktreferenz als nicht vorhanden")
+    pruefe(any("nicht marktseitig belegt" in v for v in duenn["vorbehalte"]),
+           "und die Rangfolge wird als nicht marktseitig belegt gekennzeichnet")
 
     sauber = lauf([szenario("a")], {"a": wirt(400000)}, MARKT_ENG)
     pruefe(sauber["vorbehalte"] == [],

@@ -4117,16 +4117,29 @@ var mktMeldung = "";
 function mktGebiet() {
   // Vorbelegung aus dem analysierten Grundstueck -- Vergleichsobjekte sind
   // nur dann Referenzen, wenn sie zur Lage passen.
+  //
+  // Die PLZ kommt aus der Serverantwort und wird hier NICHT noch einmal aus
+  // der Adresse gelesen: sonst gaebe es zwei Stellen, die dieselbe Zahl
+  // bestimmen, und irgendwann bestimmen sie Verschiedenes.
   var m1 = (ergebnisAktuell || {}).modul1_geodaten || {};
   var g = m1.gemeinde || {};
-  return { gemeinde: g.gemeinde || "", kanton: g.kanton || "" };
+  var gebiet = (wErgebnis || {}).referenzgebiet || {};
+  return { gemeinde: g.gemeinde || "", kanton: g.kanton || "", plz: gebiet.plz || "" };
 }
+
+// Welches Gebiet wurde fuer diese Marktgroesse tatsaechlich ausgewertet?
+function wGebiet(groesse) {
+  return (((wErgebnis || {}).referenzgebiet || {}).je_groesse || {})[groesse] || null;
+}
+
+var mktGeladenFuer = null;
 
 function mktLaden(danach) {
   var g = mktGebiet();
   var frage = [];
   if (g.gemeinde) frage.push("gemeinde=" + encodeURIComponent(g.gemeinde));
   if (g.kanton) frage.push("kanton=" + encodeURIComponent(g.kanton));
+  if (g.plz) frage.push("plz=" + encodeURIComponent(g.plz));
   apiAbruf("/api/marktdaten" + (frage.length ? "?" + frage.join("&") : ""))
     .then(function (a) {
       mktObjekte = a.ok ? (a.daten.objekte || []) : [];
@@ -4155,24 +4168,29 @@ function mktZeichne() {
       'Marktpreis eine reine Annahme — die Engine weist das als ' +
       '<b>keine_daten</b> aus, statt eine Zahl zu erfinden.</div>'
     : '<div class="scroller"><table class="src"><thead><tr>' +
-      "<th>Objekt</th><th>Gemeinde</th><th>Art</th><th>Stand</th>" +
+      "<th>Objekt</th><th>Ort</th><th>Art</th><th>Stand</th>" +
       "<th>Verkauf</th><th>Miete</th><th>Boden</th><th>Quelle</th><th></th>" +
       "</tr></thead><tbody>" +
-      mktObjekte.map(function (o) {
+      mktObjekte.slice(0, 30).map(function (o) {
         return "<tr>" +
           "<td><b>" + esc(o.bezeichnung || "–") + "</b>" +
             (o.flaeche_m2 ? '<div class="f">' + esc(o.flaeche_m2) + " m²</div>" : "") + "</td>" +
-          "<td>" + esc(o.gemeinde || "–") + "</td>" +
+          "<td>" + esc([o.plz, o.gemeinde].filter(Boolean).join(" ") || "–") + "</td>" +
           "<td>" + esc(o.objektart || "–") + "</td>" +
           "<td>" + esc((o.datenstand || "").slice(0, 10)) + "</td>" +
           "<td>" + (leer(o.preis_chf_pro_m2) ? "–" : chf(o.preis_chf_pro_m2)) + "</td>" +
           "<td>" + (leer(o.mietzins_chf_pro_m2_jahr) ? "–" : chf(o.mietzins_chf_pro_m2_jahr)) + "</td>" +
           "<td>" + (leer(o.bodenpreis_chf_pro_m2) ? "–" : chf(o.bodenpreis_chf_pro_m2)) + "</td>" +
-          '<td><span class="f">' + esc(o.quelle || "–") + "</span></td>" +
+          '<td><span class="f">' + esc(o.quelle || "–") + "</span>" +
+            (o.preisart === "angebot" ? '<div class="f">Angebotspreis</div>' : "") + "</td>" +
           '<td><button class="m3knopf mkt-weg" data-id="' + esc(mktKennung(o)) +
             '" title="Entfernen">×</button></td>' +
         "</tr>";
-      }).join("") + "</tbody></table></div>";
+      }).join("") +
+      (mktObjekte.length > 30
+        ? '<tr><td colspan="9" class="f">… und ' + (mktObjekte.length - 30) +
+          " weitere. Die Auswertung verwendet alle.</td></tr>"
+        : "") + "</tbody></table></div>";
 
   var formular = !mktOffen ? "" :
     '<div class="mktform">' +
@@ -4225,6 +4243,8 @@ function mktZeichne() {
     (mktMeldung ? '<div class="note warn">' + esc(mktMeldung) + "</div>" : "") +
     liste +
     (mktOffen ? "" : '<div class="szwahl"><button class="szbtn" id="mkt-neu">+ Vergleichsobjekt</button>' +
+      '<button class="szbtn" id="mkt-radar" title="Kaufinserate aus dem AkquiseRadar ' +
+        'uebernehmen. Der Radar wird dabei nur gelesen.">Aus AkquiseRadar übernehmen</button>' +
       (mktObjekte.length ? '<button class="szbtn" id="mkt-neu-laden">Neu laden</button>' : "") + "</div>") +
     formular;
 
@@ -4240,6 +4260,33 @@ function mktVerdrahten() {
   an("mkt-neu", function () { mktOffen = true; mktMeldung = ""; mktZeichne(); });
   an("mkt-abbrechen", function () { mktOffen = false; mktMeldung = ""; mktZeichne(); });
   an("mkt-neu-laden", function () { mktLaden(); });
+  an("mkt-radar", function () {
+    var knopf = document.getElementById("mkt-radar");
+    if (knopf) { knopf.disabled = true; knopf.textContent = "übernehme …"; }
+    mktMeldung = "";
+    apiAbruf("/api/marktdaten/radar", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: "{}"
+    }).then(function (a) {
+      if (!a.ok) {
+        mktMeldung = a.fehler || "Übernahme fehlgeschlagen.";
+        mktZeichne();
+        return;
+      }
+      var b = a.daten.bilanz || {};
+      // Ehrlich beziffern, was passiert ist -- auch das, was NICHT
+      // uebernommen wurde. "1385 importiert" allein verschweigt, dass 551
+      // Inserate weder Preis noch Flaeche fuehren.
+      mktMeldung = "Aus dem AkquiseRadar: " + (b.uebernommen || 0) + " von " +
+        (b.gelesen || 0) + " Inseraten übernommen (" +
+        (a.daten.gespeichert || {}).neu + " neu, " +
+        (a.daten.gespeichert || {}).aktualisiert + " aktualisiert). " +
+        "Nicht übernommen: " + (b.ohne_preis_oder_flaeche || 0) +
+        " ohne Preis oder Fläche, " + (b.dubletten || 0) + " Dubletten. " +
+        "Alle als Angebotspreis gekennzeichnet — Inseratspreise, keine Abschlüsse.";
+      mktLaden(function () { mktZeichne(); wRechne(); });
+    });
+  });
   an("mkt-csv-zeigen", function () {
     var b = document.getElementById("mkt-csv-bereich");
     if (b) b.hidden = !b.hidden;
@@ -4345,6 +4392,26 @@ function wHatSanierung() {
   return Object.prototype.hasOwnProperty.call(sz, "sanierung");
 }
 
+// Die Referenzlage haengt NICHT am Szenario -- sie ist auch dann ausgewertet,
+// wenn keine Variante gerechnet werden konnte (etwa weil der Baubereich eine
+// Bandbreite ist). Ohne diesen Ersatz blieb der ganze Marktblock in solchen
+// Faellen leer, obwohl die Vergleichsobjekte vorlagen und der Benutzer genau
+// dann wissen will, worauf er sich stuetzen kann.
+//
+// Gerechnet wird hier nichts: jedes Feld stammt aus der Serverantwort.
+function nurReferenz(groesse) {
+  var lage = wLage(groesse);
+  if (!lage || !lage.anzahl) return null;
+  return {
+    systemvorschlag: lage.systemvorschlag,
+    benutzerannahme: null,
+    wert: null,
+    herkunft: "nicht_bestimmbar",
+    referenzspanne: lage.spanne,
+    anzahl_referenzen: lage.anzahl
+  };
+}
+
 function marktBlock(erg) {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
@@ -4382,23 +4449,46 @@ function marktBlock(erg) {
     var tabelle = objekte.length
       ? '<div class="scroller"><table class="src"><thead><tr><th>Objekt</th><th>Quelle</th>' +
         "<th>Stand</th><th>Wert</th><th>Qualität</th></tr></thead><tbody>" +
-        objekte.map(function (o) {
+        objekte.slice(0, 25).map(function (o) {
           return "<tr><td>" + esc(o.bezeichnung || "–") +
-            (o.gemeinde ? '<div class="f">' + esc(o.gemeinde) + "</div>" : "") + "</td>" +
+            (o.gemeinde || o.plz
+              ? '<div class="f">' + esc([o.plz, o.gemeinde].filter(Boolean).join(" ")) + "</div>"
+              : "") + "</td>" +
             "<td>" + esc(o.quelle || "–") +
             '<div class="f">' + esc(o.herkunftsart || "") + "</div></td>" +
             "<td>" + esc(o.datenstand || "–") +
             (leer(o.alter_monate) ? "" : '<div class="f">' + o.alter_monate + " Mt.</div>") + "</td>" +
             "<td>" + chf(o[feld]) + "</td>" +
-            "<td>" + esc(o.datenqualitaet || "–") + "</td></tr>";
-        }).join("") + "</tbody></table></div>"
+            "<td>" + esc(o.datenqualitaet || "–") +
+            '<div class="f">' + esc(o.preisart === "angebot" ? "Angebot"
+              : (o.preisart === "abschluss" ? "Abschluss" : "Preisart unbekannt")) +
+            "</div></td></tr>";
+        }).join("") +
+        (objekte.length > 25
+          ? '<tr><td colspan="5" class="f">… und ' + (objekte.length - 25) +
+            " weitere in der Auswertung.</td></tr>"
+          : "") + "</tbody></table></div>"
       : "";
 
+    var AUSSCHLUSS_TEXT = {
+      kein_wert: "kein Wert für diese Grösse", nicht_geeignet: "fachlich ungeeignet",
+      unplausibel: "unplausibler Wert", passt_nicht: "passt nicht zum Grundstück",
+      ausreisser: "Ausreisser"
+    };
+    var nachArt = lage.ausgeschlossen_nach_art || {};
     var ausgeschlossen = (lage.ausgeschlossen || []).length
-      ? '<div class="note">Nicht einbezogen: ' +
-        lage.ausgeschlossen.map(function (a) {
-          return esc(a.bezeichnung) + " (" + esc(a.grund) + ")";
-        }).join(" · ") + "</div>"
+      ? '<div class="note"><b>' + (lage.ausgeschlossen_gesamt || 0) +
+        " nicht einbezogen:</b> " +
+        Object.keys(nachArt).map(function (a) {
+          return nachArt[a] + "× " + (AUSSCHLUSS_TEXT[a] || a);
+        }).join(", ") +
+        '<ul class="plain">' + lage.ausgeschlossen.slice(0, 12).map(function (a) {
+          return "<li>" + esc(a.bezeichnung) + " — " + esc(a.grund) + "</li>";
+        }).join("") + "</ul>" +
+        ((lage.ausgeschlossen_gesamt || 0) > 12
+          ? '<span class="f">… und ' + (lage.ausgeschlossen_gesamt - 12) + " weitere.</span>"
+          : "") +
+        "</div>"
       : "";
 
     var details = (lage.begruendung && lage.begruendung.length)
@@ -4409,10 +4499,39 @@ function marktBlock(erg) {
         }).join("") + "</ul>" + tabelle + ausgeschlossen + "</div></details>"
       : "";
 
+    // Worueber redet diese Auswertung ueberhaupt? Eine auf die Umgebung
+    // ausgeweitete Aussage darf nicht wie eine oertliche aussehen.
+    var gebiet = wGebiet(lage.groesse) || {};
+    var gebietZeile = !gebiet.bezeichnung ? "" :
+      '<div class="wmzeile"><span class="wmlab">Ausgewertet für</span>' +
+      '<span class="wmwert">' + esc(gebiet.text || "") + " " + esc(gebiet.bezeichnung) +
+      (gebiet.ausgeweitet ? ' <span class="badge warn">ausgeweitet</span>' : "") +
+      "</span></div>";
+
+    var mind = lage.mindestanforderung || {};
+    var mindZeile = (mind.erfuellt === false)
+      ? '<div class="note warn">Kein Systemvorschlag: ' + (mind.vorhanden || 0) +
+        " von " + (mind.min_objekte || 3) + " nötigen Referenzen. " +
+        "Ein Punktwert aus weniger Beobachtungen wäre eine Behauptung — " +
+        "die Bandbreite ist hier die ganze Aussage." +
+        (gebiet.hinweis ? " " + esc(gebiet.hinweis) : "") + "</div>"
+      : (gebiet.ausgeweitet && gebiet.hinweis
+          ? '<div class="note warn">' + esc(gebiet.hinweis) + "</div>" : "");
+
+    var preisarten = lage.nach_preisart || {};
+    var angebote = preisarten.angebot || 0;
+    var preisartZeile = !angebote ? "" :
+      '<div class="note">' + angebote + " von " + (lage.anzahl || 0) +
+      (angebote === 1 ? " Referenz ist ein <b>Angebotspreis</b>"
+                      : " Referenzen sind <b>Angebotspreise</b>") +
+      " aus Inseraten, kein beurkundeter Abschluss. Angebotspreise liegen in der " +
+      "Regel höher — um wie viel, lässt sich ohne Handänderungsdaten nicht sagen.</div>";
+
     return '<div class="wmarkt">' +
       '<div class="wmkopf"><b>' + esc(label) + "</b>" +
         '<span class="badge ' + (SICHER_BADGE[sicher] || "mute") + '">' +
           esc(SICHER_TEXT[sicher] || sicher) + "</span></div>" +
+      gebietZeile +
       '<div class="wmzeile"><span class="wmlab">Marktreferenzen</span>' +
         '<span class="wmwert">' + refText +
         (mw.anzahl_referenzen ? " <em>(" + mw.anzahl_referenzen +
@@ -4426,7 +4545,7 @@ function marktBlock(erg) {
         '<span class="wmwert' + (leer(mw.wert) ? " na" : "") + '">' +
         (leer(mw.wert) ? "nicht gesetzt" : chf(mw.wert) + " " + einheit) +
         ' <span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></span></div>" +
-      details +
+      mindZeile + preisartZeile + details +
     "</div>";
   };
 
@@ -4453,9 +4572,11 @@ function marktBlock(erg) {
     "</div>" +
     (wErgebnis && wErgebnis.marktlage_fehler
       ? '<div class="note warn">' + esc(wErgebnis.marktlage_fehler) + "</div>" : "") +
-    referenzZeile(preis, "Verkaufspreis", "CHF/m²", wLage("verkauf")) +
-    referenzZeile((e.miete || {}).ansatz, "Mietzins", "CHF/m²/Jahr", wLage("miete")) +
-    referenzZeile((e.land || {}).bodenpreis, "Bodenpreis", "CHF/m²", wLage("boden")) +
+    referenzZeile(preis || nurReferenz("verkauf"), "Verkaufspreis", "CHF/m²", wLage("verkauf")) +
+    referenzZeile((e.miete || {}).ansatz || nurReferenz("miete"),
+                  "Mietzins", "CHF/m²/Jahr", wLage("miete")) +
+    referenzZeile((e.land || {}).bodenpreis || nurReferenz("boden"),
+                  "Bodenpreis", "CHF/m²", wLage("boden")) +
     ((e.land || {}).ansatz_bedeutung ? '<div class="note">' + esc(e.land.ansatz_bedeutung) + "</div>" : "") +
   "</div>";
 }
@@ -4945,7 +5066,19 @@ function wAngestossen() {
 
 function verdrahteWirtschaft() {
   // Vergleichsobjekte einmal holen, sobald die Wirtschaftlichkeit steht.
-  if (typeof mktLaden === "function" && !mktObjekte.length) mktLaden();
+  // Neu laden, sobald sich das Gebiet aendert. Beim allerersten Aufruf steht
+  // die PLZ noch nicht fest -- sie kommt aus der Serverantwort --, und ohne
+  // diesen Abgleich zeigte die Liste dauerhaft nur die Objekte mit exakt
+  // passendem Gemeindenamen, waehrend die Auswertung daneben mit der ganzen
+  // PLZ-Region rechnete. Zwei verschiedene Mengen unter einer Ueberschrift.
+  if (typeof mktLaden === "function") {
+    var g = mktGebiet();
+    var schluessel = [g.plz, g.gemeinde, g.kanton].join("|");
+    if (!mktObjekte.length || mktGeladenFuer !== schluessel) {
+      mktGeladenFuer = schluessel;
+      mktLaden();
+    }
+  }
 
   document.querySelectorAll("#sec-wirtschaft input, #sec-wirtschaft select").forEach(function (el) {
     if (el.dataset.verdrahtet) return;
