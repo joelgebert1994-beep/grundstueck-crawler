@@ -297,6 +297,22 @@ ul.plain li { margin-bottom: 4px; }
 .hbuwert { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .hbutext { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
 .hbustufen { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+.kartenlabel { background: rgba(255,255,255,.92); border: 1px solid rgba(0,0,0,.18);
+  border-radius: 4px; color: #14303a; font: 600 11px/1.2 Archivo, system-ui, sans-serif;
+  padding: 2px 6px; box-shadow: none; white-space: nowrap; }
+.kartenlabel::before { display: none; }
+.zhier { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.zebene { border: 1px solid var(--line-2); border-radius: 9px; padding: 10px 12px; background: var(--bg); }
+.zekopf { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.zekopf h4 { margin: 0; font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 700; }
+.zenum { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--bg-2); color: var(--ink-3); font-size: 10px; font-weight: 700; }
+.zeintrag { border-left: 3px solid var(--line); padding: 4px 0 4px 9px; margin-bottom: 5px; }
+.zeintrag.massgebend { border-left-color: var(--ok); }
+.zeintrag.zurueck { border-left-color: var(--line-2); opacity: .7; }
+.zezeile { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.zezeile b { font-size: 13.5px; }
 #navbar button.aktiv { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .ueberkopf { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
   margin: 10px 0 4px; }
@@ -646,24 +662,34 @@ function selektiere(layer, sectionId) {
   }
   if (sectionId) springeZu(sectionId);
 }
-function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId) {
+function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung, dauerhaft) {
   var layers = [];
   toRings(geom).forEach(function (ring) {
     var poly = L.polygon(ring, stil);
     poly._basisStil = stil;
     if (popupHtml) poly.bindPopup(popupHtml);
+    // Verstaendliche Beschriftung statt Layername. Dauerhaft nur dort, wo
+    // es genau eine Flaeche gibt -- bei Dutzenden Zonenflaechen waeren
+    // dauerhafte Etiketten unlesbarer als gar keine.
+    if (beschriftung) {
+      poly.bindTooltip(beschriftung, { permanent: !!dauerhaft, direction: "center",
+                                       className: "kartenlabel", opacity: 1 });
+    }
     poly.on("click", function () { selektiere(poly, sectionId); });
     poly.addTo(gruppe);
     layers.push(poly);
   });
   return layers;
 }
-function zeichneLinien(gruppe, geom, stil, popupHtml, sectionId) {
+function zeichneLinien(gruppe, geom, stil, popupHtml, sectionId, beschriftung) {
   var koords = tiefeVon(geom) >= 3 ? ringToLatLngs(geom[0]) : ringToLatLngs(geom);
   if (koords.length < 2) return [];
   var line = L.polyline(koords, stil);
   line._basisStil = stil;
   if (popupHtml) line.bindPopup(popupHtml);
+  if (beschriftung) {
+    line.bindTooltip(beschriftung, { direction: "center", className: "kartenlabel", opacity: 1 });
+  }
   line.on("click", function () { selektiere(line, sectionId); });
   line.addTo(gruppe);
   return [line];
@@ -695,10 +721,13 @@ function setLayerVerfuegbar(name, anzahl) {
   // Der Zaehler stand frueher nackt da ("Zonen 68") und musste geraten
   // werden. Er sagt, wie viele Flaechen dieser Art gezeichnet sind -- also
   // steht das jetzt auch dran.
+  // Frueher stand hier eine nackte Zahl ("Zonen 68"). Sie meinte die Anzahl
+  // gezeichneter Kartenflaechen -- eine Groesse, die niemand braucht und die
+  // aussah wie "68 Zonen gelten hier". Jetzt zeigt die Zeile nur noch, ob es
+  // etwas zu sehen gibt.
   var el = document.getElementById("cnt-" + name);
-  el.textContent = anzahl === 0 ? "–" : anzahl;
-  el.title = anzahl === 0 ? "keine Flächen dieser Art gefunden"
-                          : anzahl + " gezeichnete Flächen auf der Karte";
+  el.textContent = "";
+  el.title = "";
   // Die Ebenen, die beim Oeffnen sichtbar sein sollen, werden eingeschaltet,
   // sobald es dafuer Daten gibt. Die uebrigen bleiben aus, bis sie jemand
   // braucht -- sonst liegen sechs Ebenen uebereinander.
@@ -1608,22 +1637,38 @@ function zeichneErgebnisAufKarte(erg) {
     var popupP = "<b>Parzelle " + esc(pz.parzellennummer) + "</b><span class=\"m\">" +
       (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m² (amtlich)" : "Fläche unbekannt") +
       (pz.egrid ? "<br>" + esc(pz.egrid) : "") + "</span>";
-    var ls = zeichnePolygone(gruppen.parzelle, pz.parzellengeometrie, STIL.parzelle, popupP, "sec-grundstueck");
+    var ls = zeichnePolygone(gruppen.parzelle, pz.parzellengeometrie, STIL.parzelle, popupP,
+      "sec-grundstueck", "Parzelle " + esc(pz.parzellennummer || ""), true);
     anzP = ls.length;
     ls.forEach(merke);
   }
   setLayerVerfuegbar("parzelle", anzP);
 
   var nk = m1.nutzungsklassifikation || {};
+  var basisName = (nk.basiszone || {}).typ_kommunal_bezeichnung
+    || (nk.basiszone || {}).typ_kantonal_bezeichnung;
+  var snpMassgebend = alsListe(nk.sondernutzungsplaene_massgebend).length > 0;
   var anzZ = 0;
   alsListe(nk.festlegungen).forEach(function (f) {
     if (!f.geometrie_koordinaten) return;
     var ueberlagernd = (f.ebene || "") !== "grundnutzung";
-    var popupZ = "<b>" + esc(f.typ_kommunal_bezeichnung || f.typ_kantonal_bezeichnung || "Zone") + "</b><span class=\"m\">" +
-      esc(f.ebene) + " · " + esc(f.hauptnutzung_bezeichnung) + "<br>" +
-      esc(f.typ_kantonal_bezeichnung) + "<br>Rechtsstatus: " + esc(f.rechtsstatus) + " · Quelle: " + esc(f.quelle) + "</span>";
+    var zName = f.typ_kommunal_bezeichnung || f.typ_kantonal_bezeichnung || "Zone";
+    var istBasis = !ueberlagernd && basisName && zName === basisName;
+    // Das Popup beantwortet, was ein Makler wissen muss: was ist das, gilt
+    // es fuer dieses Grundstueck, und was folgt daraus.
+    var popupZ = "<b>" + esc(zName) + "</b><span class=\"m\">" +
+      (ueberlagernd ? "Überlagerung" : "Grundnutzung") +
+      (f.hauptnutzung_bezeichnung ? " · " + esc(f.hauptnutzung_bezeichnung) : "") + "<br>" +
+      (istBasis
+        ? (snpMassgebend
+            ? "<b>Gilt für dieses Grundstück</b> — tritt aber hinter den Sondernutzungsplan zurück."
+            : "<b>Massgebend für dieses Grundstück.</b>")
+        : (ueberlagernd ? "Überlagerung im Abfragebereich — schränkt die Grundnutzung ein, "
+                          + "ersetzt sie nicht."
+                        : "Nachbarzone im Abfragebereich — gilt nicht für dieses Grundstück.")) +
+      (f.rechtsstatus === "inKraft" ? "<br>rechtskräftig" : "") + "</span>";
     anzZ += zeichnePolygone(gruppen.zonen, f.geometrie_koordinaten,
-      ueberlagernd ? STIL.zoneUeber : STIL.zone, popupZ, "sec-baurecht").length;
+      ueberlagernd ? STIL.zoneUeber : STIL.zone, popupZ, "sec-baurecht", esc(zName)).length;
   });
   setLayerVerfuegbar("zonen", anzZ);
 
@@ -1640,7 +1685,8 @@ function zeichneErgebnisAufKarte(erg) {
         "Baubereich " + fmt(e.baubereich_m2, 1) + " m²<br>" +
         "Fussabdruck " + fmt(e.fussabdruck_m2, 1) + " m² (" + esc(e.fussabdruck_limitiert_durch) + ")<br>" +
         "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²</span>";
-      anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten, STIL.baubereich, popupB, "sec-potenzial").length;
+      anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten, STIL.baubereich, popupB,
+        "sec-potenzial", "Baubereich", true).length;
     });
   }
   setLayerVerfuegbar("baubereich", anzB);
@@ -1655,7 +1701,8 @@ function zeichneErgebnisAufKarte(erg) {
       (leer(g.geschosse) ? "Geschosszahl unbekannt" : esc(g.geschosse) + " Geschoss(e)") + "<br>" +
       "Grundriss " + fmt(g.grundriss_flaeche_m2, 1) + " m²" +
       (leer(g.grundflaeche_gwr_m2) ? "" : ", GWR " + fmt(g.grundflaeche_gwr_m2, 1) + " m²") + "</span>";
-    anzBest += zeichnePolygone(gruppen.bestand, [g.grundriss], STIL.bestand, popup, "sec-szenarien").length;
+    anzBest += zeichnePolygone(gruppen.bestand, [g.grundriss], STIL.bestand, popup,
+      "sec-szenarien", "Bestand").length;
   });
   setLayerVerfuegbar("bestand", anzBest);
 
@@ -1664,15 +1711,18 @@ function zeichneErgebnisAufKarte(erg) {
   alsListe(rg.gewaesserraum_flaechen).forEach(function (gr) {
     var p = "<b>Gewässerraum</b><span class=\"m\">" + esc(gr.gewaessername || "ohne Namensangabe") +
       "<br>Quelle: Kanton " + esc(gr.kanton) + "</span>";
-    anzR += zeichnePolygone(gruppen.restrikt, gr.koordinaten, STIL.restrikt, p, "sec-restriktionen").length;
+    anzR += zeichnePolygone(gruppen.restrikt, gr.koordinaten, STIL.restrikt, p,
+      "sec-restriktionen", "Gewässerraum").length;
   });
   alsListe(rg.baulinien_gefunden).forEach(function (bl) {
     var p = "<b>Baulinie</b><span class=\"m\">" + esc(bl.art || bl.typ || "Baulinie") + "<br>Quelle: Kanton " + esc(bl.kanton) + "</span>";
-    anzR += zeichneLinien(gruppen.restrikt, bl.koordinaten || bl.geometrie_koordinaten, STIL.restrikt, p, "sec-restriktionen").length;
+    anzR += zeichneLinien(gruppen.restrikt, bl.koordinaten || bl.geometrie_koordinaten, STIL.restrikt, p,
+      "sec-restriktionen", "Baulinie").length;
   });
   alsListe(rg.restriktionsflaechen_fuer_g1).forEach(function (rf) {
     var p = "<b>Restriktionsfläche (in G1 abgezogen)</b><span class=\"m\">" + esc(rf.typ || rf.quelle || "Restriktion") + "</span>";
-    anzR += zeichnePolygone(gruppen.restrikt, rf.koordinaten || rf, STIL.restrikt, p, "sec-restriktionen").length;
+    anzR += zeichnePolygone(gruppen.restrikt, rf.koordinaten || rf, STIL.restrikt, p,
+      "sec-restriktionen", esc(rf.typ || "Restriktion")).length;
   });
   setLayerVerfuegbar("restrikt", anzR);
 
@@ -1772,8 +1822,9 @@ var REITER = [
   ["baurecht", "Baurecht", ["sec-baurecht", "sec-restriktionen"]],
   ["karte", "Karte", ["sec-karte"]],
   ["potenzial", "Potenzial",
-   ["sec-potenzial", "sec-flaechen", "sec-szenarien", "sec-entwicklung", "sec-screening"]],
-  ["markt", "Markt", ["sec-wirtschaft"]],
+   ["sec-potenzial", "sec-flaechen", "sec-szenarien", "sec-entwicklung",
+    "sec-wirtschaft", "sec-screening"]],
+  ["markt", "Markt", ["sec-markt"]],
   ["quellen", "Daten & Quellen", ["sec-grundstueck", "sec-standort", "sec-quellen"]]
 ];
 var reiterAktiv = "uebersicht";
@@ -1881,9 +1932,8 @@ function secUebersicht(erg, m1, zz) {
         esc((m1.gemeinde || {}).gemeinde || "–") + "</b></div>" +
     "</div>" +
     '<h4 class="subhead">Was gilt hier?</h4>' +
-    '<div class="ueberzone"><span>Grundnutzung</span><b>' +
-      esc(basis.typ_kommunal_bezeichnung || amtl.bezeichnung || "nicht bestimmt") + "</b></div>" +
     leitsatz +
+    zonenHierarchie(m1, zz) +
     (eckwerte.length
       ? '<h4 class="subhead">Was ist baulich möglich?</h4><div class="tiles">' +
         eckwerte.map(function (p) { return tile(p[0], p[1]); }).join("") + "</div>" +
@@ -1928,7 +1978,7 @@ function renderDossier(erg) {
     secBaurecht(erg, m1, zz) + secRestriktionen(m1) +
     secKarte() +
     secPotenzial(erg) + secFlaechen(erg) + secSzenarien(erg) + secEntwicklung(erg) + scrBlock() +
-    secWirtschaft(erg) +
+    secMarkt(erg) + secWirtschaft(erg) +
     secGrundstueck(m1) + secStandort(m1) + secQuellen(erg);
   var zsNeu = document.getElementById("zs-neu");
   if (zsNeu) zsNeu.onclick = function () { starteAnalyse(true); };
@@ -2173,6 +2223,121 @@ function kantenprotokoll(erg, m1) {
       : "") +
     (ausG1 ? "" : '<div class="note">Abstände werden erst ausgewiesen, wenn G1 rechnet (eindeutig zugeordnete Zone).</div>');
 }
+/* --- Zonenhierarchie: was gilt, in welcher Reihenfolge ---------------------
+
+   Vier Ebenen, und zwar in der Reihenfolge, in der sie einander vorgehen:
+
+     A  Grundnutzung          die ordentliche Bauzone
+     B  Sondernutzung         Gestaltungs-/Sondernutzungs-/Ueberbauungsplan
+     C  Ueberlagerungen       Schutzzonen, Perimeter, Baulinien
+     D  Restriktionen         Gewaesserraum, Waldabstand, belastete Standorte
+
+   Der Punkt ist nicht die Liste, sondern der Satz darueber: WELCHE dieser
+   Ebenen fuer dieses Grundstueck massgebend ist. Eine Aufzaehlung von
+   Zonenobjekten beantwortet das nicht.
+
+   Gerechnet wird hier nichts -- alle Angaben stammen aus der bereits
+   vorliegenden Klassifikation (Modul 1b) und der Restriktionsabfrage.
+*/
+function zonenEbene(nummer, titel, inhalt, hinweis) {
+  if (!inhalt) return "";
+  return '<div class="zebene"><div class="zekopf"><span class="zenum">' + nummer +
+    "</span><h4>" + esc(titel) + "</h4></div>" + inhalt +
+    (hinweis ? '<div class="f">' + esc(hinweis) + "</div>" : "") + "</div>";
+}
+
+function zonenHierarchie(m1, zz) {
+  var nk = m1.nutzungsklassifikation || {};
+  var basis = nk.basiszone || {};
+  var amtl = ((m1.oereb || {}).amtliche_zonenbezeichnungen || [])[0] || {};
+  var snpListe = alsListe(nk.sondernutzungsplaene_massgebend);
+  var massgebendSnp = zz.status === "sondernutzungsplan_massgebend" || snpListe.length > 0;
+
+  // --- A Grundnutzung ---------------------------------------------------
+  var name = basis.typ_kommunal_bezeichnung || amtl.zonenbezeichnung || amtl.bezeichnung;
+  var a = name
+    ? '<div class="zeintrag' + (massgebendSnp ? " zurueck" : " massgebend") + '">' +
+        '<div class="zezeile"><b>' + esc(name) + "</b>" +
+        (massgebendSnp
+          ? '<span class="badge mute">tritt zurück</span>'
+          : '<span class="badge ok">massgebend</span>') + "</div>" +
+        '<div class="f">' +
+        esc([basis.typ_kantonal_bezeichnung, basis.hauptnutzung_bezeichnung]
+            .filter(Boolean).join(" · ") || "kantonale Einordnung nicht verfügbar") +
+        (basis.rechtsstatus === "inKraft" ? " · rechtskräftig" : "") + "</div>" +
+      "</div>"
+    : '<div class="note warn">Keine eindeutige Grundnutzung zugeordnet. Ohne sie gibt es ' +
+      'keine Nutzungsziffern und damit keine belastbare Potenzialaussage.</div>';
+
+  // --- B Sondernutzung --------------------------------------------------
+  var b = snpListe.length
+    ? snpListe.map(function (s) {
+        return '<div class="zeintrag massgebend"><div class="zezeile"><b>' +
+          esc(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung || "Sondernutzungsplan") +
+          '</b><span class="badge stop">massgebend</span></div>' +
+          '<div class="f">' + esc(s.typ_kantonal_bezeichnung || "") +
+          (s.rechtsstatus === "inKraft" ? " · rechtskräftig" : "") + "</div></div>";
+      }).join("") +
+      '<div class="note stop">Der Sondernutzungsplan geht der ordentlichen Bauzone vor. ' +
+      'Seine Masse stehen im Plan selbst und werden von dieser Anwendung nicht ' +
+      'ausgewertet — die Zonenziffern der Grundnutzung gelten hier nicht.</div>'
+    : '<div class="f">Kein rechtskräftiger Sondernutzungs-, Gestaltungs- oder ' +
+      'Überbauungsplan gefunden, der diese Parzelle erfasst.</div>';
+
+  // --- C Ueberlagerungen ------------------------------------------------
+  var ueber = alsListe(nk.festlegungen).filter(function (f) {
+    return (f.ebene || "") !== "grundnutzung" && f.ist_rechtskraeftig;
+  });
+  var EBENE_TEXT = { ueberlagernd_flaeche: "Fläche", ueberlagernd_linie: "Linie",
+                     ueberlagernd_punkt: "Punkt" };
+  var c = ueber.length
+    ? ueber.map(function (u) {
+        return '<div class="zeintrag"><div class="zezeile"><b>' +
+          esc(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung || "Überlagerung") +
+          '</b><span class="badge warn">zu beachten</span></div>' +
+          '<div class="f">' + esc([EBENE_TEXT[u.ebene] || u.ebene,
+                                   u.hauptnutzung_bezeichnung].filter(Boolean).join(" · ")) +
+          "</div></div>";
+      }).join("")
+    : '<div class="f">Keine rechtskräftigen Überlagerungen im Abfragebereich gefunden.</div>';
+
+  // --- D Restriktionen --------------------------------------------------
+  var r = m1.restriktionsgeometrie || {};
+  var rTeile = [];
+  if ((r.gewaesserraum_flaechen || []).length) {
+    rTeile.push(["Gewässerraum",
+                 (r.gewaesserraum_flaechen || []).length + " Fläche(n) auf oder an der Parzelle"]);
+  }
+  if (!leer(r.waldgrenze_min_abstand_m)) {
+    rTeile.push(["Wald", fmt(r.waldgrenze_min_abstand_m, 1) + " m bis zur Waldgrenze" +
+                 (leer(r.waldabstand_m_verwendet) ? ""
+                  : " · gerechneter Waldabstand " + fmt(r.waldabstand_m_verwendet, 1) + " m")]);
+  }
+  if ((r.baulinien_gefunden || []).length) {
+    rTeile.push(["Baulinien", (r.baulinien_gefunden || []).length + " gefunden"]);
+  }
+  var risiken = (m1.oereb || {}).umweltrisiken || {};
+  Object.keys(risiken).forEach(function (k) {
+    var wert = risiken[k];
+    var status = (wert && typeof wert === "object") ? wert.status : wert;
+    if (status && String(status).toLowerCase().indexOf("betroffen") === 0) {
+      rTeile.push([k.replace(/_/g, " "), String(status)]);
+    }
+  });
+  var d = rTeile.length
+    ? kvRows(rTeile)
+    : '<div class="f">Keine Gewässerräume, Waldabstände, Baulinien oder belasteten ' +
+      'Standorte gefunden, die diese Parzelle betreffen.</div>';
+
+  return '<div class="zhier">' +
+    zonenEbene("A", "Grundnutzung", a) +
+    zonenEbene("B", "Sondernutzung", b) +
+    zonenEbene("C", "Überlagerungen", c,
+               "Überlagerungen ändern die Grundnutzung nicht, schränken sie aber ein.") +
+    zonenEbene("D", "Restriktionen", d) +
+  "</div>";
+}
+
 function secBaurecht(erg, m1, zz) {
   var nk = m1.nutzungsklassifikation || {}, m2 = erg.modul2_bzo_analyse || {}, oereb = m1.oereb || {};
   var basis = nk.basiszone || {};
@@ -2229,6 +2394,10 @@ function secBaurecht(erg, m1, zz) {
 
   return '<section class="sec" id="sec-baurecht">' +
     '<div class="sechead"><span class="num">03</span><h3>Baurecht</h3><span class="right">' + mapBtn("zonen", "Zonen auf Karte") + "</span></div>" +
+    '<div class="note">Vier Ebenen, in der Reihenfolge, in der sie einander vorgehen. ' +
+    'Massgebend ist immer die oberste, die tatsächlich greift.</div>' +
+    zonenHierarchie(m1, zz) +
+    '<h4 class="subhead">Herleitung und Nachweise</h4>' +
     kvRows([
       ["Grundnutzung (amtlich)", basis.typ_kommunal_bezeichnung],
       ["Kantonaler Zonentyp", basis.typ_kantonal_bezeichnung ? basis.typ_kantonal_bezeichnung + " (" + (basis.typ_kantonal_code || "–") + ")" : null],
@@ -5738,12 +5907,44 @@ function secWirtschaft(erg) {
     '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
     '<div id="w-hbu">' + hbuBlock() + "</div>" +
     '<div id="w-kombination">' + kombBlock() + "</div>" +
-    '<div class="wspalten">' +
-      '<div id="w-markt">' + marktBlock(erg) + "</div>" +
-      '<div id="mkt-verwaltung"></div>' +
-      '<div id="w-mix">' + mixBlock() + "</div>" +
-    "</div>" +
+    '<div id="w-mix">' + mixBlock() + "</div>" +
     '<div id="w-bkp">' + bkpBlock() + "</div>" +
+  "</section>";
+}
+
+/* --- Markt: Referenzen und eigene Annahmen, sichtbar getrennt ----------
+
+   Der Reiter zeigt drei Dinge in dieser Reihenfolge:
+
+     1  externe Marktquellen   heute keine angeschlossen -- und das steht da
+     2  erfasste Vergleichsobjekte  mit Quelle, Datum, Preisart, Qualitaet
+     3  die eigene Annahme     die Zahl, mit der tatsaechlich gerechnet wird
+
+   Was extern beobachtet wurde und was der Benutzer selbst setzt, darf nie
+   in derselben Zeile stehen. Erfunden wird hier nichts: gibt es keine
+   Referenz, steht "keine" und nicht ein Platzhalterwert.
+*/
+function secMarkt(erg) {
+  var blockiert = (erg.zonen_zuordnung || {}).status !== "gefunden";
+  var kopf = '<div class="sechead"><span class="num">07</span><h3>Markt</h3>' +
+    '<span class="right"><span class="badge mute">Referenzen &amp; Annahmen</span></span></div>';
+  if (blockiert) {
+    return '<section class="sec" id="sec-markt">' + kopf +
+      '<div class="note warn">Ohne eindeutige Zonenzuordnung gibt es keine Fläche, auf die ' +
+      'ein Preis je m² angewendet werden könnte. Die Eingabe bleibt deshalb gesperrt.</div></section>';
+  }
+  return '<section class="sec" id="sec-markt">' + kopf +
+    '<h4 class="subhead">Externe Marktquellen</h4>' +
+    '<div class="note warn"><b>Keine externe Marktdatenquelle angeschlossen.</b> ' +
+    'Anbieter wie Wüest Partner, IAZI oder RealAdvisor liefern Preisindikatoren je ' +
+    'Gemeinde und Objektart. Solange keine davon angebunden ist, zeigt diese ' +
+    'Anwendung <b>keinen</b> externen Marktwert — auch keinen geschätzten. Was hier ' +
+    'steht, stammt ausschliesslich aus selbst erfassten Vergleichsobjekten und aus ' +
+    'Ihren eigenen Annahmen.<br>Sobald eine Quelle angebunden ist, erscheint sie hier ' +
+    'mit Quelle, Stand, Datentyp und Bandbreite — und bleibt von Ihrer Annahme getrennt.</div>' +
+    '<h4 class="subhead">Referenzen und Annahmen je Marktgrösse</h4>' +
+    '<div id="w-markt">' + marktBlock(erg) + "</div>" +
+    '<div id="mkt-verwaltung"></div>' +
   "</section>";
 }
 
