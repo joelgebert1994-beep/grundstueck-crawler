@@ -561,9 +561,60 @@ def test_sanierung() -> None:
     print()
 
 
+def test_aussenkante_pipeline() -> None:
+    """Die Signaturen, die der Webdienst tatsaechlich aufruft.
+
+    Anlass: die Oberflaeche reichte `wohnungsmix_herkunft` durch, die Engine
+    kannte es -- aber die Wrapper-Funktion in pipeline.py nicht. Der Aufruf
+    scheiterte mit "unexpected keyword argument", und zwar NUR ueber den
+    Endpunkt. Die Offline-Tests riefen szenarien.berechne_szenarien direkt
+    auf und gingen an der Aussenkante vorbei.
+
+    Dieser Test prueft deshalb genau das, was webapp.py uebergibt: dass jeder
+    dort benutzte Schluessel von der Wrapper-Signatur angenommen wird. Er
+    braucht keine Analyse und kein Netz -- er liest die Signaturen.
+    """
+    import inspect
+
+    from potenzial_engine import pipeline
+
+    print("=== Aussenkante: was der Webdienst uebergibt, muss ankommen ===")
+
+    # Genau die Schluessel, die webapp.py an _szen() uebergibt.
+    erwartet_szenarien = {
+        "auswahl", "benutzerwerte", "wohnungsmix", "wohnungsmix_begruendung",
+        "wohnungsmix_herkunft", "profil", "attika_zulaessig",
+        "dachgeschoss_zulaessig", "gebaeudeabstand_m", "restflaeche_verteilen",
+        "bestand_flaeche_nwf_m2",
+    }
+    hat = set(inspect.signature(pipeline.berechne_szenarien).parameters) - {"analyse"}
+    fehlend = erwartet_szenarien - hat
+    pruefe(not fehlend,
+           f"pipeline.berechne_szenarien nimmt alle Schluessel des Webdienstes an"
+           + (f" -- FEHLT: {sorted(fehlend)}" if fehlend else f" ({len(hat)})"))
+
+    erwartet_wirt = {"kostenpositionen", "auswahl", "szenarien_ergebnis", "marktlage"}
+    hat_w = set(inspect.signature(pipeline.berechne_wirtschaftlichkeit_je_szenario).parameters)
+    fehlend_w = erwartet_wirt - hat_w
+    pruefe(not fehlend_w,
+           "pipeline.berechne_wirtschaftlichkeit_je_szenario ebenso"
+           + (f" -- FEHLT: {sorted(fehlend_w)}" if fehlend_w else ""))
+
+    # Und die Gegenrichtung: was der Wrapper weiterreicht, muss die Engine
+    # kennen. Sonst faellt der Fehler erst eine Ebene tiefer auf.
+    innen = set(inspect.signature(sz.berechne_szenarien).parameters)
+    weitergereicht = erwartet_szenarien - {"auswahl"}
+    unbekannt = {k for k in weitergereicht if k not in innen}
+    pruefe(not unbekannt,
+           "und die Engine kennt jeden weitergereichten Schluessel"
+           + (f" -- UNBEKANNT: {sorted(unbekannt)}" if unbekannt else ""))
+    print()
+
+
 def main() -> None:
     test_bestand()
     test_sanierung()
+    test_aussenkante_pipeline()
     test_budget()
     test_anbau()
     test_schmale_restflaeche()

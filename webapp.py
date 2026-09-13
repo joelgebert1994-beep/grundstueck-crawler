@@ -326,7 +326,10 @@ def _rechne_entwicklung(analyse: "Analyse", daten: dict) -> dict:
         ]
 
     wirtschaft = _wirt(analyse, markt, kostenpositionen=positionen,
-                       szenarien_ergebnis=szenarien)
+                       szenarien_ergebnis=szenarien,
+                       # Fuer die Einordnung des rueckwaerts ermittelten
+                       # Verkaufspreises gegen die erfassten Vergleichsobjekte.
+                       marktlage={g: r.to_dict() for g, r in lage.items()})
     return {
         "szenarien": szenarien,
         "wirtschaftlichkeit": wirtschaft,

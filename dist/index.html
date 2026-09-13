@@ -4485,6 +4485,70 @@ function bkpBlock() {
   "</div>";
 }
 
+// „Was müsste sich ändern?" -- die Rückwärtsrechnung.
+//
+// Jede Zeile beantwortet dieselbe Frage für eine andere Stellschraube: was
+// wäre nötig, wenn ALLES ANDERE gleich bliebe. Die Werte sind bewusst
+// getrennt ausgewiesen -- vorhandener Wert, nötiger Wert, Differenz -- statt
+// zu einer Zahl verschmolzen.
+function rueckwaertsBlock(e) {
+  var r = e.rueckwaertsrechnung;
+  if (!r) return "";
+  if (r.status !== "berechnet") {
+    return '<details class="more"><summary>Was müsste sich ändern?</summary><div>' +
+      '<div class="note warn">' + esc(r.grund || "Nicht bestimmbar.") + "</div></div></details>";
+  }
+
+  var erreicht = r.zielmarge_erreicht === true;
+  var zeilen = alsListe(r.stellschrauben).map(function (st) {
+    if (st.status === "nicht_zielfuehrend") {
+      return '<tr><th>' + esc(st.bezeichnung) + "</th>" +
+        '<td colspan="4"><span class="badge stop">nicht zielführend</span> ' +
+        esc(st.grund) + "</td></tr>";
+    }
+    if (st.status !== "berechnet") {
+      return '<tr><th>' + esc(st.bezeichnung) + "</th>" +
+        '<td colspan="4">' + esc(st.grund || "–") + "</td></tr>";
+    }
+    var istWert = leer(st.ist_chf) ? st.ist_m2 : st.ist_chf;
+    var noetig  = leer(st.noetig_chf) ? st.noetig_m2 : st.noetig_chf;
+    var aender  = leer(st.aenderung_chf) ? st.aenderung_m2 : st.aenderung_chf;
+    var je = st.je_einheit;
+    return "<tr>" +
+      "<th>" + esc(st.bezeichnung) +
+        (st.erfuellt ? ' <span class="badge ok">erfüllt</span>' : "") + "</th>" +
+      "<td>" + chf(istWert) + "</td>" +
+      "<td><b>" + chf(noetig) + "</b></td>" +
+      '<td class="' + (aender >= 0 ? "wpos" : "wneg") + '">' +
+        (aender >= 0 ? "+" : "") + chf(aender) +
+        (leer(st.aenderung_anteil) ? "" :
+          ' <span class="f">(' + (st.aenderung_anteil >= 0 ? "+" : "") +
+          Math.round(st.aenderung_anteil * 100) + " %)</span>") + "</td>" +
+      "<td>" + (je
+        ? '<span class="f">' + chf(je.ist) + " → <b>" + chf(je.noetig) + "</b> " +
+          esc(je.einheit) + "</span>" +
+          (je.einordnung
+            ? '<div class="note ' + (je.im_referenzbereich ? "" : "warn") + '">' +
+              esc(je.einordnung) + "</div>"
+            : "")
+        : "") + "</td>" +
+    "</tr>";
+  }).join("");
+
+  return '<details class="more"' + (erreicht ? "" : " open") +
+    "><summary>Was müsste sich ändern?" +
+    (erreicht
+      ? ' <span class="badge ok">Zielmarge erreicht</span>'
+      : ' <span class="badge stop">Lücke CHF ' + chf(r.luecke_chf, true) + "</span>") +
+    "</summary><div>" +
+    '<div class="note">' + esc(r.grundregel) + "</div>" +
+    '<div class="scroller"><table class="src"><thead><tr>' +
+      "<th>Stellschraube</th><th>heute</th><th>nötig</th><th>Änderung</th><th>je Einheit</th>" +
+    "</tr></thead><tbody>" + zeilen + "</tbody></table></div>" +
+    '<div class="note">' + esc(r.hinweis) + "</div>" +
+    "</div></details>";
+}
+
 function ergebnisBlock() {
   var e = wErgebnis && wErgebnis.szenarien ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
   var g = e.ergebnis || {};
@@ -4508,6 +4572,7 @@ function ergebnisBlock() {
   (r.rechnung ? '<div class="note">' + esc(r.rechnung) + "</div>" : "") +
   (r.hinweis ? '<div class="note stop">' + esc(r.hinweis) + "</div>" : "") +
   (r.grund ? '<div class="note warn">' + esc(r.grund) + "</div>" : "") +
+  rueckwaertsBlock(e) +
   (alsListe(e.offene_punkte).length
     ? '<details class="more"><summary>Offene Punkte (' + alsListe(e.offene_punkte).length +
       ')</summary><div><ul class="plain">' +

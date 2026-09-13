@@ -712,6 +712,7 @@ def berechne_fuer_szenario(
     kostenpositionen: Optional[list[Kostenposition]] = None,
     *,
     bestand_volumen_m3: Optional[float] = None,
+    marktlage: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Die vollstaendige wirtschaftliche Rechnung fuer EIN Szenario."""
     flaechen = (szenario.get("flaechen") or {}).get("flaechen")
@@ -772,6 +773,15 @@ def berechne_fuer_szenario(
     if marge is not None:
         zielmarge_erreicht = marge >= markt.zielmarge
 
+    # Rueckwaertsrechnung: was muesste sich aendern? Nutzt genau die Groessen
+    # von oben -- keine zweite Rechenlogik, keine zusaetzliche Datenquelle.
+    rueckwaerts = _rueckwaertsrechnung(
+        erloes=erloes, baukosten=baukosten, landwert=landwert,
+        marge=marge, zielmarge=markt.zielmarge, verkauf=verkauf,
+        flaechen=flaechen, grundstuecksflaeche_m2=grundstuecksflaeche_m2,
+        marktlage=marktlage,
+    )
+
     def pro_m2(betrag: Optional[float], basis: str = "nwf") -> Optional[float]:
         flaeche, _ = _flaeche_aus(flaechen, basis, wohnungen)
         if betrag is None or not flaeche:
@@ -805,6 +815,7 @@ def berechne_fuer_szenario(
             "erloes_pro_m2_nwf": pro_m2(erloes),
         },
         "residualwert": residual,
+        "rueckwaertsrechnung": rueckwaerts,
         "markt": markt.to_dict(),
         "offene_punkte": _offene_punkte(
             kosten, verkauf, miete, landwert, gesamtinvestition,
@@ -850,6 +861,222 @@ def _residualwert(
     }
 
 
+def _stellschraube(
+    schluessel: str, bezeichnung: str, einheit: str,
+    ist: Optional[float], noetig: Optional[float], richtung: str,
+    grund: Optional[str] = None, je_einheit: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Eine einzelne Stellschraube, mit sauber getrennten Groessen.
+
+    ist        was heute gerechnet wird
+    noetig     was noetig waere, damit die Zielmarge aufgeht
+    aenderung  die Differenz -- absolut und relativ
+    richtung   "hoeher" oder "tiefer": in welche Richtung sie sich bewegen muss
+    """
+    if ist is None or noetig is None:
+        return {
+            "schluessel": schluessel, "bezeichnung": bezeichnung, "einheit": einheit,
+            "status": HERKUNFT_NICHT_BESTIMMBAR,
+            "grund": grund or "Nicht bestimmbar.",
+        }
+    aenderung = round(noetig - ist, 0)
+    eintrag = {
+        "schluessel": schluessel,
+        "bezeichnung": bezeichnung,
+        "einheit": einheit,
+        "status": "berechnet",
+        "ist_chf": round(ist, 0),
+        "noetig_chf": round(noetig, 0),
+        "aenderung_chf": aenderung,
+        "aenderung_anteil": round(aenderung / ist, 4) if ist else None,
+        "richtung": richtung,
+        # Schon erfuellt: die Stellschraube muss sich gar nicht bewegen.
+        # "tiefer" heisst, der Wert MUSS sinken -- erfuellt ist er dann, wenn
+        # der noetige Wert ueber dem heutigen liegt (aenderung >= 0). Bei
+        # "hoeher" umgekehrt. Beide Zweige gleich zu schreiben waere ein
+        # Fehler, der jede nicht erfuellte Stellschraube als erfuellt meldet.
+        "erfuellt": (aenderung >= 0) if richtung == "tiefer" else (aenderung <= 0),
+    }
+    if je_einheit:
+        eintrag["je_einheit"] = je_einheit
+    return eintrag
+
+
+def _rueckwaertsrechnung(
+    *, erloes: Optional[float], baukosten: Optional[float], landwert: Optional[float],
+    marge: Optional[float], zielmarge: float, verkauf: dict[str, Any],
+    flaechen: Optional[dict[str, Any]], grundstuecksflaeche_m2: Optional[float],
+    marktlage: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Was muesste sich aendern, damit die Zielmarge aufgeht?
+
+    Dieselbe Gleichung wie vorwaerts, nur nach einer anderen Unbekannten
+    aufgeloest:
+
+        Gewinn = Erloes - Baukosten - Land
+        Marge  = Gewinn / Erloes                 >= z
+
+    Daraus je Stellschraube:
+
+        Land       <= Erloes * (1 - z) - Baukosten      (= Residualwert)
+        Erloes     >= (Baukosten + Land) / (1 - z)
+        Baukosten  <= Erloes * (1 - z) - Land
+
+    Es entsteht KEINE neue Rechenlogik und keine neue Datenquelle: gerechnet
+    wird mit genau den Groessen, die die Vorwaertsrechnung ohnehin gebildet
+    hat.
+
+    Was diese Funktion ausdruecklich NICHT tut: behaupten, eine Aenderung sei
+    erreichbar. "Der Verkaufspreis muesste 11'200 CHF/m2 betragen" ist eine
+    Rechnung, keine Marktaussage. Liegen Marktreferenzen vor, wird der
+    noetige Wert gegen die Referenzspanne gehalten -- das ist die Einordnung,
+    die der Benutzer braucht, und sie kommt aus den erfassten
+    Vergleichsobjekten, nicht aus einer Schaetzung.
+    """
+    fehlend = [name for name, wert in
+               (("Verkaufserloes", erloes), ("Baukosten", baukosten), ("Landkosten", landwert))
+               if wert is None]
+    if fehlend:
+        return {
+            "status": HERKUNFT_NICHT_BESTIMMBAR,
+            "grund": (
+                f"{', '.join(fehlend)} nicht bestimmt -- ohne diese Groessen laesst sich "
+                "nicht sagen, was sich aendern muesste. Dieselben Angaben fehlen der "
+                "Vorwaertsrechnung."
+            ),
+            "zielmarge": zielmarge,
+        }
+
+    if zielmarge >= 1.0:
+        return {
+            "status": HERKUNFT_NICHT_BESTIMMBAR,
+            "grund": f"Zielmarge {zielmarge:.0%} ist nicht erreichbar -- sie muss unter 100 % liegen.",
+            "zielmarge": zielmarge,
+        }
+
+    erreicht = marge is not None and marge >= zielmarge
+    # Der Betrag, der bei der Zielmarge fuer Kosten und Land uebrig bleibt.
+    verfuegbar = erloes * (1.0 - zielmarge)
+    luecke = round((baukosten + landwert) - verfuegbar, 0)
+
+    stellschrauben = []
+
+    # --- 1. Landpreis (entspricht dem Residualwert) ----------------------
+    land_noetig = verfuegbar - baukosten
+    stellschrauben.append(_stellschraube(
+        "landpreis", "Landpreis", "CHF",
+        ist=landwert, noetig=land_noetig, richtung="tiefer",
+        je_einheit=({
+            "einheit": "CHF/m2 Grundstueck",
+            "ist": round(landwert / grundstuecksflaeche_m2, 0),
+            "noetig": round(land_noetig / grundstuecksflaeche_m2, 0),
+        } if grundstuecksflaeche_m2 else None),
+    ))
+
+    # --- 2. Verkaufserloes -----------------------------------------------
+    erloes_noetig = (baukosten + landwert) / (1.0 - zielmarge)
+    verkaufsflaeche = verkauf.get("basis_flaeche_m2")
+    je_m2 = None
+    if verkaufsflaeche:
+        je_m2 = {
+            "einheit": f"CHF/m2 {verkauf.get('basis_name') or 'Flaeche'}",
+            "ist": round(erloes / verkaufsflaeche, 0),
+            "noetig": round(erloes_noetig / verkaufsflaeche, 0),
+        }
+        # Einordnung gegen die erfassten Vergleichsobjekte -- nur wenn es
+        # welche gibt. Ohne Referenzen wird nichts eingeordnet.
+        spanne = ((marktlage or {}).get("verkauf") or {}).get("spanne")
+        if spanne and len(spanne) == 2:
+            noetig_m2 = je_m2["noetig"]
+            je_m2["referenzspanne"] = spanne
+            if noetig_m2 <= spanne[1]:
+                je_m2["einordnung"] = (
+                    f"Der noetige Preis von {noetig_m2:,.0f} CHF/m2 liegt innerhalb der "
+                    f"Spanne der erfassten Vergleichsobjekte ({spanne[0]:,.0f}-"
+                    f"{spanne[1]:,.0f} CHF/m2)."
+                )
+                je_m2["im_referenzbereich"] = True
+            else:
+                je_m2["einordnung"] = (
+                    f"Der noetige Preis von {noetig_m2:,.0f} CHF/m2 liegt UEBER allen "
+                    f"erfassten Vergleichsobjekten (hoechstens {spanne[1]:,.0f} CHF/m2). "
+                    "Er waere am Markt zu belegen."
+                )
+                je_m2["im_referenzbereich"] = False
+
+    stellschrauben.append(_stellschraube(
+        "verkaufserloes", "Verkaufserloes", "CHF",
+        ist=erloes, noetig=erloes_noetig, richtung="hoeher", je_einheit=je_m2,
+    ))
+
+    # --- 3. Baukosten ------------------------------------------------------
+    baukosten_noetig = verfuegbar - landwert
+    stellschrauben.append(_stellschraube(
+        "baukosten", "Baukosten", "CHF",
+        ist=baukosten, noetig=baukosten_noetig, richtung="tiefer",
+    ))
+
+    # --- 4. Mehr Flaeche? --------------------------------------------------
+    #
+    # Erloes und Baukosten skalieren beide mit der Flaeche, der Landpreis
+    # nicht. Mehr Flaeche hilft deshalb nur, wenn je Quadratmeter mehr
+    # hereinkommt als hinausgeht. Ist das nicht so, macht jede zusaetzliche
+    # Flaeche das Ergebnis SCHLECHTER -- und das gehoert gesagt, statt eine
+    # Zahl auszugeben, die in die falsche Richtung fuehrt.
+    flaeche = verkauf.get("basis_flaeche_m2")
+    if flaeche and flaeche > 0:
+        deckungsbeitrag_je_m2 = (erloes * (1.0 - zielmarge) - baukosten) / flaeche
+        if deckungsbeitrag_je_m2 <= 0:
+            stellschrauben.append({
+                "schluessel": "flaeche", "bezeichnung": "Verkaufsflaeche", "einheit": "m2",
+                "status": "nicht_zielfuehrend",
+                "grund": (
+                    "Mehr Flaeche hilft hier nicht: je Quadratmeter bleibt nach Abzug der "
+                    "Baukosten und der Zielmarge nichts uebrig "
+                    f"({deckungsbeitrag_je_m2:,.0f} CHF/m2). Zusaetzliche Flaeche "
+                    "verschlechtert das Ergebnis, statt es zu verbessern -- es ist kein "
+                    "Mengen-, sondern ein Preis- oder Kostenproblem."
+                ),
+            })
+        else:
+            flaeche_noetig = landwert / deckungsbeitrag_je_m2
+            stellschrauben.append(_stellschraube(
+                "flaeche", "Verkaufsflaeche", "m2",
+                ist=flaeche, noetig=flaeche_noetig, richtung="hoeher",
+            ))
+            # Die Einheit ist hier m2, nicht CHF -- die Schluessel umbenennen,
+            # damit nichts als Geldbetrag gelesen wird.
+            letzte = stellschrauben[-1]
+            if letzte.get("status") == "berechnet":
+                letzte["ist_m2"] = letzte.pop("ist_chf")
+                letzte["noetig_m2"] = letzte.pop("noetig_chf")
+                letzte["aenderung_m2"] = letzte.pop("aenderung_chf")
+                letzte["hinweis"] = (
+                    "Rein rechnerisch. Ob diese Flaeche baurechtlich zulaessig ist, sagt "
+                    "das Ausnuetzungsbudget -- nicht diese Rechnung."
+                )
+
+    return {
+        "status": "berechnet",
+        "zielmarge": zielmarge,
+        "marge_ist": marge,
+        "zielmarge_erreicht": erreicht,
+        "luecke_chf": luecke if not erreicht else 0,
+        "stellschrauben": stellschrauben,
+        "grundregel": (
+            f"Damit {zielmarge:.0%} Marge aufgehen, duerfen Baukosten und Land zusammen "
+            f"hoechstens {verfuegbar:,.0f} CHF betragen "
+            f"({erloes:,.0f} CHF Erloes x {1 - zielmarge:.0%}). "
+            f"Heute sind es {baukosten + landwert:,.0f} CHF."
+        ),
+        "hinweis": (
+            "Jede Zeile zeigt, was sich aendern muesste, wenn ALLES ANDERE gleich bleibt. "
+            "Die Stellschrauben sind nicht additiv -- zwei davon gleichzeitig zu bewegen "
+            "erfordert weniger als jede einzeln."
+        ),
+    }
+
+
 # Szenarien, die auf dem Bestand aufbauen statt ihn zu ersetzen.
 _ERWEITERUNGSSZENARIEN = {"anbau", "aufstockung", "dachausbau", "bestand_plus_neubau"}
 
@@ -889,6 +1116,10 @@ def berechne_alle(
     *,
     auswahl: Optional[list[str]] = None,
     bestand_volumen_m3: Optional[float] = None,
+    # Die ausgewertete Marktlage aus den erfassten Vergleichsobjekten. Sie
+    # wird hier NICHT gerechnet, sondern nur zur Einordnung des rueckwaerts
+    # ermittelten Preises gereicht -- ohne sie bleibt die Einordnung weg.
+    marktlage: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Rechnet alle machbaren Szenarien durch und stellt sie gegenueber."""
     szenarien = (szenarien_ergebnis or {}).get("szenarien") or {}
@@ -914,6 +1145,7 @@ def berechne_alle(
         ergebnisse[name] = berechne_fuer_szenario(
             s, grundstuecksflaeche_m2, markt, kostenpositionen,
             bestand_volumen_m3=bestand_volumen_m3,
+            marktlage=marktlage,
         )
 
     return {

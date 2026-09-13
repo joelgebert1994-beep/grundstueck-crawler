@@ -31,6 +31,7 @@ from typing import Any, Optional
 from .entwicklungsszenarien import SZENARIO_ANFORDERUNGEN
 from .g1_verdrahtung import G1VerdrahtungError, berechne_g1_fuer_fall
 from .flaechenmodell import (
+    HERKUNFT_SYSTEMANNAHME,
     PROFIL_WOHNUNGSBAU_MFH,
     WohnungstypVorgabe,
     berechne_flaechen_und_wohnungen,
@@ -263,11 +264,18 @@ def berechne_szenarien(
     benutzerwerte: Optional[dict[str, float]] = None,
     wohnungsmix: Optional[list[WohnungstypVorgabe]] = None,
     wohnungsmix_begruendung: str = "",
+    # Ob der Mix eine eigene Entscheidung ist oder die Vorbelegung der
+    # Oberflaeche. Muss hier stehen, obwohl der innere Helfer **kwargs nimmt:
+    # DIESE Signatur ist die Aussenkante, und was sie nicht kennt, scheitert
+    # beim Aufruf, statt durchgereicht zu werden.
+    wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
     profil: str = PROFIL_WOHNUNGSBAU_MFH,
     attika_zulaessig: Optional[bool] = None,
     dachgeschoss_zulaessig: Optional[bool] = None,
     gebaeudeabstand_m: Optional[float] = None,
     restflaeche_verteilen: bool = False,
+    # Tatsaechliche Wohnflaeche des Bestands fuer das Sanierungsszenario.
+    bestand_flaeche_nwf_m2: Optional[float] = None,
 ) -> dict:
     """Rechnet die Entwicklungsszenarien neu -- ohne erneute Abfrage.
 
@@ -280,9 +288,11 @@ def berechne_szenarien(
         analyse.ergebnis.get("zonen_zuordnung") or {},
         analyse.kontext.get("modul1") or {},
         auswahl=auswahl, benutzerwerte=benutzerwerte, wohnungsmix=wohnungsmix,
-        wohnungsmix_begruendung=wohnungsmix_begruendung, profil=profil,
+        wohnungsmix_begruendung=wohnungsmix_begruendung,
+        wohnungsmix_herkunft=wohnungsmix_herkunft, profil=profil,
         attika_zulaessig=attika_zulaessig, dachgeschoss_zulaessig=dachgeschoss_zulaessig,
         gebaeudeabstand_m=gebaeudeabstand_m, restflaeche_verteilen=restflaeche_verteilen,
+        bestand_flaeche_nwf_m2=bestand_flaeche_nwf_m2,
     )
 
 
@@ -293,6 +303,10 @@ def berechne_wirtschaftlichkeit_je_szenario(
     kostenpositionen: Optional[list] = None,
     auswahl: Optional[list[str]] = None,
     szenarien_ergebnis: Optional[dict] = None,
+    # Ausgewertete Vergleichsobjekte. Sie aendern keine Rechnung -- sie
+    # ordnen nur den rueckwaerts ermittelten Preis ein. Fehlen sie, bleibt
+    # die Einordnung weg statt geschaetzt zu werden.
+    marktlage: Optional[dict] = None,
     **szenario_kwargs,
 ) -> dict:
     """Markt, BKP und Wirtschaftlichkeit je Szenario -- ohne erneute Abfrage.
@@ -320,6 +334,7 @@ def berechne_wirtschaftlichkeit_je_szenario(
         kostenpositionen,
         auswahl=auswahl,
         bestand_volumen_m3=haupt.get("gebaeudevolumen_m3"),
+        marktlage=marktlage,
     )
 
 

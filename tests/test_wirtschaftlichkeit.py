@@ -500,7 +500,159 @@ def test_vergleich() -> None:
     print()
 
 
+def test_rueckwaertsrechnung() -> None:
+    """Was muesste sich aendern, damit die Zielmarge aufgeht?
+
+    Dieselbe Gleichung wie vorwaerts, nach einer anderen Unbekannten
+    aufgeloest. Keine neue Rechenlogik, keine neue Datenquelle -- gerechnet
+    wird mit genau den Groessen, die die Vorwaertsrechnung ohnehin bildet.
+
+    Die schaerfste Probe steht gleich am Anfang: der rueckwaerts ermittelte
+    Landpreis MUSS dem Residualwert entsprechen. Beide beantworten dieselbe
+    Frage auf verschiedenen Wegen; weichen sie ab, ist eine der beiden
+    Rechnungen falsch.
+    """
+    print("=== Rueckwaertsrechnung: was muesste sich aendern? ===")
+
+    # Zahlen aus einer echten Rechnung (Rosenweg 4, Ersatzneubau).
+    ERLOES, BAUKOSTEN, LAND = 1425000.0, 1019361.0, 628845.0
+    FLAECHE_GS, FLAECHE_NWF, ZIEL = 598.9, 150.0, 0.15
+
+    r = w._rueckwaertsrechnung(
+        erloes=ERLOES, baukosten=BAUKOSTEN, landwert=LAND,
+        marge=-0.1566, zielmarge=ZIEL,
+        verkauf={"basis_flaeche_m2": FLAECHE_NWF, "basis_name": "Wohnflaeche NWF"},
+        flaechen=None, grundstuecksflaeche_m2=FLAECHE_GS,
+    )
+    pruefe(r["status"] == "berechnet", "Mit allen Groessen ist sie berechenbar")
+    pruefe(r["zielmarge_erreicht"] is False, "Die Zielmarge ist nicht erreicht")
+
+    schrauben = {s["schluessel"]: s for s in r["stellschrauben"]}
+    pruefe(set(schrauben) == {"landpreis", "verkaufserloes", "baukosten", "flaeche"},
+           f"Vier Stellschrauben ({sorted(schrauben)})")
+
+    # --- Die Kreuzprobe gegen den Residualwert ---------------------------
+    residual = w._residualwert(ERLOES, BAUKOSTEN, ZIEL, FLAECHE_GS)
+    pruefe(schrauben["landpreis"]["noetig_chf"] == residual["max_landwert_chf"],
+           f"Der noetige Landpreis entspricht dem Residualwert "
+           f"({schrauben['landpreis']['noetig_chf']:,.0f} CHF) -- zwei Wege, ein Ergebnis")
+    pruefe(schrauben["landpreis"]["je_einheit"]["noetig"]
+           == residual["max_landwert_chf_pro_m2"],
+           "auch je Quadratmeter Grundstueck")
+
+    # --- Die Gleichung geht auf --------------------------------------------
+    noetiger_erloes = schrauben["verkaufserloes"]["noetig_chf"]
+    marge_dann = (noetiger_erloes - BAUKOSTEN - LAND) / noetiger_erloes
+    pruefe(abs(marge_dann - ZIEL) < 0.001,
+           f"Beim noetigen Erloes ergibt sich genau die Zielmarge ({marge_dann:.3%})")
+
+    noetige_kosten = schrauben["baukosten"]["noetig_chf"]
+    marge_kosten = (ERLOES - noetige_kosten - LAND) / ERLOES
+    pruefe(abs(marge_kosten - ZIEL) < 0.001,
+           f"Bei den noetigen Baukosten ebenso ({marge_kosten:.3%})")
+
+    # --- Die Luecke ist dieselbe, egal welche Schraube -------------------
+    pruefe(schrauben["landpreis"]["aenderung_chf"] == schrauben["baukosten"]["aenderung_chf"],
+           f"Land und Baukosten muessen um denselben Betrag sinken "
+           f"({schrauben['landpreis']['aenderung_chf']:,.0f} CHF) -- beide stehen auf "
+           "derselben Seite der Gleichung")
+    pruefe(r["luecke_chf"] == -schrauben["landpreis"]["aenderung_chf"],
+           "und das ist genau die ausgewiesene Luecke")
+
+    # --- Richtung und Erfuellung -------------------------------------------
+    pruefe(schrauben["landpreis"]["richtung"] == "tiefer"
+           and schrauben["verkaufserloes"]["richtung"] == "hoeher",
+           "Die Richtungen stimmen: Land tiefer, Erloes hoeher")
+    pruefe(all(not s["erfuellt"] for s in schrauben.values() if s.get("status") == "berechnet"),
+           "Keine Stellschraube ist erfuellt -- die Zielmarge ist ja verfehlt")
+
+    # --- Je Einheit ---------------------------------------------------------
+    je = schrauben["verkaufserloes"]["je_einheit"]
+    pruefe(je["ist"] == round(ERLOES / FLAECHE_NWF, 0),
+           f"Der Ist-Preis je m2 stimmt ({je['ist']:,.0f} CHF/m2)")
+    pruefe(je["noetig"] > je["ist"], "und der noetige liegt darueber")
+
+    # --- Erreichte Zielmarge: nichts muss sich bewegen ---------------------
+    gut = w._rueckwaertsrechnung(
+        erloes=2000000.0, baukosten=900000.0, landwert=400000.0,
+        marge=0.35, zielmarge=ZIEL,
+        verkauf={"basis_flaeche_m2": 200.0, "basis_name": "NWF"},
+        flaechen=None, grundstuecksflaeche_m2=600.0)
+    pruefe(gut["zielmarge_erreicht"] is True, "Bei erreichter Zielmarge wird das gemeldet")
+    pruefe(gut["luecke_chf"] == 0, "die Luecke ist null")
+    pruefe(all(s["erfuellt"] for s in gut["stellschrauben"] if s.get("status") == "berechnet"),
+           "und jede Stellschraube gilt als erfuellt")
+
+    # --- Mehr Flaeche hilft nicht immer -------------------------------------
+    eng = w._rueckwaertsrechnung(
+        erloes=1000000.0, baukosten=1100000.0, landwert=300000.0,
+        marge=-0.40, zielmarge=ZIEL,
+        verkauf={"basis_flaeche_m2": 120.0, "basis_name": "NWF"},
+        flaechen=None, grundstuecksflaeche_m2=500.0)
+    flaeche = next(s for s in eng["stellschrauben"] if s["schluessel"] == "flaeche")
+    pruefe(flaeche["status"] == "nicht_zielfuehrend",
+           "Liegen die Baukosten je m2 ueber dem Erloes je m2, ist mehr Flaeche nicht "
+           "zielfuehrend")
+    pruefe("verschlechtert das Ergebnis" in flaeche["grund"],
+           "und es wird gesagt, dass zusaetzliche Flaeche es SCHLECHTER macht")
+    pruefe("kein Mengen-, sondern ein Preis- oder Kostenproblem" in flaeche["grund"],
+           "mit der richtigen Schlussfolgerung")
+
+    # --- Keine Scheinpraezision ---------------------------------------------
+    for fehlt, name in (
+        (dict(erloes=None, baukosten=1e6, landwert=5e5), "Verkaufserloes"),
+        (dict(erloes=1e6, baukosten=None, landwert=5e5), "Baukosten"),
+        (dict(erloes=1e6, baukosten=1e6, landwert=None), "Landkosten"),
+    ):
+        ohne = w._rueckwaertsrechnung(
+            marge=None, zielmarge=ZIEL, verkauf={}, flaechen=None,
+            grundstuecksflaeche_m2=600.0, **fehlt)
+        pruefe(ohne["status"] == "nicht_bestimmbar" and name in ohne["grund"],
+               f"Fehlt {name}, wird nicht gerechnet -- der Grund nennt die Groesse")
+
+    unsinn = w._rueckwaertsrechnung(
+        erloes=1e6, baukosten=5e5, landwert=2e5, marge=0.3, zielmarge=1.0,
+        verkauf={}, flaechen=None, grundstuecksflaeche_m2=600.0)
+    pruefe(unsinn["status"] == "nicht_bestimmbar",
+           "Eine Zielmarge von 100 % wird abgewiesen statt durch null geteilt")
+
+    # --- Einordnung gegen erfasste Vergleichsobjekte ------------------------
+    mit_markt = w._rueckwaertsrechnung(
+        erloes=ERLOES, baukosten=BAUKOSTEN, landwert=LAND, marge=-0.1566, zielmarge=ZIEL,
+        verkauf={"basis_flaeche_m2": FLAECHE_NWF, "basis_name": "NWF"},
+        flaechen=None, grundstuecksflaeche_m2=FLAECHE_GS,
+        marktlage={"verkauf": {"spanne": [8600, 9200]}})
+    je_markt = next(s for s in mit_markt["stellschrauben"]
+                    if s["schluessel"] == "verkaufserloes")["je_einheit"]
+    pruefe(je_markt["im_referenzbereich"] is False,
+           "Der noetige Preis liegt ueber allen Vergleichsobjekten")
+    pruefe("am Markt zu belegen" in je_markt["einordnung"],
+           "und das wird als solches benannt, nicht als Unmoeglichkeit")
+
+    knapp = w._rueckwaertsrechnung(
+        erloes=1900000.0, baukosten=1019361.0, landwert=400000.0, marge=0.10, zielmarge=0.10,
+        verkauf={"basis_flaeche_m2": 200.0, "basis_name": "NWF"},
+        flaechen=None, grundstuecksflaeche_m2=FLAECHE_GS,
+        marktlage={"verkauf": {"spanne": [7000, 9200]}})
+    je_knapp = next(s for s in knapp["stellschrauben"]
+                    if s["schluessel"] == "verkaufserloes")["je_einheit"]
+    pruefe(je_knapp["im_referenzbereich"] is True,
+           f"Liegt er in der Spanne, wird das ebenso gesagt ({je_knapp['noetig']:,.0f} CHF/m2)")
+
+    ohne_markt = w._rueckwaertsrechnung(
+        erloes=ERLOES, baukosten=BAUKOSTEN, landwert=LAND, marge=-0.1566, zielmarge=ZIEL,
+        verkauf={"basis_flaeche_m2": FLAECHE_NWF, "basis_name": "NWF"},
+        flaechen=None, grundstuecksflaeche_m2=FLAECHE_GS)
+    je_ohne = next(s for s in ohne_markt["stellschrauben"]
+                   if s["schluessel"] == "verkaufserloes")["je_einheit"]
+    pruefe("einordnung" not in je_ohne,
+           "Ohne Vergleichsobjekte wird NICHT eingeordnet -- lieber keine Aussage als eine "
+           "erfundene")
+    print()
+
+
 def main() -> None:
+    test_rueckwaertsrechnung()
     test_marktwert()
     test_verkauf()
     test_restflaeche()

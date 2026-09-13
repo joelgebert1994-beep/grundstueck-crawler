@@ -1261,6 +1261,7 @@ def berechne_szenarien(
     benutzerwerte: Optional[dict[str, float]] = None,
     wohnungsmix: Optional[list[WohnungstypVorgabe]] = None,
     wohnungsmix_begruendung: str = "",
+    wohnungsmix_herkunft: str = HERKUNFT_SYSTEMANNAHME,
     attika_zulaessig: Optional[bool] = None,
     dachgeschoss_zulaessig: Optional[bool] = None,
     gebaeudeabstand_m: Optional[float] = None,
@@ -1291,6 +1292,7 @@ def berechne_szenarien(
     gemeinsam = dict(
         profil=profil, benutzerwerte=benutzerwerte, wohnungsmix=wohnungsmix,
         wohnungsmix_begruendung=wohnungsmix_begruendung,
+        wohnungsmix_herkunft=wohnungsmix_herkunft,
         geschosshoehe_m=geschosshoehe.wert, restriktionen=restriktionen,
         restflaeche_verteilen=restflaeche_verteilen,
     )

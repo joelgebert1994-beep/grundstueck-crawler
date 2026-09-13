@@ -192,7 +192,7 @@ Die Spalte **Damals** ist die Einstufung der Erstanalyse (vor Block 1).
 | Eigene Vergleichsobjekte | – | ✅ | Block A + Block 7: Einzelerfassung, CSV-Einfügen, Liste, Löschen — Quelle und Datenstand Pflicht |
 | Lagerating | C | 📋 | |
 | Gemeindechecks | C | 📋 | |
-| **Rückwärtsrechnung** | – | 📋 | „Was müsste sich ändern?" |
+| **Rückwärtsrechnung** | – | ✅ | Block 9 · vier Stellschrauben, Einordnung gegen erfasste Vergleichsobjekte |
 | **Highest & Best Use** | – | 📋 | verbindet alles zu einer Empfehlung |
 
 ### 8 Zusammenarbeit
@@ -261,7 +261,7 @@ Bei LUUCY durchweg **nicht gefunden**. Reihenfolge = Wirkung je Aufwand.
 | Wohnungsmix → Verkauf/Miete | ✅ | LUUCY endet beim Volumen |
 | Risiko je Szenario mit Begründung | 🟡 | Konflikte und Unsicherheiten ✅, keine Gesamtbewertung 📋 |
 | Anomalieprüfung | 🟡 | „AZ = 20.0" wurde real gemeldet — ohne systematische Prüfung 📋 |
-| **Rückwärtsrechnung** | 📋 | macht aus einer Absage eine Verhandlungsgrundlage |
+| **Rückwärtsrechnung** | ✅ | Block 9 — macht aus einer Absage eine Verhandlungsgrundlage |
 | **Highest & Best Use** | 📋 | verbindet alles zu einer Empfehlung |
 | **Sanierung als Szenario** | ✅ | Block 8 |
 | **Parzellenkombination A vs. A+B** | 📋 | erkennt Zukaufschancen |
@@ -325,6 +325,7 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 13.09.2026 | Block 9 | Rückwärtsrechnung „Was müsste sich ändern?" — plus zwei Fehler gefunden, die nur über den Endpunkt auftraten |
 | 12.09.2026 | Block 8 | Sanierung als eigenes Szenario — ohne erfundene Bestandsflächen oder Sanierungskosten |
 | 12.09.2026 | Block 7 | Marktpreis: Vergleichsobjekte lassen sich erfassen — der Systemvorschlag entsteht jetzt aus echten Referenzen mit Sicherheitsgrad |
 | 12.09.2026 | Lokal | Ein Startbefehl (start.bat), Oberfläche vom Backend, unabhängig von Gerüsten |
