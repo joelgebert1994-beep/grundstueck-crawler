@@ -303,6 +303,13 @@ ul.plain li { margin-bottom: 4px; }
 .hbuwert { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .hbutext { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
 .hbustufen { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+.scrliste { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.scrpos { border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+.scrpos.aktiv { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.scrkopf { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.scrkopf b { font-size: 13px; }
+.scrres { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ok); }
+.scrgrund { font-size: 12px; color: var(--ink-2); line-height: 1.5; margin-top: 6px; }
 .hbuliste { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
 .hbupos { border: 1px solid var(--line-2); border-radius: 8px; padding: 9px 11px; background: var(--bg); }
 .hbupos.top { border-color: var(--ok); }
@@ -980,6 +987,262 @@ function kombZeichneKarte() {
   });
 }
 
+/* ===================== Gebietsscreening =====================
+
+   Der Sprung von "ein Grundstueck pruefen" zu "Grundstuecke finden".
+   Gesucht wird im aktuellen Kartenausschnitt; gerechnet wird auf dem Server
+   mit der Bau- und Nutzungsordnung der laufenden Analyse -- sie gilt fuer
+   alle Parzellen der Gemeinde und wird deshalb nicht je Parzelle geholt.
+
+   Hier wird nichts bewertet und nichts sortiert: beides kommt fertig vom
+   Server, damit es nur EINE Einstufung gibt.
+*/
+var scrErgebnis = null, scrLaeuft = false, scrMeldung = "";
+var scrMinFlaeche = 300, scrGewaehlt = null, scrVertieft = {};
+
+var SCR_EINSTUFUNG = {
+  unbebaut: ["unbebaut", "ok"],
+  unternutzt: ["unternutzt", "ok"],
+  ausgeschoepft: ["ausgeschöpft", "mute"],
+  nicht_bestimmbar: ["nicht bestimmbar", "warn"]
+};
+
+function scrBbox() {
+  // Der aktuelle Kartenausschnitt in LV95 -- die Suchflaeche ist das, was
+  // der Benutzer gerade sieht.
+  var b = map.getBounds();
+  var sw = wgs84ToLv95(b.getSouth(), b.getWest());
+  var ne = wgs84ToLv95(b.getNorth(), b.getEast());
+  return [Math.round(sw[0]), Math.round(sw[1]), Math.round(ne[0]), Math.round(ne[1])];
+}
+
+function scrStarte() {
+  if (!jobIdAktuell || scrLaeuft) return;
+  scrLaeuft = true;
+  scrMeldung = "";
+  scrZeichne();
+  apiAbruf("/api/screening", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ job_id: jobIdAktuell, bbox: scrBbox(),
+                           min_flaeche_m2: scrMinFlaeche })
+  }).then(function (a) {
+    scrLaeuft = false;
+    if (!a.ok) {
+      scrMeldung = a.fehler || "Screening nicht möglich.";
+      scrErgebnis = null;
+    } else {
+      scrErgebnis = a.daten;
+      scrVertieft = {};
+    }
+    scrZeichne();
+    scrZeichneKarte();
+  });
+}
+
+function scrVertiefe(egrid) {
+  if (!jobIdAktuell || !egrid) return;
+  scrVertieft[egrid] = { laeuft: true };
+  scrZeichne();
+  apiAbruf("/api/screening/vertiefen", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ job_id: jobIdAktuell, egrid: egrid })
+  }).then(function (a) {
+    scrVertieft[egrid] = a.ok ? a.daten.stufe2 : { fehler: a.fehler };
+    scrZeichne();
+  });
+}
+
+function scrZeile(p) {
+  var e = SCR_EINSTUFUNG[p.einstufung] || [p.einstufung, "mute"];
+  var offen = alsListe(p.offene_punkte);
+  var qualitaet = Object.keys(p.datenqualitaet || {}).map(function (k) {
+    return p.datenqualitaet[k];
+  });
+  var v = scrVertieft[p.egrid];
+  var gewaehlt = scrGewaehlt === p.egrid;
+
+  var stufe2 = "";
+  if (v && v.laeuft) {
+    stufe2 = '<div class="note">Stufe 2 wird gerechnet …</div>';
+  } else if (v && v.fehler) {
+    stufe2 = '<div class="note stop">' + esc(v.fehler) + "</div>";
+  } else if (v && v.varianten) {
+    stufe2 = '<div class="note"><b>Stufe 2 — Baubereich aus der Kontur</b>' +
+      '<div class="scroller"><table class="src"><thead><tr><th></th>' +
+      "<th>Grenzabstand</th><th>Baubereich</th><th>Geschosse</th><th>Geschossfläche</th>" +
+      "</tr></thead><tbody>" +
+      Object.keys(v.varianten).map(function (name) {
+        var x = v.varianten[name];
+        return "<tr><td>" + esc(name) + "</td><td>" + fmt(x.grenzabstand_m, 1) + " m</td>" +
+          "<td>" + fmt(x.baubereich_m2, 0) + " m²</td><td>" + esc(x.geschosszahl) + "</td>" +
+          "<td>" + fmt(x.geschossflaeche_m2, 0) + " m²</td></tr>";
+      }).join("") + "</tbody></table></div>" +
+      '<div class="f">' + esc(v.hinweis || "") + "</div></div>";
+  } else if (v && v.grund) {
+    stufe2 = '<div class="note warn">' + esc(v.grund) + "</div>";
+  }
+
+  return '<div class="scrpos' + (gewaehlt ? " aktiv" : "") + '" data-egrid="' + esc(p.egrid) + '">' +
+    '<div class="scrkopf">' +
+      "<b>Parzelle " + esc(p.parzellennummer || "–") + "</b>" +
+      '<span class="badge ' + e[1] + '">' + esc(e[0]) + "</span>" +
+      (leer(p.reserve_bgf_m2) ? ""
+        : '<span class="scrres">' + fmt(p.reserve_bgf_m2, 0) + " m² Reserve</span>") +
+      '<span class="f">' + fmt(p.flaeche_m2, 0) + " m² · " + esc(p.zone || "Zone unbekannt") +
+      (leer(p.ausnutzungsgrad) ? "" : " · " + (p.ausnutzungsgrad * 100).toFixed(0) + " % genutzt") +
+      "</span>" +
+    "</div>" +
+    '<div class="scrgrund">' + esc(p.grund || "") + "</div>" +
+    (qualitaet.length
+      ? '<div class="f">' + qualitaet.map(esc).join(" ") + "</div>" : "") +
+    (offen.length
+      ? '<ul class="plain">' + offen.map(function (o) { return "<li>" + esc(o) + "</li>"; }).join("") + "</ul>"
+      : "") +
+    stufe2 +
+    '<div class="szwahl">' +
+      '<button class="szbtn scr-zeigen" data-egrid="' + esc(p.egrid) + '">Auf der Karte zeigen</button>' +
+      (p.reserve_bgf_m2 === null || p.reserve_bgf_m2 === undefined ? ""
+        : '<button class="szbtn scr-vertiefen" data-egrid="' + esc(p.egrid) + '">Stufe 2: Baubereich</button>') +
+      (p.adresse
+        ? '<button class="szbtn scr-analyse" data-adresse="' + esc(p.adresse) + '">Vollständig analysieren</button>'
+        : '<span class="f">Ohne Gebäude gibt es keine Adresse — für die vollständige Analyse ' +
+          'die Parzelle auf der Karte anfahren.</span>') +
+    "</div>" +
+  "</div>";
+}
+
+function scrBlock() {
+  var kopf = '<div class="sechead"><span class="num">09</span><h3>Grundstückssuche</h3>' +
+    '<span class="right"><span class="badge mute">Stufe 1</span></span></div>';
+
+  var steuerung =
+    '<div class="szwahl">' +
+      '<button class="szbtn" id="scr-start">' +
+        (scrLaeuft ? "sucht …" : "Aktuellen Kartenausschnitt durchsuchen") + "</button>" +
+      '<label class="d3opt">ab Fläche <input type="number" id="scr-flaeche" step="50" ' +
+        'value="' + scrMinFlaeche + '" style="width:5em"> m²</label>' +
+    "</div>" +
+    '<div class="note">Gesucht wird nach <b>Ausnutzungsreserve</b>: zulässige Geschossfläche ' +
+    'minus bestehende. Nicht nach Grundstücksgrösse — eine grosse, ausgeschöpfte Parzelle ' +
+    'ist kein Fund. Es gibt keine Punktzahl und keine Aussage darüber, ob jemand verkaufen ' +
+    'will; dafür gibt es keine Daten.</div>';
+
+  if (scrMeldung) {
+    return '<section class="sec" id="sec-screening">' + kopf + steuerung +
+      '<div class="note stop">' + esc(scrMeldung) + "</div></section>";
+  }
+  if (!scrErgebnis) {
+    return '<section class="sec" id="sec-screening">' + kopf + steuerung + "</section>";
+  }
+  if (scrErgebnis.status === "zu_gross") {
+    return '<section class="sec" id="sec-screening">' + kopf + steuerung +
+      '<div class="note warn">' + esc(scrErgebnis.grund) + "</div></section>";
+  }
+
+  var b = scrErgebnis.bericht || {};
+  var z = scrErgebnis.zusammenfassung || {};
+  var bilanz =
+    '<div class="note"><b>' + (b.parzellen_gefunden || 0) + " Parzellen</b> aus " +
+    (b.kacheln_gerechnet || 0) + " Kacheln mit " + (b.abfragen || 0) + " amtlichen Abfragen" +
+    (b.kacheln_geteilt ? ", " + b.kacheln_geteilt + " davon geteilt (Trefferobergrenze)" : "") +
+    ". " +
+    Object.keys(z).map(function (k) {
+      return z[k] + "× " + ((SCR_EINSTUFUNG[k] || [k])[0]);
+    }).join(", ") + "." +
+    (b.strassenparzellen ? " " + b.strassenparzellen + " Strassenparzellen ausgeschieden." : "") +
+    (b.parzellen_am_rand ? " " + b.parzellen_am_rand + " reichen über das Suchgebiet hinaus." : "") +
+    (b.gebaeude_ueber_lage ? " " + b.gebaeude_ueber_lage +
+      " Gebäude ohne EGRID über ihre Lage zugeordnet." : "") +
+    "</div>" +
+    (scrErgebnis.hinweis_kennzahlen
+      ? '<div class="note warn">' + esc(scrErgebnis.hinweis_kennzahlen) + "</div>"
+      : '<div class="f">Kennzahlen aus der Bau- und Nutzungsordnung von ' +
+        esc(scrErgebnis.kennzahlen_aus_gemeinde || "–") +
+        " — sie gelten für alle Parzellen dieser Gemeinde.</div>") +
+    (scrErgebnis.min_flaeche_m2
+      ? '<div class="f">Gesetzter Filter: nur Parzellen ab ' +
+        fmt(scrErgebnis.min_flaeche_m2, 0) + " m². Das ist eine Eingabe, kein Befund.</div>"
+      : "");
+
+  var treffer = alsListe(scrErgebnis.parzellen).filter(function (p) {
+    return p.einstufung === "unbebaut" || p.einstufung === "unternutzt";
+  });
+  var uebrige = alsListe(scrErgebnis.parzellen).length - treffer.length;
+
+  var liste = treffer.length
+    ? '<div class="scrliste">' + treffer.slice(0, 40).map(scrZeile).join("") + "</div>" +
+      (treffer.length > 40
+        ? '<div class="f">… und ' + (treffer.length - 40) + " weitere mit Reserve.</div>" : "")
+    : '<div class="note warn">Keine Parzelle mit Ausnutzungsreserve in diesem Ausschnitt. ' +
+      'Das ist ein Befund, kein Fehler.</div>';
+
+  return '<section class="sec" id="sec-screening">' + kopf + steuerung + bilanz + liste +
+    (uebrige ? '<div class="f">' + uebrige + " weitere Parzellen ohne Reserve oder ohne " +
+      "bestimmbare Grundlage sind nicht aufgeführt.</div>" : "") +
+  "</section>";
+}
+
+function scrZeichne() {
+  var el = document.getElementById("sec-screening");
+  if (!el) return;
+  el.outerHTML = scrBlock();
+  scrVerdrahten();
+}
+
+function scrVerdrahten() {
+  var start = document.getElementById("scr-start");
+  if (start) start.onclick = scrStarte;
+  var feld = document.getElementById("scr-flaeche");
+  if (feld) feld.onchange = function () { scrMinFlaeche = Number(feld.value) || 0; };
+
+  document.querySelectorAll(".scr-zeigen").forEach(function (b) {
+    b.onclick = function () {
+      scrGewaehlt = b.dataset.egrid;
+      scrZeichneKarte(true);
+      scrZeichne();
+    };
+  });
+  document.querySelectorAll(".scr-vertiefen").forEach(function (b) {
+    b.onclick = function () { scrVertiefe(b.dataset.egrid); };
+  });
+  document.querySelectorAll(".scr-analyse").forEach(function (b) {
+    b.onclick = function () {
+      // Stufe 3 ist die bestehende Einzelanalyse, unveraendert.
+      var feldEl = document.getElementById("adresse");
+      if (!feldEl) return;
+      feldEl.value = b.dataset.adresse;
+      feldEl.dispatchEvent(new Event("input", { bubbles: true }));
+      feldEl.scrollIntoView({ block: "center" });
+    };
+  });
+}
+
+// Die Treffer auf der Karte -- eigene Ebene, damit die Einzelanalyse
+// unberuehrt bleibt.
+var scrGruppe = L.layerGroup().addTo(map);
+var STIL_SCR = { color: "#b4661a", weight: 2, fillColor: "#b4661a", fillOpacity: .18 };
+var STIL_SCR_AKTIV = { color: "#b4661a", weight: 4, fillColor: "#b4661a", fillOpacity: .40 };
+
+function scrZeichneKarte(hinzoomen) {
+  if (typeof scrGruppe === "undefined") return;
+  scrGruppe.clearLayers();
+  if (!scrErgebnis || !scrErgebnis.parzellen) return;
+  var ziel = null;
+  scrErgebnis.parzellen.forEach(function (p) {
+    if (p.einstufung !== "unbebaut" && p.einstufung !== "unternutzt") return;
+    if (!p.geometrie || !p.geometrie.length) return;
+    var aktiv = scrGewaehlt === p.egrid;
+    var poly = L.polygon(p.geometrie.map(function (k) { return lv95ToWgs84(k[0], k[1]); }),
+                         aktiv ? STIL_SCR_AKTIV : STIL_SCR)
+      .bindPopup("<b>Parzelle " + esc(p.parzellennummer || "–") + "</b><br>" +
+                 fmt(p.flaeche_m2, 0) + " m² · " + esc(p.zone || "") + "<br>" +
+                 (leer(p.reserve_bgf_m2) ? "" : fmt(p.reserve_bgf_m2, 0) + " m² Reserve"))
+      .addTo(scrGruppe);
+    if (aktiv) ziel = poly;
+  });
+  if (hinzoomen && ziel) map.fitBounds(ziel.getBounds(), { maxZoom: 19, padding: [40, 40] });
+}
+
 /* ===================== Adresssuche ===================== */
 var GEOADMIN_SEARCH = "https://api3.geo.admin.ch/rest/services/api/SearchServer";
 var inputEl = document.getElementById("adresse");
@@ -1390,7 +1653,8 @@ var SEKTIONEN = [
   ["sec-szenarien", "Szenarien"],
   ["sec-entwicklung", "Entwicklung"],
   ["sec-quellen", "Quellen"],
-  ["sec-wirtschaft", "Wirtschaftlichkeit"]
+  ["sec-wirtschaft", "Wirtschaftlichkeit"],
+  ["sec-screening", "Grundstückssuche"]
 ];
 function esc(v) {
   if (v === null || v === undefined || v === "") return "–";
@@ -1466,7 +1730,7 @@ function renderDossier(erg) {
     }).join("") + "</nav>" +
     secGrundstueck(m1) + secStandort(m1) + secBaurecht(erg, m1, zz) +
     secRestriktionen(m1) + secPotenzial(erg) + secFlaechen(erg) + secSzenarien(erg) + secEntwicklung(erg) +
-    secQuellen(erg) + secWirtschaft(erg);
+    secQuellen(erg) + secWirtschaft(erg) + scrBlock();
   var zsNeu = document.getElementById("zs-neu");
   if (zsNeu) zsNeu.onclick = function () { starteAnalyse(true); };
   verdrahteDossier();
@@ -5391,6 +5655,7 @@ function wZeichneNeu() {
   if (typeof mktZeichne === "function") mktZeichne();
   setze("w-mix", mixBlock());
   verdrahteWirtschaft();
+  if (typeof scrVerdrahten === "function") scrVerdrahten();
   // Die Szenarien haben sich mitgeaendert -- Karte und 3D nachziehen.
   if (typeof zeichneSzenario === "function" && aktivesSzenario) zeichneSzenario(aktivesSzenario);
   if (window.zeichne3D && aktivesSzenario) window.zeichne3D(aktivesSzenario);

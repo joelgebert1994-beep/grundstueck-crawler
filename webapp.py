@@ -454,6 +454,41 @@ def _rechne_kombination(analyse: "Analyse", daten: dict) -> dict:
     }
 
 
+def _rechne_screening(analyse: "Analyse", daten: dict) -> dict:
+    """Stufe 1 des Screenings fuer ein Suchgebiet.
+
+    Die Reglementsauswertung der Gemeinde wird aus der laufenden Analyse
+    uebernommen -- sie gilt fuer alle Parzellen darin und muss deshalb nicht
+    ein zweites Mal gerechnet werden. Genau das macht ein Gebietsscreening
+    bezahlbar: teuer ist die Bau- und Nutzungsordnung, und die gibt es je
+    Gemeinde einmal.
+    """
+    from potenzial_engine.pipeline import screene_gebiet
+
+    roh = daten.get("bbox") or []
+    try:
+        bbox = tuple(float(x) for x in roh)
+    except (TypeError, ValueError):
+        raise ValueError("bbox muss vier Zahlen enthalten (xmin, ymin, xmax, ymax in LV95).")
+    if len(bbox) != 4:
+        raise ValueError("bbox muss vier Zahlen enthalten (xmin, ymin, xmax, ymax in LV95).")
+
+    m1 = analyse.ergebnis.get("modul1_geodaten") or {}
+    gemeindeblock = m1.get("gemeinde") or {}
+    ergebnis = screene_gebiet(
+        bbox,
+        kanton=daten.get("kanton") or gemeindeblock.get("kanton"),
+        modul2_result=analyse.kontext.get("modul2"),
+        gemeinde=daten.get("gemeinde") or gemeindeblock.get("gemeinde"),
+        min_flaeche_m2=_zahl(daten.get("min_flaeche_m2")),
+    )
+    # Die Gemeinde der laufenden Analyse ist die, deren Reglement gilt. Liegt
+    # das Suchgebiet daneben, waeren die Kennzahlen die falschen -- deshalb
+    # steht sie in der Antwort, statt stillschweigend verwendet zu werden.
+    ergebnis["kennzahlen_aus_gemeinde"] = gemeindeblock.get("gemeinde")
+    return ergebnis
+
+
 def _variantenvergleich(varianten: list, ergebnisse: dict) -> list:
     """Eine Zeile je Variante -- die Grundlage der Vergleichstabelle.
 
@@ -780,6 +815,85 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self._send_json({"ok": True, **antwort})
+
+    def _job_mit_kontext(self, daten: dict):
+        """Die abgeschlossene Analyse zu einer job_id -- oder None samt Antwort."""
+        job_id = (daten.get("job_id") or "").strip()
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            kontext = job.get("kontext") if job else None
+        if job is None or job["status"] != "done" or not kontext:
+            self._send_json(
+                {"ok": False, "fehler": "Keine abgeschlossene Analyse zu dieser job_id (evtl. abgelaufen)."},
+                status=404)
+            return None, None
+        return job, Analyse(ergebnis=job["ergebnis"], kontext=kontext)
+
+    def _handle_screening(self) -> None:
+        """Ein Suchgebiet nach Parzellen mit Ausnutzungsreserve durchsuchen."""
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        job, analyse = self._job_mit_kontext(daten)
+        if job is None:
+            return
+        try:
+            antwort = _rechne_screening(analyse, daten)
+        except (ValueError, TypeError, KeyError) as exc:
+            self._send_json({"ok": False, "fehler": f"Ungueltige Eingabe: {exc}"}, status=400)
+            return
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self._send_json({"ok": False, "fehler": f"Unerwarteter Fehler: {exc}"}, status=500)
+            return
+        # Fuer Stufe 2 aufbewahren: der Browser soll die Zonenkennzahlen nicht
+        # zurueckschicken muessen, damit sie unterwegs nicht veraendert werden.
+        with _JOBS_LOCK:
+            job["screening"] = antwort
+        self._send_json({"ok": True, **antwort})
+
+    def _handle_screening_vertiefen(self) -> None:
+        """Stufe 2: die G1-Kaskade auf einer Parzelle aus der Trefferliste."""
+        from potenzial_engine.pipeline import vertiefe_kandidat
+
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        job, analyse = self._job_mit_kontext(daten)
+        if job is None:
+            return
+        egrid = (daten.get("egrid") or "").strip()
+        with _JOBS_LOCK:
+            screening = job.get("screening")
+        if not screening:
+            self._send_json({"ok": False, "fehler": "Fuer diese Analyse liegt kein "
+                                                    "Screening vor -- zuerst ein Gebiet durchsuchen."},
+                            status=409)
+            return
+        treffer = next((p for p in screening.get("parzellen") or []
+                        if p.get("egrid") == egrid), None)
+        if treffer is None:
+            self._send_json({"ok": False, "fehler": f"Parzelle {egrid} steht nicht in "
+                                                    "der letzten Trefferliste."}, status=404)
+            return
+
+        from potenzial_engine.modul3_financial import match_zone
+
+        erkannte = (analyse.kontext.get("modul2") or {}).get("erkannte_zonen") or []
+        zone = {}
+        if treffer.get("zone") and erkannte:
+            m = match_zone([{"zonenbezeichnung": treffer["zone"],
+                             "ist_wahrscheinlich_basiszone": True}], erkannte)
+            zone = m.get("zone") or {}
+        try:
+            ergebnis = vertiefe_kandidat(egrid, treffer.get("geometrie"), zone)
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self._send_json({"ok": False, "fehler": f"Vertiefung fehlgeschlagen: {exc}"},
+                            status=500)
+            return
+        self._send_json({"ok": True, "egrid": egrid, "parzellennummer": treffer.get("parzellennummer"),
+                         "adresse": treffer.get("adresse"), "stufe2": ergebnis})
 
     def _handle_kombination(self) -> None:
         """A gegen A+B rechnen -- ohne erneute Analyse von A.
@@ -1259,6 +1373,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/marktdaten/loeschen":
             self._handle_marktdaten_loeschen()
+            return
+        if self.path == "/screening":
+            self._handle_screening()
+            return
+        if self.path == "/screening/vertiefen":
+            self._handle_screening_vertiefen()
             return
         if self.path == "/kombination":
             self._handle_kombination()

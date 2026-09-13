@@ -271,6 +271,48 @@ def _identify(
     return data.get("results", [])
 
 
+# Der Identify-Dienst liefert hoechstens so viele Treffer je Anfrage.
+IDENTIFY_MAX_TREFFER = 200
+
+
+def identify_rechteck(
+    bbox: tuple[float, float, float, float],
+    layer: str,
+    *,
+    return_geometry: bool = False,
+    limit: int = IDENTIFY_MAX_TREFFER,
+) -> list[dict[str, Any]]:
+    """Fragt einen Layer fuer ein ganzes RECHTECK ab statt fuer einen Punkt.
+
+    Derselbe Dienst, dieselben Layer wie `_identify` -- nur mit
+    `esriGeometryEnvelope` statt `esriGeometryPoint`. Das ist die Grundlage
+    des Gebietsscreenings: eine Anfrage liefert bis zu 200 Parzellen samt
+    Geometrie, statt 200 Einzelabfragen.
+
+    ACHTUNG: Liefert die Antwort genau `limit` Treffer, ist sie mit hoher
+    Wahrscheinlichkeit abgeschnitten. Der Aufrufer muss das Rechteck dann
+    teilen -- sonst fehlen Parzellen, ohne dass es jemand merkt.
+    """
+    xmin, ymin, xmax, ymax = bbox
+    params = {
+        "geometry": f"{xmin},{ymin},{xmax},{ymax}",
+        "geometryType": "esriGeometryEnvelope",
+        "layers": f"all:{layer}",
+        "tolerance": 0,
+        "mapExtent": f"{xmin},{ymin},{xmax},{ymax}",
+        "imageDisplay": "500,500,96",
+        "sr": 2056,
+        "returnGeometry": "true" if return_geometry else "false",
+        "limit": limit,
+    }
+    if return_geometry:
+        # Siehe _identify(): geometryFormat=geojson verschiebt die Attribute
+        # nach "properties" -- deshalb nur setzen, wenn Geometrie gebraucht wird.
+        params["geometryFormat"] = "geojson"
+    data = _get(f"{GEOADMIN_BASE}/MapServer/identify", params)
+    return data.get("results", [])
+
+
 def _point_in_polygon(x: float, y: float, polygon: list[tuple[float, float]]) -> bool:
     """Ray-Casting-Test, ob Punkt (x,y) innerhalb eines Polygons liegt."""
     inside = False

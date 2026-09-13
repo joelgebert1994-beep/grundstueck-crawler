@@ -297,6 +297,331 @@ def berechne_szenarien(
     )
 
 
+def _kachel_daten(
+    kachel: tuple[float, float, float, float],
+    kanton: Optional[str],
+) -> dict[str, Any]:
+    """Die drei Abfragen je Kachel -- und nur diese drei.
+
+    Kataster, Gebaeuderegister und Nutzungsplanung fuer ein ganzes Rechteck
+    statt je Parzelle. Das ist der Unterschied zwischen einem Screening, das
+    laeuft, und einem, das Stunden braucht.
+    """
+    from .modul1_geodata import (
+        IDENTIFY_MAX_TREFFER,
+        LAYER_CADASTRE_GEOM,
+        LAYER_GWR,
+        identify_rechteck,
+    )
+    from .modul1b_nutzungsklassifikation import _fetch_geodienste, _fetch_zh_wfs
+
+    from .screening import RAND_M
+
+    parzellen_roh = identify_rechteck(kachel, LAYER_CADASTRE_GEOM, return_geometry=True)
+    # Das Gebaeuderegister mit Rand: eine Parzelle am Kachelrand reicht
+    # darueber hinaus, und ohne diesen Rand fehlten ihre Gebaeude.
+    xmin, ymin, xmax, ymax = kachel
+    gwr_roh = identify_rechteck(
+        (xmin - RAND_M, ymin - RAND_M, xmax + RAND_M, ymax + RAND_M),
+        LAYER_GWR, limit=500)
+
+    mitte_e, mitte_n = (xmin + xmax) / 2, (ymin + ymax) / 2
+    radius = max(xmax - xmin, ymax - ymin) / 2 + RAND_M
+
+    festlegungen: list[dict[str, Any]] = []
+    zonen_fehler = None
+    try:
+        if (kanton or "").upper() == "ZH":
+            festlegungen = _fetch_zh_wfs(mitte_e, mitte_n, radius)
+        else:
+            festlegungen = _fetch_geodienste(mitte_e, mitte_n, radius, kanton)
+    except Exception as exc:  # noqa: BLE001 -- eine Kachel ohne Zonen stoppt nichts
+        zonen_fehler = f"{type(exc).__name__}: {exc}"
+
+    # Strassenachsen der Kachel -- derselbe Layer, den die Kantenklassifikation
+    # benutzt, nur rechteckweise. Ohne ihn stehen Strassenparzellen mit
+    # dreistelligen "Reserven" in der Trefferliste.
+    achsen = []
+    try:
+        from shapely.geometry import shape
+
+        from .kantenklassifikation import LAYER_STRASSEN
+
+        for eintrag in identify_rechteck(
+                (xmin - RAND_M, ymin - RAND_M, xmax + RAND_M, ymax + RAND_M),
+                LAYER_STRASSEN, return_geometry=True, limit=500):
+            geom = eintrag.get("geometry")
+            if not geom:
+                continue
+            try:
+                achsen.append(shape(geom))
+            except Exception:  # noqa: BLE001
+                continue
+    except Exception as exc:  # noqa: BLE001 -- ohne Achsen bleibt der Rest gueltig
+        achsen = []
+        zonen_fehler = zonen_fehler or f"Strassenachsen: {type(exc).__name__}: {exc}"
+
+    return {
+        "parzellen": parzellen_roh,
+        "gwr": [(g.get("attributes") or {}) for g in gwr_roh],
+        "grundnutzungen": [f for f in festlegungen if f.get("ebene") == "grundnutzung"],
+        "strassenachsen": achsen,
+        "abgeschnitten": len(parzellen_roh) >= IDENTIFY_MAX_TREFFER,
+        "zonen_fehler": zonen_fehler,
+    }
+
+
+def screene_gebiet(
+    bbox: tuple[float, float, float, float],
+    *,
+    kanton: Optional[str] = None,
+    modul2_result: Optional[dict] = None,
+    gemeinde: Optional[str] = None,
+    max_kacheln: int = 40,
+    min_flaeche_m2: Optional[float] = None,
+) -> dict[str, Any]:
+    """Stufe 1 des Screenings: alle Parzellen eines Gebiets, amtlich und lokal.
+
+    Kein LLM, keine Einzelanalyse, keine neue Datenquelle -- dieselben Layer,
+    die Modul 1 ohnehin abfragt, nur rechteckweise statt punktweise.
+
+    `modul2_result` ist die Reglementsauswertung der Gemeinde. Sie gilt fuer
+    ALLE Parzellen darin und wird deshalb genau einmal gebraucht, nicht je
+    Parzelle -- das ist der Grund, warum ein Gebietsscreening bezahlbar ist.
+    Fehlt sie, laeuft das Screening trotzdem: es liefert dann Flaeche, Zone
+    und Bestand, aber keine Reserve, und sagt das auch.
+
+    `min_flaeche_m2` filtert VOR der Bewertung -- rein technisch, um
+    Restflaechen und Strassenparzellen aus der Liste zu halten. Es ist kein
+    fachliches Kriterium und wird als gesetzter Filter ausgewiesen.
+    """
+    from .modul3_financial import match_zone
+    from . import screening as scr
+
+    offene_kacheln = list(scr.kacheln(bbox))
+    bericht = {
+        "bbox": list(bbox),
+        "gemeinde": gemeinde,
+        "kanton": kanton,
+        "kacheln_geplant": len(offene_kacheln),
+        "kacheln_gerechnet": 0,
+        "kacheln_geteilt": 0,
+        "abfragen": 0,
+        "parzellen_gefunden": 0,
+        "zonen_fehler": [],
+    }
+    if len(offene_kacheln) > max_kacheln:
+        return {
+            "status": "zu_gross",
+            "grund": (f"Das Gebiet ergibt {len(offene_kacheln)} Kacheln, erlaubt sind "
+                      f"{max_kacheln}. Ein kleineres Suchgebiet waehlen -- lieber zwei "
+                      "Durchgaenge als ein Ergebnis, das nach einer Minute abbricht."),
+            "bericht": bericht,
+        }
+
+    erkannte_zonen = (modul2_result or {}).get("erkannte_zonen") or []
+    gesehen: dict[str, dict[str, Any]] = {}
+    polygone: dict[str, Any] = {}
+    gwr_gesamt: dict[Any, dict[str, Any]] = {}
+    strassenachsen: list[Any] = []
+    gemeinden_je_egrid: dict[str, Any] = {}
+    zonen_cache: dict[str, Optional[dict[str, Any]]] = {}
+
+    while offene_kacheln:
+        kachel = offene_kacheln.pop(0)
+        daten = _kachel_daten(kachel, kanton)
+        bericht["kacheln_gerechnet"] += 1
+        bericht["abfragen"] += 4
+        strassenachsen.extend(daten.get("strassenachsen") or [])
+        if daten["zonen_fehler"]:
+            bericht["zonen_fehler"].append(daten["zonen_fehler"])
+
+        if daten["abgeschnitten"]:
+            teile = scr.teile_kachel(kachel)
+            if teile:
+                # Sonst fehlten Parzellen, ohne dass es jemand merkt.
+                offene_kacheln.extend(teile)
+                bericht["kacheln_geteilt"] += 1
+                bericht["kacheln_geplant"] += len(teile)
+                continue
+            bericht.setdefault("warnungen", []).append(
+                f"Kachel {kachel} liefert die Hoechstzahl an Treffern und laesst sich "
+                "nicht weiter teilen -- dort koennen Parzellen fehlen.")
+
+        for g in daten["gwr"]:
+            kennung = g.get("egid")
+            if kennung is not None:
+                gwr_gesamt[kennung] = g
+        gemeinden_je_egrid.update({g.get("egrid"): g.get("ggdename")
+                                   for g in daten["gwr"] if g.get("egrid")})
+
+        for roh in daten["parzellen"]:
+            attribute = roh.get("properties") or roh.get("attributes") or {}
+            egrid = attribute.get("egris_egrid")
+            if not egrid or egrid in gesehen:
+                continue
+            ring = ((roh.get("geometry") or {}).get("coordinates") or [None])[0]
+            polygon = scr.polygon_aus_ring(ring)
+            flaeche = round(polygon.area, 1) if polygon else None
+            if min_flaeche_m2 and (flaeche or 0) < min_flaeche_m2:
+                continue
+
+            zone_info = scr.zone_fuer_parzelle(polygon, daten["grundnutzungen"])
+            polygone[egrid] = polygon
+
+            # Die Zuordnung amtliche Zone -> Modul-2-Kennzahlen ist je
+            # Zonenbezeichnung immer dieselbe -- einmal rechnen genuegt.
+            kennzahlen = None
+            if zone_info.get("status") == "eindeutig" and erkannte_zonen:
+                name = zone_info.get("bezeichnung")
+                if name not in zonen_cache:
+                    treffer = match_zone(
+                        [{"zonenbezeichnung": name, "ist_wahrscheinlich_basiszone": True}],
+                        erkannte_zonen)
+                    zonen_cache[name] = (treffer.get("zone")
+                                         if treffer.get("status") == "gefunden" else None)
+                kennzahlen = zonen_cache[name]
+
+            gesehen[egrid] = {
+                "attribute": attribute, "polygon": polygon, "flaeche_m2": flaeche,
+                "zone_info": zone_info, "kennzahlen": kennzahlen,
+            }
+
+    # Erst jetzt zuordnen: ein Gebaeude kann in einer anderen Kachel liegen
+    # als seine Parzelle, und ein Gebaeude ohne EGRID braucht alle Konturen
+    # auf einmal, um ueber seine Lage zugeordnet zu werden.
+    strassenparzellen = scr.markiere_strassenparzellen(polygone, strassenachsen)
+    bericht["strassenparzellen"] = len(strassenparzellen)
+    zuordnung = scr.ordne_gebaeude_zu(gwr_gesamt.values(), polygone)
+    bericht["gebaeude_gelesen"] = len(gwr_gesamt)
+    bericht["gebaeude_ueber_lage"] = sum(
+        1 for liste in zuordnung.values() for g in liste if g.get("zuordnung") == "ueber_lage")
+
+    xmin, ymin, xmax, ymax = bbox
+    innen = (xmin - scr.RAND_M, ymin - scr.RAND_M, xmax + scr.RAND_M, ymax + scr.RAND_M)
+
+    ergebnisse = []
+    for egrid, roh in gesehen.items():
+        polygon = roh["polygon"]
+        bestand_je = scr.bestand_je_parzelle(zuordnung.get(egrid) or [])
+        grenzen = polygon.bounds if polygon else None
+        am_rand = bool(grenzen) and not (
+            innen[0] <= grenzen[0] and innen[1] <= grenzen[1]
+            and grenzen[2] <= innen[2] and grenzen[3] <= innen[3])
+        eintrag = scr.bewerte_parzelle(
+            {"egrid": egrid,
+             "parzellennummer": roh["attribute"].get("number"),
+             "gemeinde": gemeinden_je_egrid.get(egrid) or gemeinde,
+             "flaeche_m2": roh["flaeche_m2"],
+             "am_rand": am_rand,
+             "ist_strassenparzelle": egrid in strassenparzellen},
+            bestand_je.get(egrid),
+            roh["zone_info"],
+            roh["kennzahlen"],
+        )
+        eintrag["am_rand"] = am_rand
+        eintrag["geometrie"] = [[round(x, 1), round(y, 1)] for x, y in
+                                polygon.exterior.coords[:-1]] if polygon else None
+        eintrag["schwerpunkt_lv95"] = ([round(polygon.representative_point().x, 1),
+                                        round(polygon.representative_point().y, 1)]
+                                       if polygon else None)
+        ergebnisse.append(eintrag)
+
+    bericht["parzellen_gefunden"] = len(ergebnisse)
+    bericht["parzellen_am_rand"] = sum(1 for e in ergebnisse if e.get("am_rand"))
+    sortiert = scr.sortiere(ergebnisse)
+
+    zusammenfassung: dict[str, int] = {}
+    for eintrag in sortiert:
+        schluessel = eintrag.get("einstufung")
+        zusammenfassung[schluessel] = zusammenfassung.get(schluessel, 0) + 1
+
+    return {
+        "status": "fertig",
+        "bericht": bericht,
+        "kennzahlen_vorhanden": bool(erkannte_zonen),
+        "hinweis_kennzahlen": (
+            None if erkannte_zonen else
+            "Ohne ausgewertete Bau- und Nutzungsordnung gibt es keine "
+            "Ausnuetzungsziffer und damit keine Reserve. Das Screening zeigt dann "
+            "Flaeche, Zone und Bestand -- mehr laesst sich ohne sie nicht sagen."
+        ),
+        "min_flaeche_m2": min_flaeche_m2,
+        "zusammenfassung": zusammenfassung,
+        "parzellen": sortiert,
+    }
+
+
+def vertiefe_kandidat(
+    egrid: str,
+    geometrie: list,
+    zone: dict[str, Any],
+    *,
+    restriktionsflaechen: Optional[list] = None,
+) -> dict[str, Any]:
+    """Stufe 2: die echte G1-Kaskade auf der Parzellenkontur.
+
+    Ruft `berechne_potenzial` -- dieselbe Funktion wie die Einzelanalyse --
+    mit den Grenzabstaenden der Zone. Ohne Kantenklassifikation gibt es keine
+    kantenscharfe Zuordnung; gerechnet wird deshalb eine BANDBREITE zwischen
+    "alle Kanten klein" und "alle Kanten gross". Das ist ehrlich und kostet
+    keinen einzigen Netzaufruf.
+    """
+    from .baubereich import berechne_potenzial
+    from .g1_verdrahtung import _kennzahl_wert
+
+    ring = [(float(x), float(y)) for x, y in (geometrie or [])]
+    if len(ring) < 3:
+        return {"status": "nicht_bestimmbar", "grund": "Keine brauchbare Parzellenkontur."}
+
+    klein = _kennzahl_wert(zone.get("grenzabstand_klein_m"))
+    gross = _kennzahl_wert(zone.get("grenzabstand_gross_m"))
+    abstaende = [a for a in (klein, gross) if a is not None]
+    if not abstaende:
+        return {"status": "nicht_bestimmbar",
+                "grund": ("Fuer diese Zone sind keine Grenzabstaende bekannt -- ohne sie "
+                          "gibt es keinen Baubereich.")}
+
+    gemeinsam = dict(
+        restriktionsflaechen=restriktionsflaechen or None,
+        ausnuetzungsziffer_az=_kennzahl_wert(zone.get("ausnuetzungsziffer_az")),
+        anrechenbare_geschossflaechenziffer_abgf=_kennzahl_wert(
+            zone.get("anrechenbare_geschossflaechenziffer_abgf")),
+        baumassenziffer_bmz=_kennzahl_wert(zone.get("baumassenziffer_bmz")),
+        ueberbauungsziffer_uz=_kennzahl_wert(zone.get("ueberbauungsziffer_uz")),
+        vollgeschosse_max=(int(_kennzahl_wert(zone.get("vollgeschosse_max")))
+                           if _kennzahl_wert(zone.get("vollgeschosse_max")) is not None
+                           else None),
+        gebaeudehoehe_m=(_kennzahl_wert(zone.get("gebaeudehoehe_m"))
+                         or _kennzahl_wert(zone.get("gesamthoehe_m"))),
+    )
+
+    varianten = {}
+    for name, abstand in (("optimistisch", min(abstaende)), ("konservativ", max(abstaende))):
+        if name in varianten:
+            continue
+        ergebnis = berechne_potenzial(ring, [abstand] * len(ring), **gemeinsam)
+        varianten[name] = {
+            "grenzabstand_m": abstand,
+            "baubereich_m2": ergebnis.baubereich_m2,
+            "fussabdruck_m2": ergebnis.fussabdruck_m2,
+            "geschosszahl": ergebnis.geschosszahl,
+            "geschossflaeche_m2": ergebnis.geschossflaeche_m2,
+            "geschossflaeche_limitiert_durch": ergebnis.geschossflaeche_limitiert_durch,
+        }
+    return {
+        "status": "bandbreite" if len(set(abstaende)) > 1 else "einzel",
+        "egrid": egrid,
+        "varianten": varianten,
+        "hinweis": (
+            "Gerechnet ohne Kantenklassifikation: jede Kante traegt denselben "
+            "Grenzabstand. Welche Kante an einer Strasse liegt und welche an einem "
+            "Nachbarn, klaert erst die vollstaendige Einzelanalyse -- das echte "
+            "Ergebnis liegt zwischen diesen beiden Werten."
+        ),
+    }
+
+
 def _kette_fuer_parzelle(
     modul1_result: dict,
     zonen_zuordnung: dict,
