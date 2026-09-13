@@ -145,12 +145,6 @@ img { max-width: 100%; }
 .layeropt.off { color: var(--ink-3); cursor: default; }
 .layeropt .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
 
-.maphint {
-  position: absolute; right: 14px; bottom: 22px; z-index: 600; max-width: 268px;
-  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r);
-  box-shadow: var(--shadow-s); padding: 9px 12px; font-size: 12px; color: var(--ink-2);
-}
-.maphint b { color: var(--ink); }
 
 /* ---------- Dossier ---------- */
 .dossier-inner { padding-bottom: 60px; }
@@ -476,9 +470,9 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
       <div class="layerbody">
         <div class="layergroup">
           <h4>Basiskarte</h4>
-          <label class="layeropt"><input type="radio" name="base" value="karte" checked> Landeskarte</label>
+          <label class="layeropt"><input type="radio" name="base" value="grau" checked> Neutrale Karte</label>
+          <label class="layeropt"><input type="radio" name="base" value="karte"> Landeskarte</label>
           <label class="layeropt"><input type="radio" name="base" value="luftbild"> Luftbild</label>
-          <label class="layeropt"><input type="radio" name="base" value="grau"> Grau (neutral)</label>
         </div>
         <div class="layergroup">
           <h4>Amtliche Overlays</h4>
@@ -488,16 +482,15 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
         <div class="layergroup">
           <h4>Analyse-Ergebnisse</h4>
           <label class="layeropt off" id="opt-parzelle"><input type="checkbox" id="lay-parzelle" checked disabled><span class="swatch" style="border-color:#b3324a;background:rgba(179,50,74,.18)"></span>Parzelle<span class="cnt" id="cnt-parzelle">&ndash;</span></label>
-          <label class="layeropt off" id="opt-zonen"><input type="checkbox" id="lay-zonen" checked disabled><span class="swatch" style="border-color:#2a7f8f;background:rgba(42,127,143,.18)"></span>Zonen<span class="cnt" id="cnt-zonen">&ndash;</span></label>
+          <label class="layeropt off" id="opt-zonen"><input type="checkbox" id="lay-zonen" disabled><span class="swatch" style="border-color:#2a7f8f;background:rgba(42,127,143,.18)"></span>Zonen<span class="cnt" id="cnt-zonen">&ndash;</span></label>
           <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;background:rgba(31,122,77,.25)"></span>Baubereich G1<span class="cnt" id="cnt-baubereich">&ndash;</span></label>
-          <label class="layeropt off" id="opt-restrikt"><input type="checkbox" id="lay-restrikt" checked disabled><span class="swatch" style="border-color:#b4661a;background:rgba(180,102,26,.22)"></span>Restriktionen<span class="cnt" id="cnt-restrikt">&ndash;</span></label>
-          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" checked disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span>Bestand<span class="cnt" id="cnt-bestand">&ndash;</span></label>
-          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" checked disabled><span class="swatch" style="border-color:#0369a1;background:rgba(3,105,161,.30)"></span>Szenario<span class="cnt" id="cnt-szenario">&ndash;</span></label>
+          <label class="layeropt off" id="opt-restrikt"><input type="checkbox" id="lay-restrikt" disabled><span class="swatch" style="border-color:#b4661a;background:rgba(180,102,26,.22)"></span>Restriktionen<span class="cnt" id="cnt-restrikt">&ndash;</span></label>
+          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span>Bestand<span class="cnt" id="cnt-bestand">&ndash;</span></label>
+          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" disabled><span class="swatch" style="border-color:#0369a1;background:rgba(3,105,161,.30)"></span>Szenario<span class="cnt" id="cnt-szenario">&ndash;</span></label>
         </div>
       </div>
     </details>
 
-    <div class="maphint" id="maphint">Adresse suchen &mdash; danach sind <b>Parzelle</b>, <b>Zonen</b> und <b>Baubereich</b> auf der Karte anklickbar.</div>
   </div>
 
   <aside class="dossier" id="dossier">
@@ -582,18 +575,34 @@ var OVERLAYS = {
   gebaeude: L.tileLayer(wmts("ch.bfs.gebaeude_wohnungs_register"), { maxZoom: 21, maxNativeZoom: 19, opacity: .9 })
 };
 
-var map = L.map("map", { center: [46.95, 8.1], zoom: 8, fadeAnimation: false });
-BASES.karte.addTo(map);
-var aktiveBase = "karte";
+// Die Zoomknoepfe stehen unten rechts -- oben links verdecken sie die
+// Adresssuche. Dort, wo frueher der Hinweiskasten "Karte ist aktiv" sass:
+// der erklaerte etwas, das man ohnehin durch Anklicken herausfindet, und
+// verdeckte dafuer dauerhaft einen Teil der Karte.
+var map = L.map("map", { center: [46.95, 8.1], zoom: 8, fadeAnimation: false,
+                         zoomControl: false });
+L.control.zoom({ position: "bottomright" }).addTo(map);
+// Ruhige Standardansicht: die neutrale Graukarte ohne Katasterplan. Der
+// Katasterplan liegt nur bis Zoomstufe 19 vor und wird darueber
+// hochskaliert -- daher die unscharfen, verzerrten Flaechen und die
+// riesigen Parzellennummern. Er bleibt einschaltbar, ist aber nicht das,
+// was man beim Oeffnen sehen will.
+BASES.grau.addTo(map);
+var aktiveBase = "grau";
 
+// Sichtbar ist anfangs nur, was die Frage "welches Grundstueck ist das und
+// was ist darauf moeglich" beantwortet: die Parzelle und der Baubereich.
+// Zonen, Restriktionen, Bestand und Szenario liegen bereit und lassen sich
+// einschalten -- alle sechs gleichzeitig machen die Karte unlesbar.
 var gruppen = {
-  zonen: L.layerGroup().addTo(map),
-  restrikt: L.layerGroup().addTo(map),
+  zonen: L.layerGroup(),
+  restrikt: L.layerGroup(),
   parzelle: L.layerGroup().addTo(map),
   baubereich: L.layerGroup().addTo(map),
-  bestand: L.layerGroup().addTo(map),
-  szenario: L.layerGroup().addTo(map)
+  bestand: L.layerGroup(),
+  szenario: L.layerGroup()
 };
+var STANDARD_SICHTBAR = { parzelle: true, baubereich: true };
 var adressMarker = null, pickMarker = null;
 
 var STIL = {
@@ -662,9 +671,23 @@ Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), fu
   });
 });
 function setLayerVerfuegbar(name, anzahl) {
-  document.getElementById("lay-" + name).disabled = anzahl === 0;
+  var feld = document.getElementById("lay-" + name);
+  feld.disabled = anzahl === 0;
   document.getElementById("opt-" + name).classList.toggle("off", anzahl === 0);
-  document.getElementById("cnt-" + name).textContent = anzahl === 0 ? "–" : anzahl;
+  // Der Zaehler stand frueher nackt da ("Zonen 68") und musste geraten
+  // werden. Er sagt, wie viele Flaechen dieser Art gezeichnet sind -- also
+  // steht das jetzt auch dran.
+  var el = document.getElementById("cnt-" + name);
+  el.textContent = anzahl === 0 ? "–" : anzahl;
+  el.title = anzahl === 0 ? "keine Flächen dieser Art gefunden"
+                          : anzahl + " gezeichnete Flächen auf der Karte";
+  // Die Ebenen, die beim Oeffnen sichtbar sein sollen, werden eingeschaltet,
+  // sobald es dafuer Daten gibt. Die uebrigen bleiben aus, bis sie jemand
+  // braucht -- sonst liegen sechs Ebenen uebereinander.
+  if (anzahl > 0 && STANDARD_SICHTBAR[name] && !feld.checked) {
+    feld.checked = true;
+    gruppen[name].addTo(map);
+  }
 }
 
 /* Klick auf freie Kartenflaeche: amtliche Direktabfrage (Parzelle + GWR).
@@ -1636,8 +1659,6 @@ function zeichneErgebnisAufKarte(erg) {
   setLayerVerfuegbar("restrikt", anzR);
 
   if (bounds) map.fitBounds(bounds, { padding: [70, 70], maxZoom: 19 });
-  document.getElementById("maphint").innerHTML =
-    "<b>Karte ist aktiv:</b> Parzelle, Zonen, Baubereich und Restriktionen sind anklickbar. Klick auf freie Fläche = amtliche Direktabfrage.";
   var kanton = (m1.oereb || {}).kanton;
   if (kanton) document.getElementById("kantonhint").textContent = "Kanton " + kanton;
 }

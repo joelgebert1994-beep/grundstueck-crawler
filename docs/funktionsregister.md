@@ -74,7 +74,7 @@ rechnen → speichern → exportieren → teilen**
 
 | Schritt | Stand | Bemerkung |
 |---|---|---|
-| **finden** | 🟡 | Adresse und Kartenklick ✅ · Grundstückssuche und Screening 📋 |
+| **finden** | ✅ | Adresse, Kartenklick und Gebietsscreening (Block 13) |
 | **analysieren** | ✅ | Baurecht, Geometrie, Flächen, Wohnungen vollständig |
 | **Varianten** | ✅ | anlegen, benennen, duplizieren, umbenennen, löschen, Deltas |
 | **visualisieren** | ✅ | 2D-Karte, 3D mit Terrain/Nachbarn/Strassen, Sonne, Schatten |
@@ -361,8 +361,8 @@ Bei LUUCY durchweg **nicht gefunden**. Reihenfolge = Wirkung je Aufwand.
 | **Sanierung als Szenario** | ✅ | Block 8 |
 | **Parzellenkombination A vs. A+B** | ✅ | Block 12 · dieselbe Kette zweimal · Ausbeute statt blosser Flächenaddition · Strassenparzellen gesperrt — siehe 7b |
 | **Parzellenteilung** | 📋 | |
-| **Grundstückssuche** | 📋 | LUUCY analysiert Bekanntes, wir finden Unbekanntes |
-| **Massensuche / Screening** | 📋 | |
+| **Grundstückssuche** | ✅ | Block 13 · dreistufig, Sortierung nach Ausnutzungsreserve statt nach Fläche · kein Score |
+| **Massensuche / Screening** | 🟡 | Block 13 · 431 Parzellen in 33 s mit 16 amtlichen Abfragen · Gemeindegrenze und Namenssuche fehlen noch 📋 |
 | **Abrisskandidaten / Unternutzung** | 📋 | der eigentliche Akquise-Hebel |
 | **Akquise-Signale auf EGRID** | 🟡 | AkquiseRadar existiert getrennt — Verbindung über EGRID 📋 |
 | **Parkierung** | 📋 | Pflichtplätze, Nachweis, Kosten |
