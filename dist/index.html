@@ -297,6 +297,24 @@ ul.plain li { margin-bottom: 4px; }
 .hbuwert { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .hbutext { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
 .hbustufen { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+#navbar button.aktiv { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.ueberkopf { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
+  margin: 10px 0 4px; }
+.ueberzeile { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--bg); }
+.ueberzeile span { display: block; font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: 3px; }
+.ueberzeile b { font-size: 14px; }
+.ueberzone { display: flex; align-items: baseline; gap: 10px; border: 1px solid var(--line);
+  border-radius: 9px; padding: 11px 13px; background: var(--bg); margin: 6px 0; }
+.ueberzone span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.ueberzone b { font-size: 16px; }
+.leit { border: 1px solid var(--line); border-left-width: 4px; border-radius: 9px;
+  padding: 12px 14px; margin: 8px 0 12px; background: var(--bg); }
+.leit.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+.leit.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.leit.stop { border-left-color: var(--stop); background: var(--stop-soft); }
+.leitkopf { margin-bottom: 6px; }
+.leittext { margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
 .scrliste { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .scrpos { border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
 .scrpos.aktiv { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
@@ -1740,23 +1758,187 @@ function zwischenspeicherHinweis(erg) {
     '<button class="szbtn" id="zs-neu">Jetzt neu rechnen</button></div>';
 }
 
+/* ===================== Reiter =====================
+
+   Sechs Reiter statt einer einzigen langen Seite. Die Frage, die der erste
+   Reiter beantwortet, ist "Was ist das fuer ein Grundstueck und was gilt
+   hier?" -- alles andere wird bewusst angeklickt.
+
+   Die Abschnitte selbst bleiben unveraendert; sie werden nur einem Reiter
+   zugeordnet und ein- oder ausgeblendet. Gerechnet wird nichts anders.
+*/
+var REITER = [
+  ["uebersicht", "Übersicht", ["sec-uebersicht"]],
+  ["baurecht", "Baurecht", ["sec-baurecht", "sec-restriktionen"]],
+  ["karte", "Karte", ["sec-karte"]],
+  ["potenzial", "Potenzial",
+   ["sec-potenzial", "sec-flaechen", "sec-szenarien", "sec-entwicklung", "sec-screening"]],
+  ["markt", "Markt", ["sec-wirtschaft"]],
+  ["quellen", "Daten & Quellen", ["sec-grundstueck", "sec-standort", "sec-quellen"]]
+];
+var reiterAktiv = "uebersicht";
+
+function zeigeReiter(name) {
+  reiterAktiv = name;
+  var eintrag = REITER.filter(function (r) { return r[0] === name; })[0] || REITER[0];
+  REITER.forEach(function (r) {
+    r[2].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.hidden = r[0] !== name;
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("#navbar button"), function (b) {
+    b.classList.toggle("aktiv", b.dataset.reiter === name);
+  });
+  // Die Kartensteuerung liegt im Reiter "Karte" statt als Kasten ueber der
+  // Karte -- dort verdeckte sie einen Viertel des Bildes.
+  var karte = document.getElementById("layercard");
+  var ziel = document.getElementById("karte-steuerung");
+  if (karte && ziel && karte.parentNode !== ziel) ziel.appendChild(karte);
+  if (karte) karte.open = true;
+  var inner = document.getElementById("dossier-inner");
+  if (inner) inner.scrollTop = 0;
+  void eintrag;
+}
+
+/* --- 00 Uebersicht: nur das, was zuerst zaehlt --- */
+function secUebersicht(erg, m1, zz) {
+  var pz = m1.kataster || {};
+  var nk = m1.nutzungsklassifikation || {};
+  var basis = nk.basiszone || {};
+  var amtl = ((m1.oereb || {}).amtliche_zonenbezeichnungen || [])[0] || {};
+  var zone = zz.zone || {};
+  var snp = zz.status === "sondernutzungsplan_massgebend";
+
+  // Die wichtigste Aussage zuerst -- und zwar als Status, nicht versteckt
+  // im Baurechtsabschnitt. Ein massgebender Sondernutzungsplan steuert die
+  // gesamte weitere Beurteilung.
+  var leitsatz = "";
+  if (snp) {
+    var plaene = alsListe(zz.sondernutzungsplaene).map(function (p) {
+      return p.typ_kommunal_bezeichnung || p.typ_kantonal_bezeichnung || p.bezeichnung;
+    }).filter(Boolean);
+    leitsatz =
+      '<div class="leit stop"><div class="leitkopf">' +
+        '<span class="badge stop">Sondernutzungsplan massgebend</span></div>' +
+        '<p class="leittext">Die ordentliche Bauzone reicht hier nicht aus, um das ' +
+        'Entwicklungspotenzial zu bestimmen. Der Planinhalt geht vor und muss manuell ' +
+        'geprüft werden — es werden deshalb bewusst keine Potenzialzahlen aus der ' +
+        'ordentlichen Zone abgeleitet.</p>' +
+        (plaene.length ? '<p class="leittext"><b>' + esc(plaene.join(" · ")) + "</b></p>" : "") +
+      "</div>";
+  } else if (zz.status === "gefunden") {
+    leitsatz = '<div class="leit ok"><div class="leitkopf">' +
+      '<span class="badge ok">Zone eindeutig zugeordnet</span></div>' +
+      '<p class="leittext">Die Kennzahlen der Bau- und Nutzungsordnung lassen sich auf ' +
+      'diese Parzelle anwenden.</p></div>';
+  } else {
+    leitsatz = '<div class="leit warn"><div class="leitkopf">' +
+      '<span class="badge warn">Zone nicht eindeutig</span></div>' +
+      '<p class="leittext">' + esc(zz.hinweis || zz.grund ||
+        "Die massgebende Zone liess sich nicht eindeutig bestimmen. Ohne sie gibt es " +
+        "keine belastbaren Potenzialzahlen.") + "</p></div>";
+  }
+
+  var eckwerte = [];
+  if (!snp) {
+    var az = zone.ausnuetzungsziffer_az, bmz = zone.baumassenziffer_bmz;
+    var vg = zone.vollgeschosse_max, gh = zone.gebaeudehoehe_m || zone.gesamthoehe_m;
+    var w = function (v) { return (v && typeof v === "object") ? v.wert : v; };
+    eckwerte = [
+      ["Vollgeschosse", leer(w(vg)) ? null : w(vg)],
+      ["Gebäudehöhe", leer(w(gh)) ? null : fmt(w(gh), 1) + " m"],
+      ["Ausnützungsziffer", leer(w(az)) ? null : w(az)],
+      ["Baumassenziffer", leer(w(bmz)) ? null : w(bmz)]
+    ].filter(function (p) { return !leer(p[1]); });
+  }
+
+  // Einschraenkungen: nur die, die diese Parzelle tatsaechlich betreffen.
+  var r = m1.restriktionsgeometrie || {};
+  var einschraenkungen = [];
+  if ((r.gewaesserraum_flaechen || []).length) {
+    einschraenkungen.push(["Gewässerraum", (r.gewaesserraum_flaechen || []).length + " Fläche(n)"]);
+  }
+  if (!leer(r.waldgrenze_min_abstand_m)) {
+    einschraenkungen.push(["Waldabstand", fmt(r.waldgrenze_min_abstand_m, 1) + " m zur Waldgrenze"]);
+  }
+  if ((r.baulinien_gefunden || []).length) {
+    einschraenkungen.push(["Baulinien", (r.baulinien_gefunden || []).length + " gefunden"]);
+  }
+  alsListe(nk.ueberlagerungen).slice(0, 4).forEach(function (u) {
+    einschraenkungen.push([u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung || "Überlagerung",
+                           u.rechtsstatus === "inKraft" ? "rechtskräftig" : (u.rechtsstatus || "")]);
+  });
+
+  return '<section class="sec" id="sec-uebersicht">' +
+    '<div class="sechead"><span class="num">–</span><h3>Übersicht</h3></div>' +
+    '<div class="ueberkopf">' +
+      '<div class="ueberzeile"><span>Adresse</span><b>' + esc(erg.adresse) + "</b></div>" +
+      '<div class="ueberzeile"><span>Parzelle</span><b>' + esc(pz.parzellennummer || "–") + "</b></div>" +
+      '<div class="ueberzeile"><span>Fläche</span><b>' +
+        (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "–") + "</b></div>" +
+      '<div class="ueberzeile"><span>Gemeinde</span><b>' +
+        esc((m1.gemeinde || {}).gemeinde || "–") + "</b></div>" +
+    "</div>" +
+    '<h4 class="subhead">Was gilt hier?</h4>' +
+    '<div class="ueberzone"><span>Grundnutzung</span><b>' +
+      esc(basis.typ_kommunal_bezeichnung || amtl.bezeichnung || "nicht bestimmt") + "</b></div>" +
+    leitsatz +
+    (eckwerte.length
+      ? '<h4 class="subhead">Was ist baulich möglich?</h4><div class="tiles">' +
+        eckwerte.map(function (p) { return tile(p[0], p[1]); }).join("") + "</div>" +
+        '<div class="note">Kennzahlen der Zone. Was daraus auf dieser Parzelle wirklich ' +
+        'gebaut werden kann, steht im Reiter <b>Potenzial</b> — dort sind Grenzabstände, ' +
+        'Baubereich und Restriktionen eingerechnet.</div>'
+      : "") +
+    (einschraenkungen.length
+      ? '<h4 class="subhead">Wichtigste Einschränkungen</h4>' +
+        kvRows(einschraenkungen) +
+        '<div class="note">Einzelheiten im Reiter <b>Baurecht</b>.</div>'
+      : '<div class="note">Keine Gewässerräume, Baulinien oder Überlagerungen gefunden, ' +
+        'die diese Parzelle betreffen.</div>') +
+    '<div class="note">EGRID, Koordinaten, BFS-Nummer und die Registerdaten stehen im ' +
+    'Reiter <b>Daten &amp; Quellen</b>.</div>' +
+  "</section>";
+}
+
+/* --- Karte: die Steuerung bekommt einen Ort --- */
+function secKarte() {
+  return '<section class="sec" id="sec-karte">' +
+    '<div class="sechead"><span class="num">–</span><h3>Karte</h3></div>' +
+    '<div class="note">Beim Öffnen sind Parzelle und Baubereich eingeblendet. ' +
+    'Zonen, Restriktionen, Bestand und Szenario lassen sich hier dazuschalten — ' +
+    'alle gleichzeitig machen die Karte unlesbar. Ein Klick auf eine Fläche auf der ' +
+    'Karte zeigt, worum es sich handelt; ein Klick auf freie Fläche fragt die amtlichen ' +
+    'Daten an dieser Stelle direkt ab.</div>' +
+    '<div id="karte-steuerung"></div>' +
+  "</section>";
+}
+
 function renderDossier(erg) {
   var m1 = erg.modul1_geodaten || {};
   var zz = erg.zonen_zuordnung || {};
   inner.innerHTML =
     zwischenspeicherHinweis(erg) +
     headHtml(erg, m1, zz) +
-    '<nav class="navbar" id="navbar">' + SEKTIONEN.map(function (s) {
-      return '<button data-sec="' + s[0] + '">' + s[1] + "</button>";
+    '<nav class="navbar" id="navbar">' + REITER.map(function (r) {
+      return '<button data-reiter="' + r[0] + '">' + r[1] + "</button>";
     }).join("") + "</nav>" +
-    secGrundstueck(m1) + secStandort(m1) + secBaurecht(erg, m1, zz) +
-    secRestriktionen(m1) + secPotenzial(erg) + secFlaechen(erg) + secSzenarien(erg) + secEntwicklung(erg) +
-    secQuellen(erg) + secWirtschaft(erg) + scrBlock();
+    secUebersicht(erg, m1, zz) +
+    secBaurecht(erg, m1, zz) + secRestriktionen(m1) +
+    secKarte() +
+    secPotenzial(erg) + secFlaechen(erg) + secSzenarien(erg) + secEntwicklung(erg) + scrBlock() +
+    secWirtschaft(erg) +
+    secGrundstueck(m1) + secStandort(m1) + secQuellen(erg);
   var zsNeu = document.getElementById("zs-neu");
   if (zsNeu) zsNeu.onclick = function () { starteAnalyse(true); };
   verdrahteDossier();
   verdrahteSzenarien();
   verdrahteWirtschaft();
+  Array.prototype.forEach.call(document.querySelectorAll("#navbar button"), function (b) {
+    b.onclick = function () { zeigeReiter(b.dataset.reiter); };
+  });
+  zeigeReiter(reiterAktiv);
   if ((erg.zonen_zuordnung || {}).status === "gefunden") wRechne();
 }
 
@@ -1777,7 +1959,6 @@ function headHtml(erg, m1, zz) {
     '<div class="headgrid">' +
       "<div><dt>Parzelle</dt><dd>" + esc(pz.parzellennummer) + "</dd></div>" +
       "<div><dt>Fläche</dt><dd>" + (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "–") + "</dd></div>" +
-      '<div><dt>EGRID</dt><dd style="font-size:11.5px">' + esc(pz.egrid) + "</dd></div>" +
       '<div><dt>Gemeinde</dt><dd style="font-family:Archivo,sans-serif">' + esc((m1.gemeinde || {}).gemeinde) + "</dd></div>" +
       '<div style="grid-column:1/-1"><dt>Grundnutzungszone (amtlich)</dt><dd style="font-family:Archivo,sans-serif;font-weight:600">' +
         esc(basis.typ_kommunal_bezeichnung || amtl.bezeichnung) + "</dd></div>" +
