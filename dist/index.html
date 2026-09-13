@@ -124,6 +124,14 @@ img { max-width: 100%; }
 .suggest button:hover { background: var(--accent-soft); }
 
 /* ---------- Layer-Steuerung ---------- */
+.szbtn.klein { padding: 3px 9px; font-size: 11px; }
+.ansichtwahl { display: flex; gap: 4px; }
+.ansichtwahl label { flex: 1; }
+.ansichtwahl input { position: absolute; opacity: 0; pointer-events: none; }
+.ansichtwahl span { display: block; text-align: center; font-size: 11.5px; padding: 6px 4px;
+  border: 1px solid var(--line); border-radius: 7px; cursor: pointer; color: var(--ink-2); }
+.ansichtwahl input:checked + span { border-color: var(--accent); background: var(--accent-soft);
+  color: var(--accent); font-weight: 600; }
 .layercard {
   position: absolute; left: 14px; bottom: 22px; z-index: 600; width: 236px;
   background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r);
@@ -297,14 +305,13 @@ ul.plain li { margin-bottom: 4px; }
 .hbuwert { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .hbutext { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
 .hbustufen { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
-.ladestand { border: 1px solid var(--line); border-left: 3px solid var(--warn);
-  border-radius: 9px; padding: 10px 13px; margin: 0 0 14px; background: var(--bg); }
-.ladestand.fertig { border-left-color: var(--ok); }
+.ladestand { border-left: 3px solid var(--warn); padding: 5px 0 5px 9px; margin: 0 0 10px; }
 .ladestand.gestoert { border-left-color: var(--stop); }
-.lskopf { font-size: 12.5px; color: var(--ink-2); margin-bottom: 8px; }
-.lsliste { display: flex; flex-wrap: wrap; gap: 6px; }
-.lsschritt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
-  padding: 3px 9px; border: 1px solid var(--line-2); border-radius: 999px; color: var(--ink-3); }
+.lsliste { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.lspraefix { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 700; margin-right: 2px; }
+.lsschritt { display: inline-flex; align-items: center; gap: 4px; font-size: 11px;
+  padding: 2px 7px; border: 1px solid var(--line-2); border-radius: 999px; color: var(--ink-3); }
 .lsschritt i { font-style: normal; font-weight: 700; }
 .lsschritt.fertig { border-color: var(--ok); color: var(--ok); }
 .lsschritt.laeuft { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
@@ -389,9 +396,11 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .pjtab th:first-child { text-align: left; color: var(--ink-3); font-weight: 600;
   text-transform: none; letter-spacing: 0; font-size: 11px; }
 .pjtab td { font-variant-numeric: tabular-nums; }
+/* Eine Zeile statt eines gelben Kastens: woher das Ergebnis stammt, ist
+   eine Randnotiz. Als Warnfarbe stand es groesser da als der Dossierkopf. */
 .zshinweis { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-  font-size: 12px; line-height: 1.5; color: #8a5a12; background: #fff4e0;
-  border: 1px solid #f0d9a8; border-radius: 8px; padding: 8px 11px; margin-bottom: 12px; }
+  font-size: 11.5px; line-height: 1.45; color: var(--ink-3);
+  padding: 0 0 10px; margin: 0; }
 
 /* Zustand des Analyse-Dienstes. Bewusst getrennte Farben: eine technische
    Stoerung darf nicht wie ein fachlicher Befund aussehen. */
@@ -512,27 +521,30 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
     </div>
 
     <details class="layercard" id="layercard" open>
-      <summary>Layer</summary>
+      <summary>Kartenebenen</summary>
       <div class="layerbody">
         <div class="layergroup">
-          <h4>Basiskarte</h4>
-          <label class="layeropt"><input type="radio" name="base" value="grau" checked> Neutrale Karte</label>
-          <label class="layeropt"><input type="radio" name="base" value="karte"> Landeskarte</label>
-          <label class="layeropt"><input type="radio" name="base" value="luftbild"> Luftbild</label>
+          <h4>Ansicht</h4>
+          <div class="ansichtwahl">
+            <label><input type="radio" name="base" value="karte" checked><span>Karte</span></label>
+            <label><input type="radio" name="base" value="kataster"><span>Kataster</span></label>
+            <label><input type="radio" name="base" value="luftbild"><span>Luftbild</span></label>
+          </div>
         </div>
         <div class="layergroup">
-          <h4>Amtliche Overlays</h4>
-          <label class="layeropt"><input type="checkbox" id="lay-kataster"> Katasterplan</label>
-          <label class="layeropt"><input type="checkbox" id="lay-gebaeude"> Geb&auml;ude (GWR)</label>
+          <h4>Auf dem Grundst&uuml;ck</h4>
+          <label class="layeropt off" id="opt-parzelle"><input type="checkbox" id="lay-parzelle" checked disabled><span class="swatch" style="border-color:#b3324a;background:rgba(179,50,74,.18)"></span>Grundst&uuml;ck<span class="cnt" id="cnt-parzelle"></span></label>
+          <label class="layeropt off" id="opt-bauzone"><input type="checkbox" id="lay-bauzone" disabled><span class="swatch" style="border-color:#2a7f8f;background:rgba(42,127,143,.18)"></span>Bauzone<span class="cnt" id="cnt-bauzone"></span></label>
+          <label class="layeropt off" id="opt-sondernutzung"><input type="checkbox" id="lay-sondernutzung" disabled><span class="swatch" style="border-color:#7c3aed;background:rgba(124,58,237,.20)"></span>Sondernutzung<span class="cnt" id="cnt-sondernutzung"></span></label>
+          <label class="layeropt off" id="opt-baulinie"><input type="checkbox" id="lay-baulinie" disabled><span class="swatch" style="border-color:#b4661a;background:rgba(180,102,26,.22)"></span>Baulinie<span class="cnt" id="cnt-baulinie"></span></label>
+          <label class="layeropt off" id="opt-gewaesser"><input type="checkbox" id="lay-gewaesser" disabled><span class="swatch" style="border-color:#0284c7;background:rgba(2,132,199,.22)"></span>Gew&auml;sserraum<span class="cnt" id="cnt-gewaesser"></span></label>
+          <label class="layeropt off" id="opt-restrikt"><input type="checkbox" id="lay-restrikt" disabled><span class="swatch" style="border-color:#9c3327;background:rgba(156,51,39,.20)"></span>Weitere Einschr&auml;nkungen<span class="cnt" id="cnt-restrikt"></span></label>
         </div>
         <div class="layergroup">
-          <h4>Analyse-Ergebnisse</h4>
-          <label class="layeropt off" id="opt-parzelle"><input type="checkbox" id="lay-parzelle" checked disabled><span class="swatch" style="border-color:#b3324a;background:rgba(179,50,74,.18)"></span>Parzelle<span class="cnt" id="cnt-parzelle">&ndash;</span></label>
-          <label class="layeropt off" id="opt-zonen"><input type="checkbox" id="lay-zonen" disabled><span class="swatch" style="border-color:#2a7f8f;background:rgba(42,127,143,.18)"></span>Zonen<span class="cnt" id="cnt-zonen">&ndash;</span></label>
-          <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;background:rgba(31,122,77,.25)"></span>Baubereich G1<span class="cnt" id="cnt-baubereich">&ndash;</span></label>
-          <label class="layeropt off" id="opt-restrikt"><input type="checkbox" id="lay-restrikt" disabled><span class="swatch" style="border-color:#b4661a;background:rgba(180,102,26,.22)"></span>Restriktionen<span class="cnt" id="cnt-restrikt">&ndash;</span></label>
-          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span>Bestand<span class="cnt" id="cnt-bestand">&ndash;</span></label>
-          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" disabled><span class="swatch" style="border-color:#0369a1;background:rgba(3,105,161,.30)"></span>Szenario<span class="cnt" id="cnt-szenario">&ndash;</span></label>
+          <h4>Aus der Analyse</h4>
+          <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;background:rgba(31,122,77,.25)"></span>Bebaubare Fl&auml;che<span class="cnt" id="cnt-baubereich"></span></label>
+          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span>Heutige Geb&auml;ude<span class="cnt" id="cnt-bestand"></span></label>
+          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" disabled><span class="swatch" style="border-color:#0369a1;background:rgba(3,105,161,.30)"></span>Geplantes Geb&auml;ude<span class="cnt" id="cnt-szenario"></span></label>
         </div>
       </div>
     </details>
@@ -628,20 +640,28 @@ var OVERLAYS = {
 var map = L.map("map", { center: [46.95, 8.1], zoom: 8, fadeAnimation: false,
                          zoomControl: false });
 L.control.zoom({ position: "bottomright" }).addTo(map);
-// Ruhige Standardansicht: die neutrale Graukarte ohne Katasterplan. Der
-// Katasterplan liegt nur bis Zoomstufe 19 vor und wird darueber
-// hochskaliert -- daher die unscharfen, verzerrten Flaechen und die
-// riesigen Parzellennummern. Er bleibt einschaltbar, ist aber nicht das,
-// was man beim Oeffnen sehen will.
-BASES.grau.addTo(map);
-var aktiveBase = "grau";
+// Standardansicht "Karte": die Landeskarte, so wie man eine Karte erwartet.
+// Der Katasterplan liegt nur bis Zoomstufe 19 vor und wird darueber
+// hochskaliert -- daher die unscharfen Flaechen und die riesigen
+// Parzellennummern. Er ist deshalb eine eigene Ansicht ("Kataster") statt
+// einer Ebene, die man beim Oeffnen mitgeliefert bekommt.
+BASES.karte.addTo(map);
+var aktiveBase = "karte";
 
 // Sichtbar ist anfangs nur, was die Frage "welches Grundstueck ist das und
-// was ist darauf moeglich" beantwortet: die Parzelle und der Baubereich.
-// Zonen, Restriktionen, Bestand und Szenario liegen bereit und lassen sich
-// einschalten -- alle sechs gleichzeitig machen die Karte unlesbar.
+// was ist darauf moeglich" beantwortet: das Grundstueck und die bebaubare
+// Flaeche. Alles Uebrige liegt bereit und laesst sich einzeln dazuschalten
+// -- alle gleichzeitig machen die Karte unlesbar.
 var gruppen = {
-  zonen: L.layerGroup(),
+  // Aufgeteilt in das, was ein Makler auseinanderhalten muss: die Bauzone,
+  // ein allfaelliger Sondernutzungsplan, Baulinien und Gewaesserraum je
+  // einzeln. Frueher lagen sie zu zweit in "Zonen" und "Restriktionen" --
+  // man konnte den Gewaesserraum nicht anschauen, ohne alles andere
+  // mitzuschalten.
+  bauzone: L.layerGroup(),
+  sondernutzung: L.layerGroup(),
+  baulinie: L.layerGroup(),
+  gewaesser: L.layerGroup(),
   restrikt: L.layerGroup(),
   parzelle: L.layerGroup().addTo(map),
   baubereich: L.layerGroup().addTo(map),
@@ -652,6 +672,8 @@ var STANDARD_SICHTBAR = { parzelle: true, baubereich: true };
 var adressMarker = null, pickMarker = null;
 
 var STIL = {
+  sonder:    { color: "#7c3aed", weight: 2.5, fillColor: "#7c3aed", fillOpacity: .16, dashArray: "5,4" },
+  gewaesser: { color: "#0284c7", weight: 2,   fillColor: "#0284c7", fillOpacity: .20 },
   parzelle:  { color: "#b3324a", weight: 3,   fillColor: "#b3324a", fillOpacity: .07 },
   zone:      { color: "#2a7f8f", weight: 1.5, fillColor: "#2a7f8f", fillOpacity: .13 },
   zoneUeber: { color: "#6a4c93", weight: 2,   fillColor: "#6a4c93", fillOpacity: .15, dashArray: "5,4" },
@@ -674,6 +696,13 @@ function selektiere(layer, sectionId) {
   }
   if (sectionId) springeZu(sectionId);
 }
+// Kategorie 61 des Bundesmodells heisst woertlich "Bereiche
+// rechtsgueltiger Sondernutzungsplaene".
+function _kategorie61(f) {
+  var code = String((f || {}).hauptnutzung_code || "").replace(/^[Cc]/, "");
+  return code.slice(0, 2) === "61";
+}
+
 function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung, dauerhaft) {
   var layers = [];
   toRings(geom).forEach(function (ring) {
@@ -684,8 +713,12 @@ function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung,
     // es genau eine Flaeche gibt -- bei Dutzenden Zonenflaechen waeren
     // dauerhafte Etiketten unlesbarer als gar keine.
     if (beschriftung) {
-      poly.bindTooltip(beschriftung, { permanent: !!dauerhaft, direction: "center",
-                                       className: "kartenlabel", opacity: 1 });
+      // Dauerhaft nur beim ersten Polygon: der Baubereich besteht bei einer
+      // Bandbreite aus mehreren Flaechen, und jede trug ihr eigenes
+      // Etikett -- "Baubereich" stand dann zweimal uebereinander.
+      poly.bindTooltip(beschriftung, {
+        permanent: !!dauerhaft && layers.length === 0,
+        direction: "center", className: "kartenlabel", opacity: 1 });
     }
     poly.on("click", function () { selektiere(poly, sectionId); });
     poly.addTo(gruppe);
@@ -707,22 +740,41 @@ function zeichneLinien(gruppe, geom, stil, popupHtml, sectionId, beschriftung) {
   return [line];
 }
 
-/* Layer-Schalter */
+/* Ansichten statt Basiskarte plus Overlay.
+   "Kataster" war bisher eine Zusatzebene, die man zur richtigen Grundkarte
+   dazuschalten musste -- zwei Bedienschritte fuer eine Sicht, die man
+   entweder will oder nicht. Jetzt sind es drei benannte Ansichten. */
+var ANSICHTEN = {
+  karte:     { basis: "karte",  overlays: [] },
+  kataster:  { basis: "grau",   overlays: ["kataster"] },
+  luftbild:  { basis: "luftbild", overlays: [] }
+};
+var aktiveAnsicht = "karte";
+
+function setzeAnsicht(name) {
+  var a = ANSICHTEN[name] || ANSICHTEN.karte;
+  if (map.hasLayer(BASES[aktiveBase])) map.removeLayer(BASES[aktiveBase]);
+  aktiveBase = a.basis;
+  aktiveAnsicht = name;
+  BASES[aktiveBase].addTo(map);
+  Object.keys(OVERLAYS).forEach(function (k) {
+    var an = a.overlays.indexOf(k) >= 0;
+    if (an && !map.hasLayer(OVERLAYS[k])) OVERLAYS[k].addTo(map);
+    if (!an && map.hasLayer(OVERLAYS[k])) map.removeLayer(OVERLAYS[k]);
+  });
+  Object.keys(OVERLAYS).forEach(function (k) {
+    if (map.hasLayer(OVERLAYS[k])) OVERLAYS[k].bringToFront();
+  });
+}
+
 Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), function (r) {
-  r.addEventListener("change", function () {
-    map.removeLayer(BASES[aktiveBase]);
-    aktiveBase = r.value;
-    BASES[aktiveBase].addTo(map);
-    Object.keys(OVERLAYS).forEach(function (k) { if (map.hasLayer(OVERLAYS[k])) OVERLAYS[k].bringToFront(); });
-  });
+  r.addEventListener("change", function () { if (r.checked) setzeAnsicht(r.value); });
 });
-[["lay-kataster", OVERLAYS.kataster], ["lay-gebaeude", OVERLAYS.gebaeude]].forEach(function (paar) {
-  document.getElementById(paar[0]).addEventListener("change", function (ev) {
-    if (ev.target.checked) paar[1].addTo(map); else map.removeLayer(paar[1]);
-  });
-});
-["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (name) {
-  document.getElementById("lay-" + name).addEventListener("change", function (ev) {
+["parzelle", "bauzone", "sondernutzung", "baulinie", "gewaesser", "restrikt",
+ "baubereich", "bestand", "szenario"].forEach(function (name) {
+  var feld = document.getElementById("lay-" + name);
+  if (!feld) return;
+  feld.addEventListener("change", function (ev) {
     if (ev.target.checked) gruppen[name].addTo(map); else map.removeLayer(gruppen[name]);
   });
 });
@@ -1554,24 +1606,33 @@ function stopLoading() { clearInterval(ladeTimer); ladeTimer = null; }
 */
 var STAND_SYMBOL = { fertig: "✓", laeuft: "…", offen: "·", fehler: "!" };
 
+// Kurzformen fuer die Statusleiste. Der volle Wortlaut bleibt als Tooltip.
+var SCHRITT_KURZ = {
+  "Grundstück und Karte": "Grundstück",
+  "Grundnutzung und amtliche Daten": "Grundnutzung",
+  "Vertiefte Reglementsauswertung": "Baurecht",
+  "Baubereich, Flächen und Szenarien": "Potenzial"
+};
+function kurzSchritt(t) { return SCHRITT_KURZ[t] || t; }
+
 function standLeiste(schritte, fehler) {
   schritte = alsListe(schritte);
   if (!schritte.length) return "";
   var offen = schritte.filter(function (s) { return s.stand !== "fertig"; });
   var fertig = !offen.length;
 
-  return '<div class="ladestand' + (fertig ? " fertig" : "") +
-    (fehler ? " gestoert" : "") + '" id="ladestand">' +
-    '<div class="lskopf">' +
-      (fertig ? "<b>Analyse vollständig</b>"
-              : "<b>Analyse läuft</b> — was hier steht, ist bereits belegt") +
-    "</div>" +
+  // Ist alles fertig und nichts schiefgegangen, verschwindet die Leiste.
+  // Ein dauerhaftes "Analyse vollstaendig" ist keine Information, sondern
+  // eine Zeile, die dem Ergebnis Platz wegnimmt.
+  if (fertig && !fehler) return "";
+
+  return '<div class="ladestand' + (fehler ? " gestoert" : "") + '" id="ladestand">' +
     '<div class="lsliste">' +
+      '<span class="lspraefix">' + (fehler ? "Nicht vollständig" : "Läuft") + "</span>" +
       schritte.map(function (s) {
         var st = s.stand || "offen";
-        return '<span class="lsschritt ' + st + '">' +
-          '<i>' + (STAND_SYMBOL[st] || "·") + "</i>" + esc(s.bezeichnung) +
-          (st === "laeuft" ? " …" : "") + "</span>";
+        return '<span class="lsschritt ' + st + '" title="' + esc(s.bezeichnung) + '">' +
+          '<i>' + (STAND_SYMBOL[st] || "·") + "</i>" + esc(kurzSchritt(s.bezeichnung)) + "</span>";
       }).join("") +
     "</div>" +
     (fehler
@@ -1763,14 +1824,14 @@ function zeichneErgebnisAufKarte(erg) {
   setLayerVerfuegbar("parzelle", anzP);
 
   var nk = m1.nutzungsklassifikation || {};
-  var basisName = (nk.basiszone || {}).typ_kommunal_bezeichnung
-    || (nk.basiszone || {}).typ_kantonal_bezeichnung;
+  var basisName = zoneKlarname((nk.basiszone || {}).typ_kommunal_bezeichnung
+    || (nk.basiszone || {}).typ_kantonal_bezeichnung);
   var snpMassgebend = alsListe(nk.sondernutzungsplaene_massgebend).length > 0;
-  var anzZ = 0;
+  var anzZ = 0, anzSnp = 0;
   alsListe(nk.festlegungen).forEach(function (f) {
     if (!f.geometrie_koordinaten) return;
     var ueberlagernd = (f.ebene || "") !== "grundnutzung";
-    var zName = f.typ_kommunal_bezeichnung || f.typ_kantonal_bezeichnung || "Zone";
+    var zName = zoneKlarname(f.typ_kommunal_bezeichnung || f.typ_kantonal_bezeichnung) || "Zone";
     var istBasis = !ueberlagernd && basisName && zName === basisName;
     // Das Popup beantwortet, was ein Makler wissen muss: was ist das, gilt
     // es fuer dieses Grundstueck, und was folgt daraus.
@@ -1785,10 +1846,17 @@ function zeichneErgebnisAufKarte(erg) {
                           + "ersetzt sie nicht."
                         : "Nachbarzone im Abfragebereich — gilt nicht für dieses Grundstück.")) +
       (f.rechtsstatus === "inKraft" ? "<br>rechtskräftig" : "") + "</span>";
-    anzZ += zeichnePolygone(gruppen.zonen, f.geometrie_koordinaten,
-      ueberlagernd ? STIL.zoneUeber : STIL.zone, popupZ, "sec-baurecht", esc(zName)).length;
+    // Ein Sondernutzungsplan ist keine Zone unter vielen -- er steuert die
+    // ganze Beurteilung und bekommt deshalb eine eigene Ebene.
+    var istSnp = _kategorie61(f);
+    var ziel = istSnp ? gruppen.sondernutzung : gruppen.bauzone;
+    var anz = zeichnePolygone(ziel, f.geometrie_koordinaten,
+      istSnp ? STIL.sonder : (ueberlagernd ? STIL.zoneUeber : STIL.zone),
+      popupZ, "sec-baurecht", esc(zName)).length;
+    if (istSnp) anzSnp += anz; else anzZ += anz;
   });
-  setLayerVerfuegbar("zonen", anzZ);
+  setLayerVerfuegbar("bauzone", anzZ);
+  setLayerVerfuegbar("sondernutzung", anzSnp);
 
   /* Baubereich: echtes G1-Rechenergebnis, kein Symbolbild */
   var anzB = 0;
@@ -1796,6 +1864,11 @@ function zeichneErgebnisAufKarte(erg) {
   if (g1) {
     var einzel = g1.szenarien ? Object.keys(g1.szenarien).map(function (k) { return [k, g1.szenarien[k]]; })
                               : (g1.ergebnis ? [["", g1.ergebnis]] : []);
+    // Bei einer Bandbreite gibt es zwei Baubereiche (optimistisch und
+    // konservativ). Beide werden gezeichnet, aber nur der erste bekommt ein
+    // dauerhaftes Etikett -- sonst stand "Baubereich" zweimal uebereinander
+    // auf derselben Stelle.
+    var ersterBaubereich = true;
     einzel.forEach(function (paar) {
       var name = paar[0], e = paar[1];
       if (!e || !e.baubereich_koordinaten) return;
@@ -1804,7 +1877,8 @@ function zeichneErgebnisAufKarte(erg) {
         "Fussabdruck " + fmt(e.fussabdruck_m2, 1) + " m² (" + esc(e.fussabdruck_limitiert_durch) + ")<br>" +
         "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²</span>";
       anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten, STIL.baubereich, popupB,
-        "sec-potenzial", "Baubereich", true).length;
+        "sec-potenzial", "Bebaubare Fläche", ersterBaubereich).length;
+      ersterBaubereich = false;
     });
   }
   setLayerVerfuegbar("baubereich", anzB);
@@ -1825,17 +1899,17 @@ function zeichneErgebnisAufKarte(erg) {
   setLayerVerfuegbar("bestand", anzBest);
 
   var rg = m1.restriktionsgeometrie || {};
-  var anzR = 0;
+  var anzR = 0, anzG = 0, anzB2 = 0;
   alsListe(rg.gewaesserraum_flaechen).forEach(function (gr) {
     var p = "<b>Gewässerraum</b><span class=\"m\">" + esc(gr.gewaessername || "ohne Namensangabe") +
       "<br>Quelle: Kanton " + esc(gr.kanton) + "</span>";
-    anzR += zeichnePolygone(gruppen.restrikt, gr.koordinaten, STIL.restrikt, p,
+    anzG += zeichnePolygone(gruppen.gewaesser, gr.koordinaten, STIL.gewaesser, p,
       "sec-restriktionen", "Gewässerraum").length;
   });
   alsListe(rg.baulinien_gefunden).forEach(function (bl) {
     var p = "<b>Baulinie</b><span class=\"m\">" + esc(bl.art || bl.typ || "Baulinie") + "<br>Quelle: Kanton " + esc(bl.kanton) + "</span>";
-    anzR += zeichneLinien(gruppen.restrikt, bl.koordinaten || bl.geometrie_koordinaten, STIL.restrikt, p,
-      "sec-restriktionen", "Baulinie").length;
+    anzB2 += zeichneLinien(gruppen.baulinie, bl.koordinaten || bl.geometrie_koordinaten,
+      STIL.restrikt, p, "sec-restriktionen", "Baulinie").length;
   });
   alsListe(rg.restriktionsflaechen_fuer_g1).forEach(function (rf) {
     var p = "<b>Restriktionsfläche (in G1 abgezogen)</b><span class=\"m\">" + esc(rf.typ || rf.quelle || "Restriktion") + "</span>";
@@ -1843,6 +1917,8 @@ function zeichneErgebnisAufKarte(erg) {
       "sec-restriktionen", esc(rf.typ || "Restriktion")).length;
   });
   setLayerVerfuegbar("restrikt", anzR);
+  setLayerVerfuegbar("gewaesser", anzG);
+  setLayerVerfuegbar("baulinie", anzB2);
 
   // Zoom 18 statt 19: eine 83 m2 grosse Altstadtparzelle fuellte sonst den
   // ganzen Bildschirm, und der Zusammenhang -- Strasse, Nachbarschaft,
@@ -1922,11 +1998,12 @@ function zwischenspeicherHinweis(erg) {
   var alter = tage < 1
     ? Math.max(1, Math.round(tage * 24)) + " Stunde(n)"
     : Math.round(tage) + " Tag(e)";
-  return '<div class="zshinweis">Dieses Ergebnis stammt aus einer <b>gespeicherten ' +
-    'Analyse vom ' + esc((z.gerechnet_am || "").slice(0, 10)) + '</b> (' + esc(alter) +
-    ' alt) und wurde nicht neu gerechnet. Amtliche Grundlagen können sich seither ' +
-    'geändert haben.' +
-    '<button class="szbtn" id="zs-neu">Jetzt neu rechnen</button></div>';
+  // Eine Zeile statt eines Kastens: die Herkunft des Ergebnisses ist eine
+  // Randnotiz, keine Warnung -- sie stand bisher groesser da als der
+  // Dossierkopf darunter.
+  return '<div class="zshinweis">Gespeicherte Analyse vom <b>' +
+    esc((z.gerechnet_am || "").slice(0, 10)) + '</b>, ' + esc(alter) + ' alt' +
+    '<button class="szbtn klein" id="zs-neu">neu rechnen</button></div>';
 }
 
 /* ===================== Reiter =====================
@@ -1999,7 +2076,7 @@ function secUebersicht(erg, m1, zz) {
       'Über das Grundstück ist damit nichts Nachteiliges gesagt.</p></div>';
   } else if (snp) {
     var plaene = alsListe(zz.sondernutzungsplaene).map(function (p) {
-      return p.typ_kommunal_bezeichnung || p.typ_kantonal_bezeichnung || p.bezeichnung;
+      return zoneKlarname(p.typ_kommunal_bezeichnung || p.typ_kantonal_bezeichnung || p.bezeichnung);
     }).filter(Boolean);
     leitsatz =
       '<div class="leit stop"><div class="leitkopf">' +
@@ -2061,7 +2138,7 @@ function secUebersicht(erg, m1, zz) {
     einschraenkungen.push(["Baulinien", (r.baulinien_gefunden || []).length + " gefunden"]);
   }
   ueberlagerungenVon(nk).slice(0, 4).forEach(function (u) {
-    einschraenkungen.push([u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung || "Überlagerung",
+    einschraenkungen.push([zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "Überlagerung",
                            "rechtskräftige Überlagerung"]);
   });
   betroffeneOerebThemen(m1).slice(0, 4).forEach(function (k) {
@@ -2075,7 +2152,18 @@ function secUebersicht(erg, m1, zz) {
     // verwaessert, statt ihn zu fuehren.
     '<h4 class="subhead">Was gilt hier?</h4>' +
     leitsatz +
-    zonenHierarchie(m1, zz) +
+    // Die vollstaendige Rangfolge A-D steht im Reiter "Baurecht". Sie hier
+    // zu wiederholen hat aus der Uebersicht eine zweite Baurechtsseite
+    // gemacht -- die Uebersicht soll die Aussage bringen, nicht die
+    // Herleitung.
+    kvRows([
+      ["Grundnutzung", zoneKlarname(basis.typ_kommunal_bezeichnung
+        || basis.typ_kantonal_bezeichnung || amtl.zonenbezeichnung)],
+      ["Massgebend", snp ? "Sondernutzungsplan" :
+        (zz.status === "gefunden" ? "ordentliche Bauzone" : null)]
+    ]) +
+    '<div class="note">Die vollständige Rangfolge — Grundnutzung, Sondernutzung, ' +
+    'Überlagerungen, Restriktionen — steht im Reiter <b>Baurecht</b>.</div>' +
     // Diese Ueberschrift verschwindet NIE. Ein Makler muss den Unterschied
     // zwischen "hier ist nichts moeglich" und "das wurde nicht bestimmt"
     // sehen -- ein fehlender Abschnitt sagt weder das eine noch das andere.
@@ -2167,8 +2255,8 @@ function headHtml(erg, m1, zz) {
       "<div><dt>Fläche</dt><dd>" + (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "–") + "</dd></div>" +
       '<div><dt>Gemeinde</dt><dd style="font-family:Archivo,sans-serif">' + esc((m1.gemeinde || {}).gemeinde) + "</dd></div>" +
       '<div style="grid-column:1/-1"><dt>Grundnutzungszone (amtlich)</dt><dd style="font-family:Archivo,sans-serif;font-weight:600">' +
-        esc(basis.typ_kommunal_bezeichnung || basis.typ_kantonal_bezeichnung
-            || amtl.zonenbezeichnung || amtl.bezeichnung || "wird ermittelt …") + "</dd></div>" +
+        esc(zoneKlarname(basis.typ_kommunal_bezeichnung || basis.typ_kantonal_bezeichnung
+            || amtl.zonenbezeichnung || amtl.bezeichnung) || "wird ermittelt …") + "</dd></div>" +
     "</div></div>";
 }
 
@@ -2400,6 +2488,85 @@ function kantenprotokoll(erg, m1) {
 // ("laermempfindlichkeitsstufen"). So stehen sie im Dossier eines Maklers
 // nicht gut. Bekannte Themen bekommen ihren gelaeufigen Namen, unbekannte
 // werden lesbar gemacht statt erfunden.
+/* --- Nutzersprache -------------------------------------------------------
+
+   Die Fachdienste liefern interne Schluessel: "ueberlagernd_flaeche",
+   "mehrdeutig_mehrere_grundnutzungen_im_radius", "hanglagen_privileg". Die
+   sind fuer die Herkunft wichtig und standen deshalb bisher woertlich im
+   Dossier -- an Stellen, an denen ein Makler sie lesen muss.
+
+   Hier steht die Uebersetzung EINMAL. Die technische Schreibweise bleibt
+   erhalten und ist unter "Daten & Quellen" weiterhin abrufbar; im Dossier
+   steht, was sie bedeutet.
+
+   Unbekannte Schluessel werden lesbar gemacht (Unterstriche raus, erster
+   Buchstabe gross), nicht erfunden.
+*/
+var FACHBEGRIFF = {
+  // Ebenen der Nutzungsplanung
+  grundnutzung: "Grundnutzung",
+  ueberlagernd_flaeche: "überlagernde Fläche",
+  ueberlagernd_linie: "überlagernde Linie",
+  ueberlagernd_punkt: "überlagernder Punkt",
+
+  // Bestimmtheit der Zonenzuordnung
+  eindeutig: "eindeutig",
+  mehrdeutig: "mehrdeutig",
+  mehrdeutig_mehrere_grundnutzungen_im_radius:
+    "mehrdeutig — mehrere Grundnutzungen im Umkreis",
+  keine_grundnutzung_gefunden: "keine Grundnutzung gefunden",
+  gefunden: "zugeordnet",
+  sondernutzungsplan_massgebend: "Sondernutzungsplan massgebend",
+  mehrere_gleich_gute_kandidaten: "mehrere Zonen passen gleich gut",
+  keine_amtliche_zone: "keine amtliche Zone vorhanden",
+
+  // Sicherheit einzelner Kennzahlen
+  hoch: "hoch", mittel: "mittel", gering: "gering",
+  nicht_bestimmbar: "nicht bestimmbar",
+  unsicher: "unsicher",
+
+  // Rechtsstatus
+  inKraft: "rechtskräftig",
+  laufendeAenderung: "laufende Änderung",
+  vorgesehen: "vorgesehen",
+
+  // Arten von Sonderregelungen
+  minergie_energiebonus: "Energiebonus (Minergie)",
+  hanglagen_privileg: "Hanglagen-Privileg",
+  denkmalschutz_ausnahme: "Ausnahme bei Denkmalschutz",
+  arealbebauung: "Arealbebauung",
+  gestaltungsplan: "Gestaltungsplan",
+  attika: "Attikageschoss",
+  dachausbau: "Dachausbau",
+  untergeschoss: "Untergeschoss",
+
+  // Herkunft eines Werts
+  referenz: "amtliche Referenz",
+  systemannahme: "Vorschlag des Systems",
+  benutzerannahme: "Ihre Annahme",
+  nutzungsklassifikation: "amtliche Nutzungsplanung",
+  oereb_legendtext_fallback: "ÖREB-Legendentext"
+};
+
+function klartext(schluessel) {
+  if (schluessel === null || schluessel === undefined || schluessel === "") return "–";
+  var k = String(schluessel);
+  if (FACHBEGRIFF[k]) return FACHBEGRIFF[k];
+  var t = k.replace(/_/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : "–";
+}
+
+// Manche Kantone stellen ihren Zonen ein technisches Kuerzel voran
+// ("BauG_Wohnzone W2", "NP_Kernzone"). Fuer die Anzeige gehoert es weg --
+// im Reiter "Daten & Quellen" steht die Bezeichnung unveraendert.
+var TECHNISCHES_PRAEFIX = /^[A-Za-zÄÖÜäöü]{2,12}[_\-.]\s*(?=[A-ZÄÖÜ])/;
+
+function zoneKlarname(name) {
+  var t = String(name || "").trim();
+  if (!t) return "";
+  return t.replace(TECHNISCHES_PRAEFIX, "").trim() || t;
+}
+
 var OEREB_THEMA = {
   laermempfindlichkeitsstufen: "Lärmempfindlichkeitsstufe",
   belastete_standorte: "Belasteter Standort",
@@ -2457,7 +2624,8 @@ function zonenHierarchie(m1, zz) {
   var massgebendSnp = zz.status === "sondernutzungsplan_massgebend" || snpListe.length > 0;
 
   // --- A Grundnutzung ---------------------------------------------------
-  var name = basis.typ_kommunal_bezeichnung || amtl.zonenbezeichnung || amtl.bezeichnung;
+  var name = zoneKlarname(basis.typ_kommunal_bezeichnung || amtl.zonenbezeichnung
+                          || amtl.bezeichnung);
   var a = name
     ? '<div class="zeintrag' + (massgebendSnp ? " zurueck" : " massgebend") + '">' +
         '<div class="zezeile"><b>' + esc(name) + "</b>" +
@@ -2476,7 +2644,7 @@ function zonenHierarchie(m1, zz) {
   var b = snpListe.length
     ? snpListe.map(function (s) {
         return '<div class="zeintrag massgebend"><div class="zezeile"><b>' +
-          esc(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung || "Sondernutzungsplan") +
+          esc(zoneKlarname(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung) || "Sondernutzungsplan") +
           '</b><span class="badge stop">massgebend</span></div>' +
           '<div class="f">' + esc(s.typ_kantonal_bezeichnung || "") +
           (s.rechtsstatus === "inKraft" ? " · rechtskräftig" : "") + "</div></div>";
@@ -2492,11 +2660,11 @@ function zonenHierarchie(m1, zz) {
     return (f.ebene || "") !== "grundnutzung" && f.ist_rechtskraeftig;
   });
   var EBENE_TEXT = { ueberlagernd_flaeche: "Fläche", ueberlagernd_linie: "Linie",
-                     ueberlagernd_punkt: "Punkt" };
+                     ueberlagernd_punkt: "Punkt" };  // kurz, weil daneben der Name steht
   var c = ueber.length
     ? ueber.map(function (u) {
         return '<div class="zeintrag"><div class="zezeile"><b>' +
-          esc(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung || "Überlagerung") +
+          esc(zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "Überlagerung") +
           '</b><span class="badge warn">zu beachten</span></div>' +
           '<div class="f">' + esc([EBENE_TEXT[u.ebene] || u.ebene,
                                    u.hauptnutzung_bezeichnung].filter(Boolean).join(" · ")) +
@@ -2547,9 +2715,12 @@ function secBaurecht(erg, m1, zz) {
   if (zz.status === "sondernutzungsplan_massgebend") {
     zonenTeil = '<div class="note stop"><b>Sondernutzungsplan geht der Grundnutzung vor.</b><br>' + esc(zz.hinweis) + "</div>" +
       alsListe(zz.sondernutzungsplaene).map(function (s) {
-        return '<div class="card"><div class="cardhead"><h4>' + esc(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung) +
+        return '<div class="card"><div class="cardhead"><h4>' +
+          esc(zoneKlarname(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung)) +
           '</h4><span class="badge stop">rechtskräftig</span></div>' +
-          kvRows([["Ebene", s.ebene], ["Kantonaler Typ", s.typ_kantonal_bezeichnung], ["Rechtsstatus", s.rechtsstatus], ["Quelle", s.quelle]]) + "</div>";
+          kvRows([["Art der Festlegung", klartext(s.ebene)],
+                  ["Kantonaler Typ", zoneKlarname(s.typ_kantonal_bezeichnung)],
+                  ["Rechtsstatus", klartext(s.rechtsstatus)]]) + "</div>";
       }).join("") +
       '<div class="note">Deshalb werden bewusst keine BZO-Kennzahlen als geltend dargestellt: die massgebenden Masse stehen im Sondernutzungsplan, nicht in der Regelbauweise.</div>';
   } else if (zz.status === "mehrere_gleich_gute_kandidaten") {
@@ -2559,7 +2730,7 @@ function secBaurecht(erg, m1, zz) {
         return '<div class="card"><div class="cardhead"><h4>' + esc(k.zonenbezeichnung) + "</h4></div>" + zoneKennzahlen(k) + "</div>";
       }).join("");
   } else if (zz.status === "gefunden") {
-    zonenTeil = '<div class="card sel"><div class="cardhead"><h4>' + esc(zz.zone.zonenbezeichnung) +
+    zonenTeil = '<div class="card sel"><div class="cardhead"><h4>' + esc(zoneKlarname(zz.zone.zonenbezeichnung)) +
       '</h4><span class="badge ok">zugeordnet</span></div>' +
       kvRows([
         ["Amtliche Bezeichnung", zz.amtliche_zonenbezeichnung],
@@ -2575,7 +2746,8 @@ function secBaurecht(erg, m1, zz) {
   var sonder = alsListe(m2.sonderregelungen).map(function (s) {
     var vor = alsListe(s.voraussetzungen);
     var zonen = alsListe(s.gilt_fuer_zonen);
-    return '<div class="card"><div class="cardhead"><h4>' + esc(s.titel) + '</h4><span class="badge mute">' + esc(s.typ) + "</span></div>" +
+    return '<div class="card"><div class="cardhead"><h4>' + esc(s.titel) +
+      '</h4><span class="badge mute">' + esc(klartext(s.typ)) + "</span></div>" +
       "<p>" + esc(s.beschreibung) + "</p>" +
       (s.bonus_effekt ? '<div class="note ok"><b>Effekt:</b> ' + esc(s.bonus_effekt) + "</div>" : "") +
       '<details class="more"><summary>Voraussetzungen &amp; Rechtsgrundlage</summary><div>' +
@@ -2600,12 +2772,12 @@ function secBaurecht(erg, m1, zz) {
     zonenHierarchie(m1, zz) +
     '<h4 class="subhead">Herleitung und Nachweise</h4>' +
     kvRows([
-      ["Grundnutzung (amtlich)", basis.typ_kommunal_bezeichnung],
-      ["Kantonaler Zonentyp", basis.typ_kantonal_bezeichnung ? basis.typ_kantonal_bezeichnung + " (" + (basis.typ_kantonal_code || "–") + ")" : null],
+      ["Grundnutzung (amtlich)", zoneKlarname(basis.typ_kommunal_bezeichnung)],
+      ["Kantonaler Zonentyp", zoneKlarname(basis.typ_kantonal_bezeichnung)],
       ["Hauptnutzung", basis.hauptnutzung_bezeichnung],
-      ["Rechtsstatus", basis.rechtsstatus],
-      ["Bestimmtheit", nk.basiszone_status],
-      ["Klassifikationsquelle", nk.quelle],
+      ["Rechtsstatus", klartext(basis.rechtsstatus)],
+      ["Bestimmtheit der Zuordnung", klartext(nk.basiszone_status)],
+      ["Ermittelt über", klartext(nk.quelle)],
       ["Ausgewertetes Reglement", m2.dokument_titel],
       ["Stand", m2.stand_datum]
     ]) +
