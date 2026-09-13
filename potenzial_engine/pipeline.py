@@ -36,6 +36,7 @@ from .flaechenmodell import (
     WohnungstypVorgabe,
     berechne_flaechen_und_wohnungen,
 )
+from .hbu import bestimme_hbu as _bestimme_hbu
 from .kantenklassifikation import quellen_fuer_kanten
 from .szenarien import berechne_szenarien as _berechne_szenarien
 from .wirtschaftlichkeit import Marktannahmen, berechne_alle as _berechne_wirtschaftlich
@@ -327,7 +328,7 @@ def berechne_wirtschaftlichkeit_je_szenario(
     bestand = (analyse.kontext.get("modul1") or {}).get("bestand") or {}
     haupt = bestand.get("hauptgebaeude") or {}
 
-    return _berechne_wirtschaftlich(
+    wirtschaft = _berechne_wirtschaftlich(
         szenarien_ergebnis,
         kataster.get("flaeche_m2"),
         markt,
@@ -336,6 +337,11 @@ def berechne_wirtschaftlichkeit_je_szenario(
         bestand_volumen_m3=haupt.get("gebaeudevolumen_m3"),
         marktlage=marktlage,
     )
+    # Highest & Best Use fuehrt die eben gerechneten Ergebnisse zusammen. Es
+    # rechnet nichts neu -- deshalb steht es hier und nicht als eigener
+    # Aufruf, den jemand vergessen koennte.
+    wirtschaft["hbu"] = _bestimme_hbu(szenarien_ergebnis, wirtschaft, marktlage)
+    return wirtschaft
 
 
 def berechne_flaechen(

@@ -193,7 +193,7 @@ Die Spalte **Damals** ist die Einstufung der Erstanalyse (vor Block 1).
 | Lagerating | C | 📋 | |
 | Gemeindechecks | C | 📋 | |
 | **Rückwärtsrechnung** | – | ✅ | Block 9 · vier Stellschrauben, Einordnung gegen erfasste Vergleichsobjekte |
-| **Highest & Best Use** | – | 📋 | verbindet alles zu einer Empfehlung |
+| **Highest & Best Use** | – | ✅ | Block 10 · vier Filterstufen statt Score · Kriterium Residualwert · „nicht bestimmbar" statt Scheinrangfolge |
 
 ### 8 Zusammenarbeit
 
@@ -259,10 +259,10 @@ Bei LUUCY durchweg **nicht gefunden**. Reihenfolge = Wirkung je Aufwand.
 |---|---|---|
 | Residualwert / max. Landpreis | ✅ | beantwortet die Kaufentscheidung |
 | Wohnungsmix → Verkauf/Miete | ✅ | LUUCY endet beim Volumen |
-| Risiko je Szenario mit Begründung | 🟡 | Konflikte und Unsicherheiten ✅, keine Gesamtbewertung 📋 |
+| Risiko je Szenario mit Begründung | 🟡 | Konflikte und Unsicherheiten ✅ · seit Block 10 zusätzlich je Szenario, welche Prüfstufe erreicht wurde und woran es scheitert ✅ · eine Risikokennzahl (Bauzeit, Bewilligungsrisiko, Marktrisiko) fehlt weiterhin 📋 |
 | Anomalieprüfung | 🟡 | „AZ = 20.0" wurde real gemeldet — ohne systematische Prüfung 📋 |
 | **Rückwärtsrechnung** | ✅ | Block 9 — macht aus einer Absage eine Verhandlungsgrundlage |
-| **Highest & Best Use** | 📋 | verbindet alles zu einer Empfehlung |
+| **Highest & Best Use** | ✅ | Block 10 — führt Szenarien, Wirtschaftlichkeit und Marktreferenz zu einer Empfehlung zusammen, ohne neue Rechnung |
 | **Sanierung als Szenario** | ✅ | Block 8 |
 | **Parzellenkombination A vs. A+B** | 📋 | erkennt Zukaufschancen |
 | **Parzellenteilung** | 📋 | |
@@ -312,12 +312,15 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 1. **Marktdatenbasis füllen** — die Struktur steht seit Block A, es fehlen
    Vergleichsobjekte. Ohne sie bleibt jede Wirtschaftlichkeit eine Annahme.
-2. **Rückwärtsrechnung und Highest & Best Use** — verbinden das Vorhandene
-   zu einer Empfehlung, ohne neue Datenquellen.
-3. **Sanierung als Szenario** — die einzige Lücke in der Szenarienreihe.
-4. **Parzellenkombination** — nutzt die vorhandene Nachbarparzellen-Geometrie.
-5. **Grundstückssuche / Screening** — der Sprung von „ein Grundstück prüfen"
+2. **Parzellenkombination A vs. A+B** — nutzt die vorhandene
+   Nachbarparzellen-Geometrie.
+3. **Grundstückssuche / Screening** — der Sprung von „ein Grundstück prüfen"
    zu „Grundstücke finden".
+4. **Anomalieprüfung** — „AZ = 20.0" wurde real gemeldet und lief durch.
+5. **Baugesuche / Referenzprojekte in der Umgebung.**
+
+Erledigt seit der letzten Fassung: Rückwärtsrechnung (Block 9), Sanierung als
+Szenario (Block 8), Highest & Best Use (Block 10).
 
 ---
 
@@ -325,6 +328,7 @@ Alle ⏸️ bis der Funktionsumfang steht — ausdrückliche Vorgabe.
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 13.09.2026 | Block 10 | Highest & Best Use: vier Filterstufen statt gewichteter Punktzahl · „praktisch gleichwertig" aus der Streuung der Vergleichsobjekte abgeleitet · am echten Fall zwei eigene Fehler gefunden: „nicht bestimmbar" wurde als rechtliches Scheitern gefuehrt, und gleiche Landwerte bekamen verschiedene Plaetze |
 | 13.09.2026 | Block 9 | Rückwärtsrechnung „Was müsste sich ändern?" — plus zwei Fehler gefunden, die nur über den Endpunkt auftraten |
 | 12.09.2026 | Block 8 | Sanierung als eigenes Szenario — ohne erfundene Bestandsflächen oder Sanierungskosten |
 | 12.09.2026 | Block 7 | Marktpreis: Vergleichsobjekte lassen sich erfassen — der Systemvorschlag entsteht jetzt aus echten Referenzen mit Sicherheitsgrad |

@@ -295,6 +295,24 @@ ul.plain li { margin-bottom: 4px; }
 .wgross b { display: block; margin-top: 5px; font-size: 19px; font-variant-numeric: tabular-nums; }
 .wgross .wklein { display: block; font-size: 11px; color: var(--ink-3); margin-top: 2px; }
 .whervor { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.hbu { border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px; margin: 8px 0 12px; background: var(--bg); }
+.hbu.ja { border-color: var(--ok); background: var(--ok-soft); }
+.hbu.offen { border-color: var(--warn); background: var(--warn-soft); }
+.hbukopf { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hbukopf b { font-size: 16px; }
+.hbuwert { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.hbutext { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+.hbustufen { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+.hbuliste { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.hbupos { border: 1px solid var(--line-2); border-radius: 8px; padding: 9px 11px; background: var(--bg); }
+.hbupos.top { border-color: var(--ok); }
+.hbuzeile { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 7px; }
+.hbuzeile b { font-size: 13px; }
+.hbugrund { font-size: 11.5px; color: var(--ink-3); margin-top: 7px; line-height: 1.5; }
+.hbustufe { font-size: 10px; letter-spacing: .03em; padding: 2px 7px; border: 1px solid var(--line-2);
+  border-radius: 999px; color: var(--ink-3); white-space: nowrap; }
+.hbustufe.durch { border-color: var(--ok); color: var(--ok); }
+.hbustufe.halt { border-color: var(--stop); color: var(--stop); background: var(--stop-soft); }
 .wpos { color: #1f7a4d; } .wneg { color: #b3324a; }
 .wsumme td { font-weight: 700; border-top: 2px solid var(--line); }
 tr.wzeile { cursor: pointer; }
@@ -2598,12 +2616,51 @@ function dossierBauen(bilder) {
             leer(z.marge) ? "–" : (z.marge * 100).toFixed(1) + " %",
             chf(z.max_landwert_chf, true)];
   });
-  var vergleich = vergleichZeilen.length
+  var vergleichTab = vergleichZeilen.length
     ? dossierTabelle(["Variante", "Machbarkeit", "NWF m²", "Whg", "Verkauf", "Kosten", "Gewinn", "Marge", "Landwert"],
                      vergleichZeilen) +
       '<p class="dhinweis">Welche Variante die beste ist, hängt an Risiko und Machbarkeit, ' +
       'nicht am grössten Gewinn.</p>'
     : "";
+
+  // Die beste Nutzung gehört an das Ende des Vergleichs: sie ist dessen
+  // Schlussfolgerung, kein eigener Befund. Steht keine Empfehlung, wird das
+  // ausdrücklich gesagt -- eine Rangfolge ohne Grundlage wäre in einem
+  // Investorenbericht schlimmer als gar keine.
+  var hbu = (wErgebnis || {}).hbu;
+  var hbuAbschnitt = "";
+  if (hbu) {
+    var hbuSieger = hbu.status === "empfohlen" && hbu.empfehlung ? hbu.empfehlung : null;
+    hbuAbschnitt = '<h3 class="dsub">Beste Nutzung (Highest &amp; Best Use)</h3>' +
+      (hbuSieger
+        ? '<p class="dtext"><b>' + esc(hbuSieger.bezeichnung) + "</b> — CHF " +
+          chf(hbuSieger.max_landwert_chf, true) + " maximal tragbarer Landwert" +
+          (leer(hbuSieger.max_landwert_chf_pro_m2) ? ""
+            : " (" + chf(hbuSieger.max_landwert_chf_pro_m2) + " CHF/m² Grundstück)") + ".</p>" +
+          '<p class="dtext">' + esc(hbu.begruendung || "") + "</p>"
+        : '<p class="dtext"><b>' +
+          (hbu.status === "gleichwertig" ? "Praktisch gleichwertig — keine Rangfolge."
+                                         : "Nicht bestimmbar.") +
+          "</b> " + esc(hbu.grund || "") + "</p>") +
+      (alsListe(hbu.geprueft).length
+        ? dossierTabelle(["Szenario", "Erreichte Stufe", "Gescheitert an", "Max. Landwert", "Befund"],
+            alsListe(hbu.geprueft).map(function (g) {
+              return [esc(g.bezeichnung || g.id) + (g.platz ? ' <span class="dq">Platz ' + g.platz + "</span>" : ""),
+                      g.nicht_beurteilbar ? "nicht beurteilbar"
+                                          : esc(HBU_STUFE_LABEL[g.erreichte_stufe] || "keine"),
+                      g.gescheitert_an ? esc(HBU_STUFE_LABEL[g.gescheitert_an]) : "–",
+                      leer(g.max_landwert_chf) ? "–" : chf(g.max_landwert_chf),
+                      esc(g.grund || "Alle Prüfstufen bestanden.")];
+            }))
+        : "") +
+      (alsListe(hbu.vorbehalte).length
+        ? '<p class="dhinweis"><b>Vorbehalte:</b></p><ul class="dliste">' +
+          alsListe(hbu.vorbehalte).map(function (v) { return "<li>" + esc(v) + "</li>"; }).join("") +
+          "</ul>"
+        : "") +
+      '<p class="dhinweis">' + esc((hbu.kriterium || {}).begruendung || "") + "</p>";
+  }
+  var vergleich = vergleichTab + hbuAbschnitt;
 
   // --- 11 Risiken und Hinweise -------------------------------------------
   var offen = []
@@ -2657,7 +2714,7 @@ function dossierBauen(bilder) {
     dossierAbschnitt(8, "Kosten nach BKP", kosten) +
     dossierAbschnitt(9, "Wirtschaftlichkeit", wirtschaft, true) +
     dossierAbschnitt(10, "Szenarienvergleich", vergleich, true,
-      "Kein Vergleich — es wurde nur ein Szenario gerechnet. Ein Vergleich entsteht erst, wenn mehrere Varianten eines Projekts gerechnet sind.") +
+      "Kein Vergleich und keine Nutzungsempfehlung — es wurde nur ein Szenario gerechnet und die Wirtschaftlichkeit nicht durchgerechnet. Beides entsteht erst, wenn mehrere Varianten vorliegen.") +
     dossierAbschnitt(11, "Risiken und Hinweise", risiken) +
     dossierAbschnitt(12, "Quellen und Belege", quellenTab, true) +
     '<footer class="dfuss">Erstellt mit der gebimo Potenzial-Engine am ' + esc(jetzt) +
@@ -4581,6 +4638,112 @@ function ergebnisBlock() {
     : "");
 }
 
+// --- Highest & Best Use ---------------------------------------------------
+// Zeigt ausschliesslich, was die Engine entschieden hat. Die vier Stufen sind
+// FILTER in fester Reihenfolge, kein Score -- deshalb wird nicht nur der
+// Sieger gezeigt, sondern auch, wer woran ausgeschieden ist. Ohne diese
+// Spalte saehe ein rechtlich unzulaessiges Szenario aus wie ein knapp
+// unterlegenes, und genau das ist es nicht.
+var HBU_FOLGE = ["rechtlich", "physisch", "finanziell", "wert"];
+var HBU_STUFE_LABEL = {
+  rechtlich: "rechtlich", physisch: "physisch",
+  finanziell: "finanziell", wert: "höchster Wert"
+};
+
+function hbuStufenLeiste(g, istEmpfehlung) {
+  var erreicht = HBU_FOLGE.indexOf(g.erreichte_stufe);
+  var gescheitert = HBU_FOLGE.indexOf(g.gescheitert_an);
+  return '<span class="hbustufen">' + HBU_FOLGE.map(function (st, i) {
+    var kl = "hbustufe";
+    if (i === gescheitert) kl += " halt";
+    else if (i <= erreicht) kl += " durch";
+    else if (st === "wert" && istEmpfehlung) kl += " durch";
+    return '<span class="' + kl + '">' + esc(HBU_STUFE_LABEL[st]) + "</span>";
+  }).join("") + "</span>";
+}
+
+function hbuBlock() {
+  var h = (wErgebnis || {}).hbu;
+  if (!h) return "";
+  var sieger = h.status === "empfohlen" && h.empfehlung ? h.empfehlung.id : null;
+
+  var karte;
+  if (sieger) {
+    var e = h.empfehlung;
+    karte = '<div class="hbu ja"><div class="hbukopf">' +
+      '<span class="badge ok">Empfehlung</span><b>' + esc(e.bezeichnung) + "</b>" +
+      '<span class="hbuwert">CHF ' + chf(e.max_landwert_chf, true) + " tragbarer Landwert" +
+      (leer(e.max_landwert_chf_pro_m2) ? ""
+        : " · " + chf(e.max_landwert_chf_pro_m2) + " CHF/m² Grundstück") +
+      "</span></div>" +
+      '<p class="hbutext">' + esc(h.begruendung || "") + "</p></div>";
+  } else {
+    karte = '<div class="hbu offen"><div class="hbukopf"><span class="badge warn">' +
+      (h.status === "gleichwertig" ? "Praktisch gleichwertig" : "Nicht bestimmbar") +
+      "</span>" +
+      (h.status === "gleichwertig"
+        ? '<span class="hbuwert">keine Rangfolge — der Unterschied ist nicht unterscheidbar</span>'
+        : '<span class="hbuwert">keine beste Nutzung benennbar</span>') +
+      "</div>" +
+      '<p class="hbutext">' + esc(h.grund || "") + "</p></div>";
+  }
+
+  var vorbehalte = alsListe(h.vorbehalte);
+  var vorbehaltBlock = vorbehalte.length
+    ? '<div class="note warn"><b>Vorbehalte</b><ul class="plain">' +
+      vorbehalte.map(function (v) { return "<li>" + esc(v) + "</li>"; }).join("") +
+      "</ul></div>"
+    : "";
+
+  // Bewusst eine Liste und keine Tabelle: in der schmalen Seitenspalte
+  // (rund 330 px) quetscht eine Vierspaltentabelle die Begruendung auf zwei
+  // Woerter pro Zeile oder zwingt zum Seitwaertsscrollen -- und genau die
+  // Begruendung ist hier die Aussage. Das Dossier hat A4 und bleibt bei der
+  // Tabelle.
+  var geprueft = alsListe(h.geprueft);
+  var liste = geprueft.length
+    ? '<ul class="hbuliste">' + geprueft.map(function (g) {
+        return '<li class="hbupos' + (g.id === sieger ? " top" : "") + '">' +
+          '<div class="hbuzeile"><b>' + esc(g.bezeichnung || g.id) + "</b>" +
+          (g.platz ? '<span class="badge mute">Platz ' + g.platz + "</span>" : "") +
+          // "nicht beurteilbar" ist etwas anderes als "durchgefallen" und
+          // muss auch anders aussehen -- sonst liest sich Unwissen wie ein
+          // Mangel des Szenarios.
+          (g.nicht_beurteilbar ? '<span class="badge warn">nicht beurteilbar</span>' : "") +
+          (leer(g.max_landwert_chf) ? ""
+            : '<span class="hbuwert">CHF ' + chf(g.max_landwert_chf, true) + "</span>") +
+          "</div>" + hbuStufenLeiste(g, g.id === sieger) +
+          (g.grund ? '<div class="hbugrund">' + esc(g.grund) + "</div>" : "") +
+        "</li>";
+      }).join("") + "</ul>"
+    : "";
+
+  var b = h.belastbarkeit || {};
+  var teile = [];
+  if (!leer(b.abstand_zum_zweiten)) {
+    teile.push("Abstand auf Platz 2: " + (b.abstand_zum_zweiten * 100).toFixed(1) + " %");
+  }
+  teile.push(leer(b.streuung_marktreferenz)
+    ? "keine Marktreferenz erfasst"
+    : "Streuung der Vergleichsobjekte: ± " + (b.streuung_marktreferenz * 100).toFixed(1) + " %");
+  if (b.sicherheit_verkauf) teile.push("Sicherheit Verkaufspreis: " + b.sicherheit_verkauf);
+
+  var hintergrund =
+    '<details class="more"><summary>Wie diese Empfehlung zustande kommt</summary><div>' +
+      '<div class="note">' + esc((h.kriterium || {}).begruendung || "") + "</div>" +
+      '<div class="note">' + esc(teile.join(" · ")) +
+        (b.hinweis ? " — " + esc(b.hinweis) : "") + "</div>" +
+      (alsListe(h.stufen).length
+        ? '<ul class="plain">' + alsListe(h.stufen).map(function (st, i) {
+            return "<li>" + (i + 1) + ". " + esc(st.bezeichnung) + "</li>";
+          }).join("") + "</ul>"
+        : "") +
+    "</div></details>";
+
+  return '<h4 class="subhead">Beste Nutzung (Highest &amp; Best Use)</h4>' +
+    karte + vorbehaltBlock + liste + hintergrund;
+}
+
 function wVergleichBlock() {
   var v = alsListe((wErgebnis || {}).vergleich);
   if (!v.length) return "";
@@ -4651,6 +4814,7 @@ function secWirtschaft(erg) {
     '<div id="w-status" class="wstatus"></div>' +
     '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
     '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
+    '<div id="w-hbu">' + hbuBlock() + "</div>" +
     '<div class="wspalten">' +
       '<div id="w-markt">' + marktBlock(erg) + "</div>" +
       '<div id="mkt-verwaltung"></div>' +
@@ -4760,6 +4924,7 @@ function wZeichneNeu() {
   };
   setze("w-ergebnis", ergebnisBlock());
   setze("w-vergleich", wVergleichBlock());
+  setze("w-hbu", hbuBlock());
   setze("w-bkp", bkpBlock());
   setze("w-markt", marktBlock(ergebnisAktuell || {}));
   // Die Verwaltung wird NICHT aus wErgebnis gespeist, sondern aus
