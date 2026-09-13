@@ -727,17 +727,20 @@ Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), fu
   });
 });
 function setLayerVerfuegbar(name, anzahl) {
+  // Defensiv: die Layerleiste kann fehlen (Dossierfenster, Ausdruck). Ein
+  // Absturz hier hat real eine ganze Analyse verschluckt, obwohl es nur um
+  // eine Bedienelement-Beschriftung ging.
   var feld = document.getElementById("lay-" + name);
+  var opt = document.getElementById("opt-" + name);
+  if (!feld || !opt) return;
   feld.disabled = anzahl === 0;
-  document.getElementById("opt-" + name).classList.toggle("off", anzahl === 0);
-  // Der Zaehler stand frueher nackt da ("Zonen 68") und musste geraten
-  // werden. Er sagt, wie viele Flaechen dieser Art gezeichnet sind -- also
-  // steht das jetzt auch dran.
+  opt.classList.toggle("off", anzahl === 0);
   // Frueher stand hier eine nackte Zahl ("Zonen 68"). Sie meinte die Anzahl
   // gezeichneter Kartenflaechen -- eine Groesse, die niemand braucht und die
   // aussah wie "68 Zonen gelten hier". Jetzt zeigt die Zeile nur noch, ob es
   // etwas zu sehen gibt.
   var el = document.getElementById("cnt-" + name);
+  if (!el) return;
   el.textContent = "";
   el.title = "";
   // Die Ebenen, die beim Oeffnen sichtbar sein sollen, werden eingeschaltet,
@@ -1841,7 +1844,10 @@ function zeichneErgebnisAufKarte(erg) {
   });
   setLayerVerfuegbar("restrikt", anzR);
 
-  if (bounds) map.fitBounds(bounds, { padding: [70, 70], maxZoom: 19 });
+  // Zoom 18 statt 19: eine 83 m2 grosse Altstadtparzelle fuellte sonst den
+  // ganzen Bildschirm, und der Zusammenhang -- Strasse, Nachbarschaft,
+  // Ortskern -- war weg. Live beobachtet an Aarau, Bahnhofstrasse 1.
+  if (bounds) map.fitBounds(bounds, { padding: [70, 70], maxZoom: 18 });
   var kanton = (m1.oereb || {}).kanton;
   if (kanton) document.getElementById("kantonhint").textContent = "Kanton " + kanton;
 }
@@ -2018,6 +2024,18 @@ function secUebersicht(erg, m1, zz) {
   }
 
   var eckwerte = [];
+  var eckwerteGrund = null;
+  if (erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined) {
+    eckwerteGrund = "Die Bau- und Nutzungsordnung wird gerade ausgewertet. Die Eckwerte " +
+      "erscheinen hier, sobald sie vorliegen.";
+  } else if (snp) {
+    eckwerteGrund = "Nicht bestimmbar: der Sondernutzungsplan geht vor, und seine Masse " +
+      "stehen im Plan selbst. Die Ziffern der ordentlichen Zone gelten hier nicht und " +
+      "werden deshalb bewusst nicht gezeigt. Der Plan muss von Hand geprüft werden.";
+  } else if (zz.status !== "gefunden") {
+    eckwerteGrund = "Nicht bestimmbar: die massgebende Zone liess sich nicht eindeutig " +
+      "zuordnen. Ohne sie gibt es keine Kennzahlen.";
+  }
   if (!snp) {
     var az = zone.ausnuetzungsziffer_az, bmz = zone.baumassenziffer_bmz;
     var vg = zone.vollgeschosse_max, gh = zone.gebaeudehoehe_m || zone.gesamthoehe_m;
@@ -2042,37 +2060,42 @@ function secUebersicht(erg, m1, zz) {
   if ((r.baulinien_gefunden || []).length) {
     einschraenkungen.push(["Baulinien", (r.baulinien_gefunden || []).length + " gefunden"]);
   }
-  alsListe(nk.ueberlagerungen).slice(0, 4).forEach(function (u) {
+  ueberlagerungenVon(nk).slice(0, 4).forEach(function (u) {
     einschraenkungen.push([u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung || "Überlagerung",
-                           u.rechtsstatus === "inKraft" ? "rechtskräftig" : (u.rechtsstatus || "")]);
+                           "rechtskräftige Überlagerung"]);
+  });
+  betroffeneOerebThemen(m1).slice(0, 4).forEach(function (k) {
+    einschraenkungen.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen"]);
   });
 
   return '<section class="sec" id="sec-uebersicht">' +
     '<div class="sechead"><span class="num">–</span><h3>Übersicht</h3></div>' +
-    '<div class="ueberkopf">' +
-      '<div class="ueberzeile"><span>Adresse</span><b>' + esc(erg.adresse) + "</b></div>" +
-      '<div class="ueberzeile"><span>Parzelle</span><b>' + esc(pz.parzellennummer || "–") + "</b></div>" +
-      '<div class="ueberzeile"><span>Fläche</span><b>' +
-        (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "–") + "</b></div>" +
-      '<div class="ueberzeile"><span>Gemeinde</span><b>' +
-        esc((m1.gemeinde || {}).gemeinde || "–") + "</b></div>" +
-    "</div>" +
+    // Adresse, Parzelle, Flaeche und Gemeinde stehen unveraendert im
+    // Dossierkopf direkt darueber. Sie hier zu wiederholen hat den Blick
+    // verwaessert, statt ihn zu fuehren.
     '<h4 class="subhead">Was gilt hier?</h4>' +
     leitsatz +
     zonenHierarchie(m1, zz) +
+    // Diese Ueberschrift verschwindet NIE. Ein Makler muss den Unterschied
+    // zwischen "hier ist nichts moeglich" und "das wurde nicht bestimmt"
+    // sehen -- ein fehlender Abschnitt sagt weder das eine noch das andere.
+    '<h4 class="subhead">Was ist baulich möglich?</h4>' +
     (eckwerte.length
-      ? '<h4 class="subhead">Was ist baulich möglich?</h4><div class="tiles">' +
+      ? '<div class="tiles">' +
         eckwerte.map(function (p) { return tile(p[0], p[1]); }).join("") + "</div>" +
         '<div class="note">Kennzahlen der Zone. Was daraus auf dieser Parzelle wirklich ' +
         'gebaut werden kann, steht im Reiter <b>Potenzial</b> — dort sind Grenzabstände, ' +
         'Baubereich und Restriktionen eingerechnet.</div>'
-      : "") +
+      : '<div class="note warn">' + esc(eckwerteGrund ||
+          "Für diese Zone sind in der Bau- und Nutzungsordnung keine Kennzahlen " +
+          "gefunden worden.") + "</div>") +
+    '<h4 class="subhead">Wichtigste Einschränkungen</h4>' +
     (einschraenkungen.length
-      ? '<h4 class="subhead">Wichtigste Einschränkungen</h4>' +
-        kvRows(einschraenkungen) +
+      ? kvRows(einschraenkungen) +
         '<div class="note">Einzelheiten im Reiter <b>Baurecht</b>.</div>'
-      : '<div class="note">Keine Gewässerräume, Baulinien oder Überlagerungen gefunden, ' +
-        'die diese Parzelle betreffen.</div>') +
+      : '<div class="note">Geprüft wurden Gewässerraum, Waldabstand, Baulinien, ' +
+        'rechtskräftige Überlagerungen und die ÖREB-Themen. Nichts davon betrifft ' +
+        'diese Parzelle.</div>') +
     '<div class="note">EGRID, Koordinaten, BFS-Nummer und die Registerdaten stehen im ' +
     'Reiter <b>Daten &amp; Quellen</b>.</div>' +
   "</section>";
@@ -2118,7 +2141,12 @@ function renderDossier(erg) {
   if ((erg.zonen_zuordnung || {}).status === "gefunden") wRechne();
 }
 
-function statusBadge(zz) {
+function statusBadge(zz, gerechnet) {
+  // Solange die Reglementsauswertung laeuft, gibt es keine Zonenzuordnung.
+  // Daraus "Zone nicht zugeordnet" zu machen waere eine Aussage ueber das
+  // Grundstueck, wo nur ein Arbeitsschritt aussteht -- und sie stand im
+  // Dossierkopf, also an der prominentesten Stelle ueberhaupt.
+  if (gerechnet === false) return '<span class="badge warn">Baurecht wird geprüft …</span>';
   if (zz.status === "sondernutzungsplan_massgebend") return '<span class="badge stop">Sondernutzungsplan massgebend</span>';
   if (zz.status === "mehrere_gleich_gute_kandidaten") return '<span class="badge warn">Zone mehrdeutig</span>';
   if (zz.status === "gefunden") return '<span class="badge ok">Zone eindeutig zugeordnet</span>';
@@ -2131,13 +2159,16 @@ function headHtml(erg, m1, zz) {
   var amtl = ((m1.oereb || {}).amtliche_zonenbezeichnungen || [])[0] || {};
   return '<div class="dosshead"><div class="eyebrow">Grundstücksdossier</div>' +
     "<h2>" + esc(erg.adresse) + "</h2>" +
-    '<div style="margin-bottom:10px">' + statusBadge(zz) + "</div>" +
+    '<div style="margin-bottom:10px">' +
+      statusBadge(zz, !(erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined)) +
+    "</div>" +
     '<div class="headgrid">' +
       "<div><dt>Parzelle</dt><dd>" + esc(pz.parzellennummer) + "</dd></div>" +
       "<div><dt>Fläche</dt><dd>" + (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "–") + "</dd></div>" +
       '<div><dt>Gemeinde</dt><dd style="font-family:Archivo,sans-serif">' + esc((m1.gemeinde || {}).gemeinde) + "</dd></div>" +
       '<div style="grid-column:1/-1"><dt>Grundnutzungszone (amtlich)</dt><dd style="font-family:Archivo,sans-serif;font-weight:600">' +
-        esc(basis.typ_kommunal_bezeichnung || amtl.bezeichnung) + "</dd></div>" +
+        esc(basis.typ_kommunal_bezeichnung || basis.typ_kantonal_bezeichnung
+            || amtl.zonenbezeichnung || amtl.bezeichnung || "wird ermittelt …") + "</dd></div>" +
     "</div></div>";
 }
 
@@ -2365,6 +2396,52 @@ function kantenprotokoll(erg, m1) {
    Gerechnet wird hier nichts -- alle Angaben stammen aus der bereits
    vorliegenden Klassifikation (Modul 1b) und der Restriktionsabfrage.
 */
+// Die OEREB-Themen kommen als technische Schluessel
+// ("laermempfindlichkeitsstufen"). So stehen sie im Dossier eines Maklers
+// nicht gut. Bekannte Themen bekommen ihren gelaeufigen Namen, unbekannte
+// werden lesbar gemacht statt erfunden.
+var OEREB_THEMA = {
+  laermempfindlichkeitsstufen: "Lärmempfindlichkeitsstufe",
+  belastete_standorte: "Belasteter Standort",
+  belastete_standorte_militaer: "Belasteter Standort (Militär)",
+  belastete_standorte_zivile_flugplaetze: "Belasteter Standort (Flugplatz)",
+  belastete_standorte_oeffentlicher_verkehr: "Belasteter Standort (Verkehr)",
+  grundwasserschutzzonen: "Grundwasserschutzzone",
+  grundwasserschutzareale: "Grundwasserschutzareal",
+  gewaesserschutzbereiche: "Gewässerschutzbereich",
+  planungszonen: "Planungszone",
+  waldgrenzen: "Waldgrenze",
+  waldabstandslinien: "Waldabstandslinie",
+  baulinien: "Baulinie",
+  nutzungsplanung: "Nutzungsplanung"
+};
+
+function oerebThemaName(schluessel) {
+  if (OEREB_THEMA[schluessel]) return OEREB_THEMA[schluessel];
+  var t = String(schluessel || "").replace(/_/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Thema";
+}
+
+// Rechtskraeftige Ueberlagerungen -- dieselbe Quelle wie die Hierarchie.
+// Frueher las die Uebersicht `nk.ueberlagerungen`, ein Feld, das es gar
+// nicht gibt: das Modul fuehrt sie unter `festlegungen`. Ergebnis war ein
+// Widerspruch auf demselben Bildschirm -- die Hierarchie zeigte zwei
+// Ueberlagerungen, die Uebersicht darunter schrieb "keine gefunden".
+function ueberlagerungenVon(nk) {
+  return alsListe((nk || {}).festlegungen).filter(function (f) {
+    return (f.ebene || "") !== "grundnutzung" && f.ist_rechtskraeftig;
+  });
+}
+
+function betroffeneOerebThemen(m1) {
+  var risiken = ((m1 || {}).oereb || {}).umweltrisiken || {};
+  return Object.keys(risiken).filter(function (k) {
+    var v = risiken[k];
+    var status = (v && typeof v === "object") ? v.status : v;
+    return status && String(status).toLowerCase().indexOf("betroffen") === 0;
+  });
+}
+
 function zonenEbene(nummer, titel, inhalt, hinweis) {
   if (!inhalt) return "";
   return '<div class="zebene"><div class="zekopf"><span class="zenum">' + nummer +
@@ -2442,13 +2519,11 @@ function zonenHierarchie(m1, zz) {
   if ((r.baulinien_gefunden || []).length) {
     rTeile.push(["Baulinien", (r.baulinien_gefunden || []).length + " gefunden"]);
   }
-  var risiken = (m1.oereb || {}).umweltrisiken || {};
-  Object.keys(risiken).forEach(function (k) {
-    var wert = risiken[k];
+  betroffeneOerebThemen(m1).forEach(function (k) {
+    var wert = ((m1.oereb || {}).umweltrisiken || {})[k];
     var status = (wert && typeof wert === "object") ? wert.status : wert;
-    if (status && String(status).toLowerCase().indexOf("betroffen") === 0) {
-      rTeile.push([k.replace(/_/g, " "), String(status)]);
-    }
+    rTeile.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen — Einzelheiten im " +
+                 "Reiter Daten & Quellen (" + esc(String(status)) + ")"]);
   });
   var d = rTeile.length
     ? kvRows(rTeile)

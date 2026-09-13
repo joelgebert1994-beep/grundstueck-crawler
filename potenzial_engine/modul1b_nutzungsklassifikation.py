@@ -203,6 +203,14 @@ def _query_wfs(
         resp.raise_for_status()
     except requests.exceptions.RequestException as exc:
         raise NutzungsklassifikationError(f"WFS-Anfrage fehlgeschlagen ({typename}): {exc}") from exc
+
+    # geodienste.ch antwortet mit "Content-Type: text/xml" OHNE Zeichensatz.
+    # Nach HTTP-Norm faellt `requests` dann auf ISO-8859-1 zurueck -- die
+    # Nutzdaten sind aber UTF-8. Ohne diese Zeile steht im fertigen Dossier
+    # "ErschliessungsplÃ¤ne" statt "Erschliessungsplaene", und zwar in jedem
+    # Zonennamen mit Umlaut. Live beobachtet an Aarau, Bahnhofstrasse 1.
+    if not resp.encoding or "charset" not in (resp.headers.get("Content-Type") or "").lower():
+        resp.encoding = "utf-8"
     return _parse_wfs_members(resp.text)
 
 

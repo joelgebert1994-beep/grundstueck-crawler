@@ -423,6 +423,7 @@ Marktdatenbasis (Block 11), Parzellenkombination (Block 12).
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 13.09.2026 | Block 17 | Nutzerfluss geprueft: Umlaute aus geodienste.ch waren im ganzen Dossier zerstoert (fehlender Zeichensatz) · Uebersicht wiederholte den Dossierkopf · "Was ist baulich moeglich" verschwand statt sich zu begruenden · Uebersicht und Hierarchie widersprachen sich bei den Ueberlagerungen · Dossierkopf behauptete "Zone nicht zugeordnet", waehrend die Pruefung lief · Karte zoomte auf eine leere Flaeche |
 | 13.09.2026 | Block 16 | Modul 1 fragt nebenlaeufig ab: 14 s -> 5.9 s, erste Ansicht 11 s -> 5.6 s, warmer Lauf 5 s end to end · Abhaengigkeiten in zwei Wellen, HTTP-Sitzung je Thread · Ergebnis zeichenweise identisch zur sequenziellen Fassung |
 | 13.09.2026 | Block 15 | Ladezeit gemessen und zerlegt: 109 von 126 s (87 %) entfielen auf das Sprachmodell. Erste Ansicht jetzt nach rund 11 s, echte Ladezustaende statt geschaetzter Prozente, BZO-Zwischenspeicher je Gemeinde (zweite Adresse in Buchs: 10.6 s statt 126 s), Reglementsauswertung einzeln wiederholbar |
 | 13.09.2026 | Block 14 | Oberflaeche: Zonenhierarchie A Grundnutzung - B Sondernutzung - C Ueberlagerungen - D Restriktionen · Karte mit verstaendlichen Namen statt Layerbezeichnungen · "Zonen 68" entfernt · Markt als eigener Reiter mit getrennten Ebenen |
