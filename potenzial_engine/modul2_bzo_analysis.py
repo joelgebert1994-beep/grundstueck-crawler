@@ -689,6 +689,22 @@ def analyze_bzo_from_url(
     return analyze_bzo_from_urls([url], gemeinde=gemeinde, kanton=kanton, backend=backend)
 
 
+def waehle_bzo_dokumente(
+    oereb_result: dict[str, Any], max_documents: int = 5,
+) -> list[dict[str, Any]]:
+    """Welche Reglementsdokumente werden ausgewertet?
+
+    Herausgeloest, damit derselbe Satz Dokumente auch OHNE Auswertung
+    bestimmbar ist -- der Zwischenspeicher braucht ihn als Schluessel, und
+    zwei Stellen, die verschieden auswaehlen, waeren ein stiller Fehler.
+    """
+    provisions = oereb_result.get("rechtsvorschriften", [])
+    if not provisions:
+        raise Modul2Error("Keine Rechtsvorschriften im OEREB-Ergebnis von Modul 1 vorhanden.")
+    likely = [p for p in provisions if p.get("ist_wahrscheinlich_bzo_reglement")]
+    return (likely or provisions)[:max_documents]
+
+
 def analyze_from_oereb_result(
     oereb_result: dict[str, Any],
     gemeinde: Optional[str] = None,
@@ -714,12 +730,7 @@ def analyze_from_oereb_result(
     max_documents Eintraege insgesamt zurueck, statt mit einem Fehler
     abzubrechen.
     """
-    provisions = oereb_result.get("rechtsvorschriften", [])
-    if not provisions:
-        raise Modul2Error("Keine Rechtsvorschriften im OEREB-Ergebnis von Modul 1 vorhanden.")
-
-    likely = [p for p in provisions if p.get("ist_wahrscheinlich_bzo_reglement")]
-    chosen = (likely or provisions)[:max_documents]
+    chosen = waehle_bzo_dokumente(oereb_result, max_documents=max_documents)
     urls = [p["url"] for p in chosen]
 
     result = analyze_bzo_from_urls(urls, gemeinde=gemeinde, kanton=kanton, backend=backend)

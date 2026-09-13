@@ -454,6 +454,94 @@ def _rechne_kombination(analyse: "Analyse", daten: dict) -> dict:
     }
 
 
+def _bzo_zwischenspeicher():
+    """Der Lader fuer die Reglementsauswertung -- mit Gemeinde-Zwischenspeicher.
+
+    Gemessen entfallen 87 % der Analysezeit (109 von 126 s) auf das Lesen der
+    Bau- und Nutzungsordnung durch das Sprachmodell. Sie gilt fuer die ganze
+    GEMEINDE; der bisherige Zwischenspeicher griff aber ueber den EGRID und
+    half deshalb nur demselben Grundstueck. Das zweite Grundstueck in Buchs
+    liess dieselben fuenf PDF erneut lesen.
+
+    Faellt die Datenschicht aus, wird einfach gerechnet -- ein defekter
+    Zwischenspeicher darf das Werkzeug nicht unbenutzbar machen.
+    """
+    from potenzial_engine.modul2_bzo_analysis import (
+        analyze_from_oereb_result,
+        waehle_bzo_dokumente,
+    )
+
+    def lade(oereb, gemeinde=None, kanton=None):
+        kern_db, _ = _kern_projekt()
+        speicher = None
+        schluessel = None
+        dokumente = []
+        if kern_db is not None:
+            try:
+                from kern import bzo_speicher
+
+                dokumente = waehle_bzo_dokumente(oereb)
+                schluessel = bzo_speicher.fingerabdruck(
+                    gemeinde, kanton, [d.get("url") for d in dokumente])
+                con = kern_db.verbinde()
+                treffer = bzo_speicher.hole(con, schluessel, ENGINE_VERSION)
+                if treffer is not None:
+                    return treffer
+                speicher = (bzo_speicher, con)
+            except Exception:  # noqa: BLE001 -- nie am Zwischenspeicher scheitern
+                traceback.print_exc()
+                speicher = None
+
+        ergebnis = analyze_from_oereb_result(
+            oereb, gemeinde=gemeinde, kanton=kanton, backend="gemini")
+        ergebnis["_zwischenspeicher"] = {"aus_zwischenspeicher": False,
+                                         "gerechnet_am": _jetzt_iso()}
+        if speicher and schluessel:
+            try:
+                speicher[0].lege_ab(
+                    speicher[1], schluessel, ENGINE_VERSION,
+                    gemeinde=gemeinde, kanton=kanton,
+                    dokumente=[{"titel": d.get("titel"), "url": d.get("url")}
+                               for d in dokumente],
+                    ergebnis=ergebnis)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+        return ergebnis
+
+    return lade
+
+
+def _fortschritt_melder(job_id: str):
+    """Schreibt den Stand der Analyse in den Job, waehrend sie laeuft.
+
+    Der Benutzer soll sehen, was bereits DEFINITIV vorliegt und was noch
+    geholt wird -- statt zwei Minuten vor einem leeren Ergebnis zu warten.
+    Das Teilergebnis ist dabei kein Platzhalter: Parzelle, Flaeche, Gemeinde,
+    Geometrie und Grundnutzung stehen an dieser Stelle endgueltig fest.
+    """
+    from potenzial_engine.pipeline import SCHRITTE
+
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        if job is not None:
+            job["schritte"] = [
+                {"schluessel": s, "bezeichnung": b, "stand": "offen"} for s, b in SCHRITTE
+            ]
+
+    def melde(schritt: str, stand: str, teilergebnis=None) -> None:
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            if job is None:
+                return
+            for eintrag in job.get("schritte") or []:
+                if eintrag["schluessel"] == schritt:
+                    eintrag["stand"] = stand
+                    eintrag["seit"] = _jetzt_iso()
+            if teilergebnis is not None:
+                job["teilergebnis"] = teilergebnis
+
+    return melde
+
 def _rechne_screening(analyse: "Analyse", daten: dict) -> dict:
     """Stufe 1 des Screenings fuer ein Suchgebiet.
 
@@ -690,12 +778,24 @@ class Handler(BaseHTTPRequestHandler):
         if job is None:
             self._send_json({"ok": False, "fehler": "Unbekannte job_id (evtl. abgelaufen)."}, status=404)
             return
+        # Der Stand geht IMMER mit -- auch bei "running". Genau daraus baut die
+        # Oberflaeche ihre Fortschrittsanzeige, und das Teilergebnis erlaubt
+        # ihr, Grundstueck und Karte schon zu zeigen, waehrend die
+        # Reglementsauswertung noch laeuft.
+        stand = {"schritte": job.get("schritte") or []}
+        if job.get("teilergebnis") is not None:
+            stand["teilergebnis"] = job["teilergebnis"]
+
         if job["status"] == "running":
-            self._send_json({"ok": True, "status": "running"})
+            self._send_json({"ok": True, "status": "running", **stand})
         elif job["status"] == "error":
-            self._send_json({"ok": True, "status": "error", "fehler": job["fehler"]})
+            self._send_json({"ok": True, "status": "error", "fehler": job["fehler"], **stand})
+        elif job["status"] == "teilweise":
+            # Amtliche Daten vollstaendig, Reglementsauswertung fehlgeschlagen.
+            self._send_json({"ok": True, "status": "teilweise", "fehler": job["fehler"],
+                             "wiederholbar": True, **stand})
         else:
-            self._send_json({"ok": True, "status": "done", "ergebnis": job["ergebnis"]})
+            self._send_json({"ok": True, "status": "done", "ergebnis": job["ergebnis"], **stand})
 
     def _lies_json_body(self) -> Optional[dict]:
         length = int(self.headers.get("Content-Length", 0))
@@ -828,6 +928,67 @@ class Handler(BaseHTTPRequestHandler):
                 status=404)
             return None, None
         return job, Analyse(ergebnis=job["ergebnis"], kontext=kontext)
+
+    def _handle_reglement_wiederholen(self) -> None:
+        """Nur die Reglementsauswertung nachholen -- auf den bereits geholten
+        amtlichen Daten.
+
+        Ein Fehlschlag des Sprachmodells (real beobachtet: finish_reason
+        RECITATION) kostete bisher die vollen zwei Minuten noch einmal,
+        obwohl Geodaten, OEREB, Nutzungsplanung und Restriktionen laengst da
+        waren. Hier wird ausschliesslich Modul 2 wiederholt und danach die
+        Potenzialkette gerechnet -- dieselben Funktionen wie im Erstlauf.
+        """
+        from potenzial_engine.pipeline import _potenzialkette
+
+        daten = self._lies_json_body()
+        if daten is None:
+            return
+        job_id = (daten.get("job_id") or "").strip()
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            teil = job.get("teilergebnis") if job else None
+        if job is None or not teil:
+            self._send_json({"ok": False, "fehler": "Zu dieser job_id liegt kein "
+                                                    "Teilergebnis vor."}, status=404)
+            return
+
+        modul1_result = job.get("modul1") or teil.get("modul1_geodaten")
+        oereb = (modul1_result or {}).get("oereb") or {}
+        if not oereb.get("rechtsvorschriften"):
+            self._send_json({"ok": False, "fehler": "Im Teilergebnis stehen keine "
+                                                    "Rechtsvorschriften, die ausgewertet "
+                                                    "werden koennten."}, status=409)
+            return
+
+        melde = _fortschritt_melder(job_id)
+        melde("grundstueck", "fertig", teil)
+        melde("grundnutzung", "fertig")
+        melde("reglement", "laeuft")
+        gemeinde = (modul1_result.get("gemeinde") or {}).get("gemeinde")
+        try:
+            modul2_result = _bzo_zwischenspeicher()(oereb, gemeinde=gemeinde,
+                                                    kanton=oereb.get("kanton"))
+        except Exception as exc:  # noqa: BLE001
+            melde("reglement", "fehler", teil)
+            with _JOBS_LOCK:
+                _JOBS[job_id].update(status="teilweise", fehler=str(exc))
+            self._send_json({"ok": False, "fehler": f"Reglementsauswertung erneut "
+                                                    f"fehlgeschlagen: {exc}"}, status=502)
+            return
+
+        melde("reglement", "fertig")
+        melde("potenzial", "laeuft")
+        ergebnis = _potenzialkette(teil.get("adresse") or job.get("adresse") or "",
+                                   modul1_result, modul2_result)
+        melde("potenzial", "fertig", ergebnis)
+        with _JOBS_LOCK:
+            _JOBS[job_id].update(status="done", ergebnis=ergebnis,
+                                 kontext={"modul1": modul1_result, "modul2": modul2_result},
+                                 fehler=None)
+        egrid = ((ergebnis.get("modul1_geodaten") or {}).get("kataster") or {}).get("egrid")
+        self._zwischenspeicher_ablegen(egrid, ergebnis)
+        self._send_json({"ok": True, "status": "done", "ergebnis": ergebnis})
 
     def _handle_screening(self) -> None:
         """Ein Suchgebiet nach Parzellen mit Ausnutzungsreserve durchsuchen."""
@@ -1374,6 +1535,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/marktdaten/loeschen":
             self._handle_marktdaten_loeschen()
             return
+        if self.path == "/analyse/reglement":
+            self._handle_reglement_wiederholen()
+            return
         if self.path == "/screening":
             self._handle_screening()
             return
@@ -1413,8 +1577,11 @@ class Handler(BaseHTTPRequestHandler):
                 "status": "running",
                 "erstellt_um": time.time(),
                 "ergebnis": None,
+                "teilergebnis": None,
+                "schritte": [],
                 "fehler": None,
                 "kontext": None,
+                "adresse": adresse,
             }
 
         thread = threading.Thread(
@@ -1535,7 +1702,9 @@ class Handler(BaseHTTPRequestHandler):
                                      "modul2": gespeichert.get("modul2_bzo_analyse")})
                     return
 
-            analyse = analysiere_grundstueck(adresse)
+            melde = _fortschritt_melder(job_id)
+            analyse = analysiere_grundstueck(
+                adresse, fortschritt=melde, modul2_lader=_bzo_zwischenspeicher())
             analyse.ergebnis["zwischenspeicher"] = {
                 "aus_zwischenspeicher": False,
                 "gerechnet_am": _jetzt_iso(),
@@ -1555,7 +1724,18 @@ class Handler(BaseHTTPRequestHandler):
                     verkaufspreis_total_chf=verkaufspreis_total,
                 )
                 analyse.ergebnis["modul3_financial"] = w.ergebnis
-        except (Modul1Error, Modul2Error, Modul3Error) as exc:
+        except Modul2Error as exc:
+            # Die amtlichen Daten sind gueltig -- nur die Reglementsauswertung
+            # fehlt. Frueher war damit die ganze Analyse verloren und der
+            # Benutzer musste die vollen zwei Minuten noch einmal warten.
+            # Jetzt bleibt das Teilergebnis stehen und nur Modul 2 wird
+            # wiederholt.
+            with _JOBS_LOCK:
+                job = _JOBS[job_id]
+                job.update(status="teilweise" if job.get("teilergebnis") else "error",
+                           fehler=str(exc))
+            return
+        except (Modul1Error, Modul3Error) as exc:
             with _JOBS_LOCK:
                 _JOBS[job_id].update(status="error", fehler=str(exc))
             return

@@ -423,6 +423,9 @@ Marktdatenbasis (Block 11), Parzellenkombination (Block 12).
 
 | Datum | Block | Was dazukam |
 |---|---|---|
+| 13.09.2026 | Block 15 | Ladezeit gemessen und zerlegt: 109 von 126 s (87 %) entfielen auf das Sprachmodell. Erste Ansicht jetzt nach rund 11 s, echte Ladezustaende statt geschaetzter Prozente, BZO-Zwischenspeicher je Gemeinde (zweite Adresse in Buchs: 10.6 s statt 126 s), Reglementsauswertung einzeln wiederholbar |
+| 13.09.2026 | Block 14 | Oberflaeche: Zonenhierarchie A Grundnutzung - B Sondernutzung - C Ueberlagerungen - D Restriktionen · Karte mit verstaendlichen Namen statt Layerbezeichnungen · "Zonen 68" entfernt · Markt als eigener Reiter mit getrennten Ebenen |
+| 13.09.2026 | Block 13 | Grundstueckssuche: dreistufiges Screening · Modul 2 einmal je Gemeinde statt je Parzelle · Sortierung nach Ausnutzungsreserve, kein Score · drei Fehler am echten Fall gefunden (Randparzellen, Gebaeude ohne EGRID, Strassenparzellen) |
 | 13.09.2026 | Block 12 | Parzellenkombination A vs. A+B: dieselbe Kette zweimal statt einer zweiten Rechenlogik · Ausbeute als Massstab statt blosser Flächenaddition · Strassenparzellen gesperrt (die Zonenprüfung fing sie nicht ab) · Kaufpreis B und Zusatzkosten als eigene Annahmen |
 | 13.09.2026 | Block 11 | Marktdatenbasis: 1'385 Vergleichsobjekte aus dem AkquiseRadar (nur lesend) · Preisart Angebot/Abschluss · Eignungsregel je Marktgrösse · Plausibilitäts- und Ausreisserprüfung · Systemvorschlag erst ab 3 Referenzen · Referenzgebiet mit ausgewiesener Ausweitung · eine zweite Stelle, die denselben Systemvorschlag bildete, aufgelöst |
 | 13.09.2026 | Block 10 | Highest & Best Use: vier Filterstufen statt gewichteter Punktzahl · „praktisch gleichwertig" aus der Streuung der Vergleichsobjekte abgeleitet · am echten Fall zwei eigene Fehler gefunden: „nicht bestimmbar" wurde als rechtliches Scheitern gefuehrt, und gleiche Landwerte bekamen verschiedene Plaetze |

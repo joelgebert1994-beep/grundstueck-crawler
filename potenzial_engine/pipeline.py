@@ -1003,7 +1003,56 @@ def berechne_flaechen(
     )
 
 
-def analysiere_grundstueck(adresse: str) -> Analyse:
+# ---------------------------------------------------------------------------
+# Die Analyse in Phasen -- damit die erste Ansicht nicht auf Gemini wartet
+# ---------------------------------------------------------------------------
+
+# Die Bereiche, ueber die der Fortschritt berichtet. Reihenfolge = Ablauf.
+SCHRITTE = (
+    ("grundstueck", "Grundstück und Karte"),
+    ("grundnutzung", "Grundnutzung und amtliche Daten"),
+    ("reglement", "Vertiefte Reglementsauswertung"),
+    ("potenzial", "Baubereich, Flächen und Szenarien"),
+)
+
+STAND_OFFEN = "offen"
+STAND_LAEUFT = "laeuft"
+STAND_FERTIG = "fertig"
+STAND_FEHLER = "fehler"
+
+
+def _teilergebnis_nach_modul1(adresse: str, modul1_result: dict) -> dict:
+    """Was schon feststeht, sobald die amtlichen Daten da sind.
+
+    Das ist ein ECHTES Teilergebnis, kein Platzhalter: Parzelle, Flaeche,
+    Gemeinde, Geometrie, Grundnutzung, Restriktionen und Kantenklassifikation
+    sind an dieser Stelle endgueltig. Was von der Reglementsauswertung
+    abhaengt, bleibt bewusst leer -- und der Stand sagt, dass es noch laeuft.
+
+    Gerechnet wird hier nichts. Dieselben Werte, nur frueher gezeigt.
+    """
+    return {
+        "adresse": adresse,
+        "modul1_geodaten": _trimmed_modul1(modul1_result),
+        "zonen_zuordnung": None,
+        "g1_ergebnis": None,
+        "g1_fehler": None,
+        "sia416_ergebnis": None,
+        "flaechen_und_wohnungen": None,
+        "szenarien": None,
+        "quellen": [asdict(q) for q in quellen_aus_modul1_ergebnis(modul1_result)],
+        "entwicklungsszenarien": ENTWICKLUNGSSZENARIEN_INFO,
+        "modul2_bzo_analyse": None,
+        "modul3_financial": None,
+    }
+
+
+def analysiere_grundstueck(
+    adresse: str,
+    *,
+    fortschritt=None,
+    modul2_lader=None,
+) -> Analyse:
     """Vollstaendige baurechtliche Potenzialanalyse fuer eine Adresse.
 
     Ablauf: Geodaten (Modul 1) -> Nutzungsklassifikation (Modul 1b) ->
@@ -1013,18 +1062,66 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
     Braucht KEINEN Verkaufspreis. Dauert typischerweise 1-3 Minuten, weil
     Modul 2 das Reglement der Gemeinde tatsaechlich liest.
 
+    `fortschritt(schritt, stand, teilergebnis)` wird an den Phasengrenzen
+    aufgerufen. Gemessen entfallen 87 % der Laufzeit auf Modul 2 -- alles
+    Uebrige steht nach rund zehn Sekunden. Der Rueckruf gibt es weiter,
+    damit die Oberflaeche das anzeigen kann, statt vor einem leeren
+    Ergebnis zu warten. An der Rechnung aendert er nichts.
+
+    `modul2_lader(oereb, gemeinde, kanton)` ersetzt den direkten
+    Gemini-Aufruf -- so kann der Aufrufer einen Zwischenspeicher davorlegen,
+    ohne dass die Engine eine Datenbank kennen muss.
+
     Wirft Modul1Error, wenn fuer die Parzelle keine amtlichen Zonendaten
     (OEREB) vorliegen -- dann waere jede Potenzialaussage haltlos.
     """
+    def melde(schritt, stand, teil=None):
+        if fortschritt:
+            try:
+                fortschritt(schritt, stand, teil)
+            except Exception:  # noqa: BLE001 -- ein Anzeigefehler stoppt keine Analyse
+                pass
+
+    melde("grundstueck", STAND_LAEUFT)
     modul1_result = run_modul1(adresse)
     oereb = modul1_result.get("oereb", {})
     if not oereb.get("found"):
+        melde("grundstueck", STAND_FEHLER)
         raise Modul1Error(f"Keine amtlichen Zonendaten (OEREB) gefunden: {oereb.get('reason')}")
+
+    teil = _teilergebnis_nach_modul1(adresse, modul1_result)
+    melde("grundstueck", STAND_FERTIG, teil)
+    melde("grundnutzung", STAND_FERTIG, teil)
 
     gemeinde = modul1_result.get("gemeinde", {}).get("gemeinde")
     kanton = oereb.get("kanton")
-    modul2_result = analyze_from_oereb_result(oereb, gemeinde=gemeinde, kanton=kanton, backend="gemini")
 
+    melde("reglement", STAND_LAEUFT, teil)
+    lader = modul2_lader or (
+        lambda o, gemeinde=None, kanton=None: analyze_from_oereb_result(
+            o, gemeinde=gemeinde, kanton=kanton, backend="gemini"))
+    try:
+        modul2_result = lader(oereb, gemeinde=gemeinde, kanton=kanton)
+    except Exception:
+        # Die amtlichen Daten bleiben gueltig -- nur die Reglementsauswertung
+        # fehlt. Der Aufrufer entscheidet, ob er das Teilergebnis behaelt.
+        melde("reglement", STAND_FEHLER, teil)
+        raise
+    melde("reglement", STAND_FERTIG)
+
+    melde("potenzial", STAND_LAEUFT)
+    ergebnis = _potenzialkette(adresse, modul1_result, modul2_result)
+    melde("potenzial", STAND_FERTIG, ergebnis)
+    return Analyse(ergebnis=ergebnis, kontext={"modul1": modul1_result, "modul2": modul2_result})
+
+
+def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict) -> dict:
+    """Zonenzuordnung, G1, SIA 416, Flaechen, Szenarien, Quellen.
+
+    Unveraendert aus der bisherigen `analysiere_grundstueck` herausgeloest --
+    damit sie nach einem fehlgeschlagenen Modul 2 nachgeholt werden kann,
+    ohne die amtlichen Abfragen zu wiederholen.
+    """
     # Preisunabhaengig: welche BZO-Zone gilt amtlich fuer dieses Grundstueck.
     zonen_zuordnung = ermittle_zonenzuordnung(modul1_result, modul2_result)
 
@@ -1071,7 +1168,7 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
     if kanten_klassifikation.get("kanten"):
         quellen += [asdict(q) for q in quellen_fuer_kanten(kanten_klassifikation)]
 
-    ergebnis = {
+    return {
         "adresse": adresse,
         "modul1_geodaten": _trimmed_modul1(modul1_result),
         "zonen_zuordnung": zonen_zuordnung,
@@ -1085,7 +1182,6 @@ def analysiere_grundstueck(adresse: str) -> Analyse:
         "modul2_bzo_analyse": modul2_result,
         "modul3_financial": None,
     }
-    return Analyse(ergebnis=ergebnis, kontext={"modul1": modul1_result, "modul2": modul2_result})
 
 
 def berechne_wirtschaftlichkeit(

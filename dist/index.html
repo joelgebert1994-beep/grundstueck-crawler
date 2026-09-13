@@ -297,6 +297,18 @@ ul.plain li { margin-bottom: 4px; }
 .hbuwert { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .hbutext { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
 .hbustufen { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+.ladestand { border: 1px solid var(--line); border-left: 3px solid var(--warn);
+  border-radius: 9px; padding: 10px 13px; margin: 0 0 14px; background: var(--bg); }
+.ladestand.fertig { border-left-color: var(--ok); }
+.ladestand.gestoert { border-left-color: var(--stop); }
+.lskopf { font-size: 12.5px; color: var(--ink-2); margin-bottom: 8px; }
+.lsliste { display: flex; flex-wrap: wrap; gap: 6px; }
+.lsschritt { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
+  padding: 3px 9px; border: 1px solid var(--line-2); border-radius: 999px; color: var(--ink-3); }
+.lsschritt i { font-style: normal; font-weight: 700; }
+.lsschritt.fertig { border-color: var(--ok); color: var(--ok); }
+.lsschritt.laeuft { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+.lsschritt.fehler { border-color: var(--stop); color: var(--stop); background: var(--stop-soft); }
 .kartenlabel { background: rgba(255,255,255,.92); border: 1px solid rgba(0,0,0,.18);
   border-radius: 4px; color: #14303a; font: 600 11px/1.2 Archivo, system-ui, sans-serif;
   padding: 2px 6px; box-shadow: none; white-space: nowrap; }
@@ -1506,26 +1518,108 @@ function renderLoading() {
   inner.innerHTML = '<div class="loadwrap"><h2>Analyse läuft</h2>' +
     '<p style="color:var(--ink-2);font-size:13px">' + esc(gewaehlteAdresse) + "</p>" +
     '<div class="bar"><i id="ladebalken"></i></div>' +
-    '<div><span class="loadpct" id="ladepct">4 %</span><span class="loadstep" id="ladestep">Adresse geocodieren</span></div>' +
-    '<p style="margin-top:18px;font-size:12.5px;color:var(--ink-3)">Die Auswertung der Bau- und Nutzungsordnung dauert typischerweise 1&ndash;3 Minuten. Der Fortschritt ist zeitbasiert geschätzt, nicht vom Server gemeldet.</p></div>';
+    '<div><span class="loadstep" id="ladestep">Grundstück wird gesucht …</span></div>' +
+    '<p style="margin-top:18px;font-size:12.5px;color:var(--ink-3)">Grundstück, Karte und ' +
+    'Grundnutzung stehen nach wenigen Sekunden. Die Auswertung der Bau- und ' +
+    'Nutzungsordnung dauert länger — sie wird nachgeladen, sobald sie da ist.</p></div>';
   clearInterval(ladeTimer);
+  // Keine geschaetzte Prozentzahl mehr. Der Balken laeuft als reine
+  // Betriebsanzeige, und der Text kommt vom Server, sobald er etwas meldet.
   ladeTimer = setInterval(function () {
-    var s = (Date.now() - ladeStart) / 1000;
-    var pct = Math.min(95, Math.round(4 + s * 0.62));
     var bal = document.getElementById("ladebalken");
     if (!bal) return;
-    bal.style.width = pct + "%";
-    document.getElementById("ladepct").textContent = pct + " %";
-    var txt = LADESCHRITTE[0][1];
-    LADESCHRITTE.forEach(function (x) { if (pct >= x[0]) txt = x[1]; });
-    document.getElementById("ladestep").textContent = txt;
-  }, 700);
+    var laufend = alsListe(letzteSchritte).filter(function (x) { return x.stand === "laeuft"; });
+    var fertig = alsListe(letzteSchritte).filter(function (x) { return x.stand === "fertig"; });
+    var schritt = document.getElementById("ladestep");
+    if (schritt && laufend.length) schritt.textContent = laufend[0].bezeichnung + " …";
+    bal.style.width = letzteSchritte.length
+      ? Math.round(100 * fertig.length / letzteSchritte.length) + "%"
+      : "8%";
+  }, 600);
 }
 function stopLoading() { clearInterval(ladeTimer); ladeTimer = null; }
 
-var jobIdAktuell = null;
+/* --- Ladestand: echte Zustaende statt geschaetzter Prozente ---------------
+
+   Gemessen entfallen 87 % der Laufzeit auf die Reglementsauswertung; alles
+   Uebrige steht nach rund zehn Sekunden. Deshalb wird das Teilergebnis
+   sofort gezeigt und darueber eine Leiste, die sagt, was davon bereits
+   ENDGUELTIG ist und was noch geholt wird.
+
+   Die Zustaende kommen vom Server. Es gibt hier keine geschaetzte
+   Prozentzahl mehr -- die hat nur so getan, als wuesste sie etwas.
+*/
+var STAND_SYMBOL = { fertig: "✓", laeuft: "…", offen: "·", fehler: "!" };
+
+function standLeiste(schritte, fehler) {
+  schritte = alsListe(schritte);
+  if (!schritte.length) return "";
+  var offen = schritte.filter(function (s) { return s.stand !== "fertig"; });
+  var fertig = !offen.length;
+
+  return '<div class="ladestand' + (fertig ? " fertig" : "") +
+    (fehler ? " gestoert" : "") + '" id="ladestand">' +
+    '<div class="lskopf">' +
+      (fertig ? "<b>Analyse vollständig</b>"
+              : "<b>Analyse läuft</b> — was hier steht, ist bereits belegt") +
+    "</div>" +
+    '<div class="lsliste">' +
+      schritte.map(function (s) {
+        var st = s.stand || "offen";
+        return '<span class="lsschritt ' + st + '">' +
+          '<i>' + (STAND_SYMBOL[st] || "·") + "</i>" + esc(s.bezeichnung) +
+          (st === "laeuft" ? " …" : "") + "</span>";
+      }).join("") +
+    "</div>" +
+    (fehler
+      ? '<div class="note stop"><b>Die Reglementsauswertung ist fehlgeschlagen.</b> ' +
+        esc(fehler) + '<br>Die amtlichen Daten oben bleiben gültig — es fehlt nur ' +
+        'die Auswertung der Bau- und Nutzungsordnung. Ein neuer Versuch holt ' +
+        'ausschliesslich diesen Schritt nach, nicht die ganze Analyse.' +
+        '<div class="szwahl"><button class="szbtn" id="reglement-nochmal">' +
+        'Reglementsauswertung wiederholen</button></div></div>'
+      : "") +
+  "</div>";
+}
+
+function zeigeStand(schritte, fehler) {
+  var vorhanden = document.getElementById("ladestand");
+  var html = standLeiste(schritte, fehler);
+  if (!html) return;
+  if (vorhanden) {
+    vorhanden.outerHTML = html;
+  } else {
+    inner.insertAdjacentHTML("afterbegin", html);
+  }
+  var knopf = document.getElementById("reglement-nochmal");
+  if (knopf) knopf.onclick = reglementWiederholen;
+}
+
+function reglementWiederholen() {
+  var knopf = document.getElementById("reglement-nochmal");
+  if (knopf) { knopf.disabled = true; knopf.textContent = "läuft …"; }
+  apiAbruf("/api/analyse/reglement", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ job_id: jobIdAktuell })
+  }).then(function (a) {
+    if (!a.ok) {
+      zeigeStand(letzteSchritte, a.fehler || "Erneut fehlgeschlagen.");
+      return;
+    }
+    ergebnisAktuell = a.daten.ergebnis;
+    zeichneErgebnisAufKarte(ergebnisAktuell);
+    renderDossier(ergebnisAktuell);
+    zeigeStand(letzteSchritte.map(function (s) {
+      return { schluessel: s.schluessel, bezeichnung: s.bezeichnung, stand: "fertig" };
+    }));
+  });
+}
+
+var jobIdAktuell = null, letzteSchritte = [], teilGezeigt = false;
 function pollStatus(jobId) {
   jobIdAktuell = jobId;
+  teilGezeigt = false;
+  letzteSchritte = [];
   var versuch = 0, netzFehlerInFolge = 0;
   // Ein einzelner verlorener Abruf ist normal -- eine Reihe davon heisst,
   // der Dienst ist weg. Das als "Zeitueberschreitung der Analyse" zu
@@ -1562,25 +1656,46 @@ function pollStatus(jobId) {
           resolve(); return;
         }
         var data = a.daten;
+        if (data.schritte && data.schritte.length) letzteSchritte = data.schritte;
+
+        // Das Teilergebnis ist kein Platzhalter: Parzelle, Flaeche, Gemeinde,
+        // Geometrie und Grundnutzung stehen darin endgueltig fest. Es sofort
+        // zu zeigen ist der ganze Unterschied zwischen "zwei Minuten vor
+        // einem leeren Bildschirm" und "nach zehn Sekunden arbeitsfaehig".
+        if (!teilGezeigt && data.teilergebnis && data.status !== "done") {
+          teilGezeigt = true;
+          stopLoading();
+          ergebnisAktuell = data.teilergebnis;
+          zeichneErgebnisAufKarte(data.teilergebnis);
+          renderDossier(data.teilergebnis);
+        }
+        if (teilGezeigt) zeigeStand(letzteSchritte, data.status === "teilweise" ? data.fehler : null);
+
         if (data.status === "error") {
           stopLoading();
           renderFehler(data.fehler, "fachlich");
           resolve(); return;
         }
+        if (data.status === "teilweise") {
+          // Amtliche Daten vollstaendig, Reglementsauswertung fehlgeschlagen.
+          stopLoading();
+          resolve(); return;
+        }
         if (data.status === "done") {
           stopLoading();
-          var bal = document.getElementById("ladebalken");
-          if (bal) bal.style.width = "100%";
           ergebnisAktuell = data.ergebnis;
           zeichneErgebnisAufKarte(data.ergebnis);
           renderDossier(data.ergebnis);
+          zeigeStand(letzteSchritte);
           resolve();
           return;
         }
-        setTimeout(tick, 3000);
+        // Schneller nachfragen: das Teilergebnis steht nach rund zehn
+        // Sekunden bereit, und darauf will niemand drei Sekunden extra warten.
+        setTimeout(tick, teilGezeigt ? 3000 : 1500);
       });
     }
-    setTimeout(tick, 3000);
+    setTimeout(tick, 1200);
   });
 }
 function renderFehler(msg, art, unterart) {
@@ -1865,7 +1980,18 @@ function secUebersicht(erg, m1, zz) {
   // im Baurechtsabschnitt. Ein massgebender Sondernutzungsplan steuert die
   // gesamte weitere Beurteilung.
   var leitsatz = "";
-  if (snp) {
+  // "Noch nicht gerechnet" ist etwas anderes als "nicht bestimmbar". Solange
+  // die Reglementsauswertung laeuft, gibt es KEINE Zonenzuordnung -- daraus
+  // "Zone nicht eindeutig" zu machen waere eine Behauptung ueber das
+  // Grundstueck, wo nur ein Arbeitsschritt aussteht.
+  if (erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined) {
+    leitsatz = '<div class="leit warn"><div class="leitkopf">' +
+      '<span class="badge warn">Baurecht wird noch geprüft</span></div>' +
+      '<p class="leittext">Grundstück, Karte und Grundnutzung stehen fest. Welche ' +
+      'Kennzahlen der Bau- und Nutzungsordnung für diese Zone gelten, wird gerade ' +
+      'ausgewertet — bis dahin werden hier bewusst keine Potenzialzahlen gezeigt. ' +
+      'Über das Grundstück ist damit nichts Nachteiliges gesagt.</p></div>';
+  } else if (snp) {
     var plaene = alsListe(zz.sondernutzungsplaene).map(function (p) {
       return p.typ_kommunal_bezeichnung || p.typ_kantonal_bezeichnung || p.bezeichnung;
     }).filter(Boolean);
