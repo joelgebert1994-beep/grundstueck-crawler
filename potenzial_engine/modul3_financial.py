@@ -96,6 +96,132 @@ def _normalize_zone_name(name: str) -> str:
 
 ZONE_MATCH_TIE_MARGIN = 0.03  # Kandidaten innerhalb dieses Abstands vom Top-Score gelten als gleichwertig
 
+# --- Zonencode (Kuerzel) ---------------------------------------------------
+#
+# Warum es diesen Weg braucht, am realen Fall Rheineck gemessen
+# (Buhofstrasse 55, Parzelle 160):
+#
+#   amtlich : "BauG_Wohnzone W2"              -> "baug wohnzone w2"            (16 Z.)
+#   BZO     : "Wohnzone, 2 Vollgeschosse (W2)" -> "wohnzone 2 vollgeschosse w2" (27 Z.)
+#
+# Gemeinsam sind genau elf Zeichen: "wohnzone " und "w2". difflib rechnet
+# 2*11/43 = 0.51 und bleibt unter der Schwelle von 0.55. Von diesen 0.51
+# entfallen auf das "w2" -- das einzige, was die Zone ueberhaupt
+# entscheidet -- 0.09. Den Rest bestimmt Beiwerk auf beiden Seiten: das
+# kantonale Praefix "BauG_" und die ausgeschriebene Geschosszahl.
+#
+# Die Schwelle zu senken waere die falsche Antwort. Im selben Durchlauf
+# erreicht "Gruenzone Gaerten (GG)" 0.47 und "Wohnzone, 3 Vollgeschosse
+# (W3)" ebenfalls 0.47. Eine Schwelle von 0.50 liesse den richtigen
+# Treffer also mit vier Hundertsteln Vorsprung vor einer voellig anderen
+# Zone durch -- bei einer Gleichstandsmarge von 0.03 ist das kein
+# Abgleich mehr, sondern ein Muenzwurf.
+#
+# Das Kuerzel dagegen ist exakt: steht auf beiden Seiten "W2", ist es
+# dieselbe Zone, unabhaengig davon, wie die Gemeinde sie ausschreibt.
+#
+# BEWUSST ENG GEFASST -- ein Kuerzel zaehlt nur MIT Ziffer (W2, W2H, WG3,
+# K5, D3). Das ist genau die Familie, in der die Textaehnlichkeit
+# versagt, weil die Ziffer ein Zeichen unter zwanzig ist. Kuerzel ohne
+# Ziffer (K, GI, IZ, LW, OeZ) bleiben aussen vor: dort traegt der
+# ausgeschriebene Name ("Kernzone", "Gewerbe-Industriezone") das Signal
+# ohnehin, und zwei Buchstaben als alleiniger Schluessel waeren zu wenig,
+# um eine Fehlzuordnung auszuschliessen. Eine falsch zugeordnete Zone ist
+# schlimmer als eine nicht zugeordnete -- aus ihr faellt eine
+# vollstaendige, aber falsche Kennzahlentabelle.
+_ZONENCODE = re.compile(r"^[a-zäöü]{1,4}\d{1,2}[a-zäöü]{0,2}$")
+
+
+def _zonencodes(name: str) -> set:
+    """Alle Zonenkuerzel mit Ziffer aus einer Zonenbezeichnung.
+
+    Gesucht wird ueber die ganze Bezeichnung, Klammerinhalt eingeschlossen
+    -- die Gemeinden setzen das Kuerzel mal ans Ende ("BauG_Wohnzone W2"),
+    mal in Klammern ("Wohnzone, 2 Vollgeschosse (W2)"), mal in eine Liste
+    ("Zone D3 / D4").
+
+    Nicht getroffen werden reine Zahlen ("2 Vollgeschosse", die Jahreszahl
+    1995) und reine Woerter ("BauG", "Wohnzone", "Hanglage"): ein Kuerzel
+    besteht aus Buchstaben UND Ziffer.
+    """
+    codes = set()
+    for token in re.split(r"[^0-9A-Za-zÄÖÜäöü]+", (name or "").lower()):
+        if token and _ZONENCODE.match(token):
+            codes.add(token)
+    return codes
+
+
+def _zuordnung_ueber_zonencode(
+    amtliche_bezeichnung: str, erkannte_zonen: list,
+) -> Optional[dict[str, Any]]:
+    """Deterministische Zuordnung ueber das Zonenkuerzel, oder None.
+
+    None heisst: dieser Weg traegt hier nicht (kein Kuerzel auf der
+    amtlichen Seite, oder keine BZO-Zone fuehrt dasselbe). Dann entscheidet
+    weiterhin die Textaehnlichkeit.
+    """
+    ziel_codes = _zonencodes(amtliche_bezeichnung)
+    if not ziel_codes:
+        return None
+
+    treffer = [
+        (z, sorted(_zonencodes(z.get("zonenbezeichnung", "")) & ziel_codes))
+        for z in erkannte_zonen
+    ]
+    treffer = [(z, gemeinsam) for z, gemeinsam in treffer if gemeinsam]
+    if not treffer:
+        return None
+
+    if len(treffer) > 1:
+        # Mehrere BZO-Zonen fuehren dasselbe Kuerzel. Dann ist das Kuerzel
+        # kein Unterscheidungsmerkmal mehr und die Zuordnung offen -- wie
+        # bei mehreren gleich guten Namenstreffern.
+        return {
+            "status": "mehrere_gleich_gute_kandidaten",
+            "amtliche_zonenbezeichnung": amtliche_bezeichnung,
+            "zuordnung_regel": "zonencode",
+            "zonencode": treffer[0][1][0].upper(),
+            "aehnlichkeit": None,
+            "zone": None,
+            "kandidaten": [
+                {"zonenbezeichnung": z.get("zonenbezeichnung"),
+                 "ausnuetzungsziffer_az": _kennzahl_wert(z.get("ausnuetzungsziffer_az"))}
+                for z, _ in treffer
+            ],
+            "hinweis": (
+                f"Das Zonenkuerzel {treffer[0][1][0].upper()!r} kommt in "
+                f"{len(treffer)} BZO-Zonen vor und unterscheidet sie deshalb nicht -- "
+                "amtlichen Zonenplan der Gemeinde konsultieren."
+            ),
+        }
+
+    zone, gemeinsam = treffer[0]
+    code = gemeinsam[0].upper()
+    return {
+        "status": "gefunden",
+        "amtliche_zonenbezeichnung": amtliche_bezeichnung,
+        "zuordnung_regel": "zonencode",
+        "zonencode": code,
+        # Die Zuordnung ist exakt, nicht aehnlich: dasselbe Kuerzel auf
+        # beiden Seiten. "aehnlichkeit" traegt deshalb 1.0 -- das Feld
+        # sagt, wie sicher die Zuordnung ist, und das ist sie hier.
+        # Der reine Textwert steht daneben in "namensaehnlichkeit" und
+        # ist bei genau diesen Faellen typischerweise niedrig.
+        "aehnlichkeit": 1.0,
+        "namensaehnlichkeit": round(difflib.SequenceMatcher(
+            None,
+            _normalize_zone_name(amtliche_bezeichnung),
+            _normalize_zone_name(zone.get("zonenbezeichnung", "")),
+        ).ratio(), 2),
+        "zone": zone,
+        "hinweis": (
+            f"Zonenkuerzel {code!r} stimmt auf beiden Seiten exakt ueberein "
+            f"(amtlich {amtliche_bezeichnung!r}, Reglement "
+            f"{zone.get('zonenbezeichnung')!r}) und kommt im Reglement nur "
+            "einmal vor."
+        ),
+    }
+
 
 def match_zone(
     amtliche_zonenbezeichnungen: list[dict[str, Any]],
@@ -132,6 +258,15 @@ def match_zone(
         (z for z in amtliche_zonenbezeichnungen if z.get("ist_wahrscheinlich_basiszone")),
         amtliche_zonenbezeichnungen[0],
     )
+
+    # Zuerst das Zonenkuerzel: es ist exakt und braucht keine Schwelle.
+    # Traegt es nicht (kein Kuerzel amtlich, oder keine BZO-Zone fuehrt
+    # dasselbe), entscheidet weiterhin die Textaehnlichkeit unten.
+    ueber_code = _zuordnung_ueber_zonencode(
+        basiszone["zonenbezeichnung"], erkannte_zonen)
+    if ueber_code is not None:
+        return ueber_code
+
     target = _normalize_zone_name(basiszone["zonenbezeichnung"])
 
     scored = []
@@ -163,9 +298,18 @@ def match_zone(
             "status": "unsicher",
             "amtliche_zonenbezeichnung": basiszone["zonenbezeichnung"],
             "beste_kandidatin": max(scored, key=lambda t: t[0])[1].get("zonenbezeichnung"),
+            "zuordnung_regel": "namensaehnlichkeit",
             "aehnlichkeit": round(best_score, 2),
+            "namensaehnlichkeit": round(best_score, 2),
             "zone": None,
-            "hinweis": "Automatische Zonenzuordnung unsicher -- manuell mit der BZO abgleichen.",
+            "hinweis": (
+                "Automatische Zonenzuordnung unsicher -- manuell mit der BZO abgleichen. "
+                "Ueber das Zonenkuerzel war nichts zu finden ("
+                + (f"amtlich {sorted(_zonencodes(basiszone['zonenbezeichnung']))!r}, "
+                   "im Reglement kommt keines davon vor"
+                   if _zonencodes(basiszone["zonenbezeichnung"])
+                   else "die amtliche Bezeichnung fuehrt kein Kuerzel mit Ziffer")
+                + "); verglichen wurde deshalb nur der Text."),
         }
 
     top_tied = [z for s, z in scored if s >= best_score - ZONE_MATCH_TIE_MARGIN]
@@ -173,7 +317,9 @@ def match_zone(
         return {
             "status": "mehrere_gleich_gute_kandidaten",
             "amtliche_zonenbezeichnung": basiszone["zonenbezeichnung"],
+            "zuordnung_regel": "namensaehnlichkeit",
             "aehnlichkeit": round(best_score, 2),
+            "namensaehnlichkeit": round(best_score, 2),
             "zone": None,
             "kandidaten": [
                 {"zonenbezeichnung": z.get("zonenbezeichnung"), "ausnuetzungsziffer_az": _kennzahl_wert(z.get("ausnuetzungsziffer_az"))}
@@ -189,7 +335,9 @@ def match_zone(
     return {
         "status": "gefunden",
         "amtliche_zonenbezeichnung": basiszone["zonenbezeichnung"],
+        "zuordnung_regel": "namensaehnlichkeit",
         "aehnlichkeit": round(best_score, 2),
+        "namensaehnlichkeit": round(best_score, 2),
         "zone": top_tied[0],
     }
 
@@ -641,7 +789,94 @@ def _ermittle_basiszone_bezeichnung(modul1_result: dict[str, Any]) -> tuple[list
         if bezeichnung:
             return [{"zonenbezeichnung": bezeichnung, "ist_wahrscheinlich_basiszone": True}], "nutzungsklassifikation"
 
+    # Mehrere Grundnutzungen im Suchradius: Modul 1b kann das nicht
+    # aufloesen, weil es bewusst ohne Geometrie arbeitet (es fragt einen
+    # Punkt ab und kennt die Parzelle nicht). HIER ist die Parzellenkontur
+    # bekannt -- und damit die Frage beantwortbar, ohne irgendetwas zu
+    # raten: welche Grundnutzung deckt diese Parzelle?
+    #
+    # Real gemessen in Rheineck (Parzelle 160, 289.1 m2): die Abfrage fand
+    # "BauG_Wohnzone W2" UND "BauG_Landwirtschaftszone", weil die
+    # Zonengrenze direkt an der Parzelle verlaeuft. Geometrisch deckt die
+    # Wohnzone 288.5 m2 (99.8 %), die Landwirtschaftszone 0.4 m2 (0.1 %) --
+    # ein Digitalisierungsrest entlang der gemeinsamen Kante. Ohne diese
+    # Pruefung fiel die Zuordnung auf den OEREB-Legendentext zurueck und
+    # verlor dabei die kantonalen und kommunalen Codes der Klassifikation.
+    treffer = _grundnutzung_nach_flaechenanteil(modul1_result, klass)
+    if treffer is not None:
+        zone, anteil = treffer
+        bezeichnung = zone.get("typ_kommunal_bezeichnung") or zone.get("typ_kantonal_bezeichnung")
+        if bezeichnung:
+            return (
+                [{"zonenbezeichnung": bezeichnung, "ist_wahrscheinlich_basiszone": True,
+                  "flaechenanteil_prozent": round(anteil * 100, 1)}],
+                "nutzungsklassifikation_flaechenanteil",
+            )
+
     return modul1_result.get("oereb", {}).get("amtliche_zonenbezeichnungen", []), "oereb_legendtext_fallback"
+
+
+# Ab diesem Anteil an der Parzellenflaeche gilt eine Grundnutzung als auf
+# dieser Parzelle geltend. Darunter liegende Ueberlappungen sind
+# Digitalisierungsreste entlang gemeinsamer Kanten (in Rheineck 0.1 %) und
+# keine Zonenzugehoerigkeit.
+GRUNDNUTZUNG_MIN_FLAECHENANTEIL = 0.05
+
+
+def _grundnutzung_nach_flaechenanteil(
+    modul1_result: dict[str, Any], klass: dict[str, Any],
+) -> Optional[tuple]:
+    """Die eine Grundnutzung, die diese Parzelle deckt -- oder None.
+
+    None heisst ausdruecklich NICHT "keine gefunden", sondern "hier ist
+    nichts zu entscheiden": keine Parzellenkontur, keine Zonengeometrie,
+    gar keine Deckung -- oder die Parzelle liegt tatsaechlich in MEHREREN
+    Grundnutzungen. Der letzte Fall ist keine Datenluecke, sondern ein
+    Grundstueck ueber einer Zonengrenze; eine der beiden Zonen zur
+    massgebenden zu erklaeren waere dort eine Erfindung.
+    """
+    if klass.get("basiszone_status") != "mehrdeutig_mehrere_grundnutzungen_im_radius":
+        return None
+    grundnutzungen = klass.get("grundnutzungen") or []
+    if len(grundnutzungen) < 2:
+        return None
+
+    parzelle_ring = (modul1_result.get("kataster") or {}).get("parzellengeometrie")
+    if not parzelle_ring or len(parzelle_ring) < 3:
+        return None
+
+    try:
+        from shapely.geometry import Polygon
+        from shapely.ops import unary_union
+    except ImportError:
+        return None
+
+    parzelle = Polygon(parzelle_ring)
+    if not parzelle.is_valid:
+        parzelle = parzelle.buffer(0)
+    if parzelle.is_empty or parzelle.area <= 0:
+        return None
+
+    relevante = []
+    for zone in grundnutzungen:
+        teile = []
+        for ring in zone.get("geometrie_koordinaten") or []:
+            if not ring or len(ring) < 3:
+                continue
+            p = Polygon(ring)
+            if not p.is_valid:
+                p = p.buffer(0)
+            if not p.is_empty and p.area > 0:
+                teile.append(p)
+        if not teile:
+            continue
+        anteil = parzelle.intersection(unary_union(teile)).area / parzelle.area
+        if anteil >= GRUNDNUTZUNG_MIN_FLAECHENANTEIL:
+            relevante.append((zone, anteil))
+
+    if len(relevante) != 1:
+        return None
+    return relevante[0]
 
 
 def ermittle_zonenzuordnung(modul1_result: dict[str, Any], modul2_result: dict[str, Any]) -> dict[str, Any]:

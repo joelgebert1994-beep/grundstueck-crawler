@@ -43,11 +43,23 @@ BEWUSST NICHT TEIL DIESES MODULS (siehe Fachspezifikation):
     ohne Geometrie nicht ermittelt werden, welche davon ueberwiegt -- das
     wird als "mehrdeutig_mehrere_grundnutzungen_im_radius" ausgewiesen statt
     eine falsche Rangfolge zu erfinden.
+
+    Dieses Modul fragt einen PUNKT ab und kennt die Parzelle nicht; das ist
+    der Grund, warum es die Frage nicht beantworten kann. Wer die
+    Parzellenkontur hat, kann sie beantworten: seit 2026-09-17 loest
+    _ermittle_basiszone_bezeichnung() in modul3_financial.py diesen Status
+    ueber den Flaechenanteil auf (Rheineck Parzelle 160: Wohnzone 99.8 %,
+    Landwirtschaftszone 0.1 % entlang der gemeinsamen Kante). Die
+    Geometrie bleibt also weiterhin ausserhalb dieses Moduls -- die
+    Mehrdeutigkeit ist aber kein Endzustand mehr.
   - Auswertung des INHALTS eines erkannten Sondernutzungsplans. Nur die
     Existenz/Rechtsgueltigkeit wird bestimmt, niemals dessen Kennzahlen.
-  - AEnderungen an match_zone() in modul3_financial.py -- diese Funktion
-    bleibt unangetastet und erhaelt ueber den neuen Aufrufer weiterhin nur
-    eine simple Liste von Zonenbezeichnungen im bisherigen Format.
+  - Die Zuordnung zur Zonentabelle des Reglements selbst. Dieses Modul
+    liefert nur die amtliche Bezeichnung; match_zone() in
+    modul3_financial.py entscheidet, welche Reglementszone dazu gehoert
+    (seit 2026-09-17 zuerst ueber das Zonenkuerzel, dann ueber den Text).
+    Das Format der Schnittstelle ist unveraendert: eine Liste von
+    Zonenbezeichnungen.
 
 CLI (Debug):
     python modul1b_nutzungsklassifikation.py <E> <N> <KANTON>
