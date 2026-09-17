@@ -18,8 +18,18 @@ Geprueft wird deshalb:
     Abfragen zu wiederholen. Genau das macht einen Gemini-Fehlschlag
     billig statt teuer.
   * Ein Fehler in der Fortschrittsmeldung stoppt keine Analyse.
+  * Modul 1 fragt nebenlaeufig ab, ohne eine Phase zu ueberspringen, zu
+    verdoppeln oder ihre Antwort zu verlieren -- und ohne die
+    Abhaengigkeiten zu brechen.
 
-CLI: python -m tests.test_phasen
+Was hier NICHT mehr geprueft wird: die Laufzeit. Eine feste Grenze
+(`gesamt < 1.6 s`) hat gemessen, wie ausgelastet die Maschine gerade ist,
+und ist mit offenem Browser reihenweise durchgefallen, waehrend am Code
+nichts falsch war. Die Zahl bleibt nuetzlich und steht als Diagnose in
+miss_modul1_laufzeit() -- gedruckt, nicht geprueft.
+
+CLI: python -m tests.test_phasen            # Zusicherungen + Diagnose
+     python -m tests.test_phasen --messen   # nur die Laufzeitmessung
 """
 from __future__ import annotations
 
@@ -159,10 +169,30 @@ def test_meldung_stoppt_nichts() -> None:
 def test_nebenlaeufigkeit() -> None:
     """Modul 1 fragt nebenlaeufig ab -- ohne die Abhaengigkeiten zu brechen.
 
-    Gemessen brauchten die neun Einzelabfragen zusammen rund 14 s, obwohl
-    keine auf die andere wartet; allein die Umgebungsdaten 5.1 s. Hier wird
-    mit Attrappen geprueft, dass sie tatsaechlich gleichzeitig laufen UND
-    dass die zweite Welle erst startet, wenn Kataster und Gemeinde da sind.
+    Geprueft wird die ORDNUNG, nicht die Uhr.
+
+    Bis zum 17.09.2026 stand hier zusaetzlich eine feste Laufzeitgrenze
+    (`gesamt < 1.6 s`). Sie hat gemessen, wie ausgelastet die Maschine
+    gerade ist: mit offenem Browser und laufendem Vorschau-Server schlug
+    sie mit 1.99 s, 2.58 s und 13.34 s fehl, allein gelaufen war sie
+    gruen. Eine Zusicherung, die an der Nebenlast haengt, sagt nichts
+    ueber den Code -- sie kostet nur das Vertrauen in die uebrigen
+    Zusicherungen derselben Reihe. Die Messung steht jetzt als Diagnose
+    in miss_modul1_laufzeit() und kann nicht mehr durchfallen.
+
+    Was hier bleibt, ist von der Maschinenlast unabhaengig. Last
+    verschiebt alle Zeitpunkte, aber sie kehrt keine Reihenfolge um und
+    sie erzeugt keine Ueberlappung, wo keine ist:
+
+      * Jede Quelle wird genau einmal abgefragt -- keine uebersprungen,
+        keine doppelt.
+      * Was jede Quelle geliefert hat, steht im Ergebnis. Eine Phase, die
+        laeuft und deren Antwort dann verloren geht, faellt damit auf.
+      * Es laufen tatsaechlich mehrere gleichzeitig, gemessen an der
+        hoechsten Zahl gleichzeitig offener Abfragen.
+      * Die Abhaengigkeiten gelten: was eine andere Abfrage braucht,
+        beginnt nach deren Ende.
+      * Unabhaengige Abfragen ueberlappen sich zeitlich.
     """
     import threading
     import time
@@ -173,15 +203,23 @@ def test_nebenlaeufigkeit() -> None:
 
     beginn: dict[str, float] = {}
     ende: dict[str, float] = {}
+    aufrufe: dict[str, int] = {}
     sperre = threading.Lock()
+    offen = 0
+    hoechstens_offen = 0
     t0 = time.perf_counter()
 
     def attrappe(name, dauer, rueckgabe):
         def f(*a, **kw):
+            nonlocal offen, hoechstens_offen
             with sperre:
+                aufrufe[name] = aufrufe.get(name, 0) + 1
                 beginn[name] = time.perf_counter() - t0
+                offen += 1
+                hoechstens_offen = max(hoechstens_offen, offen)
             time.sleep(dauer)
             with sperre:
+                offen -= 1
                 ende[name] = time.perf_counter() - t0
             return rueckgabe() if callable(rueckgabe) else rueckgabe
         return f
@@ -215,34 +253,136 @@ def test_nebenlaeufigkeit() -> None:
         m1.hole_restriktionen_fuer_parzelle = attrappe("restrikt", 0.30, {"gefunden": True})
 
         ergebnis = m1.run_modul1("Teststrasse 1")
-        gesamt = time.perf_counter() - t0
     finally:
         for name, fn in original.items():
             setattr(m1, name, fn)
 
-    pruefe(ergebnis["kataster"]["egrid"] == "CH1", "das Ergebnis ist vollstaendig aufgebaut")
+    # --- Keine Phase uebersprungen, keine doppelt --------------------------
+    erwartet = ["geo", "kataster", "gemeinde", "gwr", "radon", "topo",
+                "umgebung", "oereb", "nutzung", "restrikt"]
+    fehlend = [n for n in erwartet if aufrufe.get(n, 0) == 0]
+    doppelt = [n for n in erwartet if aufrufe.get(n, 0) > 1]
+    pruefe(not fehlend, f"jede der {len(erwartet)} Quellen wurde abgefragt "
+                        f"({'keine fehlt' if not fehlend else 'fehlt: ' + ', '.join(fehlend)})")
+    pruefe(not doppelt, f"und keine doppelt "
+                        f"({'keine' if not doppelt else 'doppelt: ' + ', '.join(doppelt)})")
+
+    # --- Was geliefert wurde, steht auch im Ergebnis -----------------------
+    pruefe(ergebnis["kataster"]["egrid"] == "CH1", "das Katasterergebnis steht im Ergebnis")
     pruefe(ergebnis["gemeinde"]["kanton"] == "AG", "auch die Gemeinde steht drin")
+    pruefe((ergebnis.get("oereb") or {}).get("found") is True,
+           "die OEREB-Antwort der zweiten Welle ist angekommen")
+    pruefe((ergebnis.get("nutzungsklassifikation") or {}).get("gefunden") is True,
+           "die Nutzungsklassifikation ebenso")
+    pruefe((ergebnis.get("restriktionsgeometrie") or {}).get("gefunden") is True,
+           "und die Restriktionen -- keine Phase laeuft ins Leere")
 
-    # Sequentiell waeren es 0.05 + 0.10 + 0.10 + 0.30*5 + 0.60 = 2.85 s.
-    pruefe(gesamt < 1.6,
-           f"nebenlaeufig deutlich schneller als die Summe der Einzelzeiten "
-           f"({gesamt:.2f} s statt 2.85 s)")
+    # --- Es laeuft wirklich nebeneinander ----------------------------------
+    # Gezaehlt wird, wie viele Abfragen gleichzeitig offen waren. Das ist
+    # unabhaengig davon, wie schnell die Maschine gerade ist: sequenziell
+    # waere der Hoechstwert 1, egal wie lange es dauert.
+    pruefe(hoechstens_offen >= 2,
+           f"mehrere Abfragen liefen gleichzeitig (hoechstens {hoechstens_offen} offen; "
+           "sequenziell waere es 1)")
 
-    # Die Abhaengigkeiten muessen trotzdem gelten.
-    pruefe(beginn["kataster"] >= ende["geo"] - 0.01,
+    # --- Die Abhaengigkeiten gelten ----------------------------------------
+    def frueher_fertig_als_start(vorher, nachher):
+        return beginn[nachher] >= ende[vorher] - 0.01
+
+    pruefe(frueher_fertig_als_start("geo", "kataster"),
            "Kataster startet erst nach dem Geocoding -- es braucht die Koordinate")
     for spaeter in ("oereb", "nutzung", "restrikt"):
-        pruefe(beginn[spaeter] >= ende["kataster"] - 0.01
-               and beginn[spaeter] >= ende["gemeinde"] - 0.01,
-               f"{spaeter} startet erst, wenn Kataster und Gemeinde da sind")
+        pruefe(frueher_fertig_als_start("kataster", spaeter)
+               and frueher_fertig_als_start("gemeinde", spaeter),
+               f"'{spaeter}' startet erst, wenn Kataster und Gemeinde da sind")
 
+    # --- Ueberlappung statt Reihenfolge ------------------------------------
+    def ueberlappen(a, b):
+        return beginn[a] < ende[b] and beginn[b] < ende[a]
+
+    pruefe(ueberlappen("gwr", "radon"),
+           "die unabhaengigen Abfragen gwr und radon laufen zur selben Zeit")
+    pruefe(ueberlappen("gwr", "topo"),
+           "gwr und topo ebenso")
     # Und der Punkt der Uebung: die langsame Umgebungsabfrage laeuft neben
     # der zweiten Welle, statt sie aufzuhalten.
-    pruefe(beginn["oereb"] < ende["umgebung"],
-           f"die zweite Welle startet, waehrend die Umgebungsabfrage noch laeuft "
-           f"(oereb ab {beginn['oereb']:.2f} s, Umgebung bis {ende['umgebung']:.2f} s)")
-    pruefe(abs(beginn["gwr"] - beginn["radon"]) < 0.05,
-           "die unabhaengigen Abfragen starten gemeinsam, nicht nacheinander")
+    pruefe(ueberlappen("oereb", "umgebung"),
+           f"die zweite Welle laeuft, waehrend die Umgebungsabfrage noch offen ist "
+           f"(oereb {beginn['oereb']:.2f}-{ende['oereb']:.2f} s, "
+           f"Umgebung {beginn['umgebung']:.2f}-{ende['umgebung']:.2f} s)")
+    print()
+
+
+def miss_modul1_laufzeit(wiederholungen: int = 1) -> None:
+    """DIAGNOSE, keine Zusicherung -- diese Funktion kann nicht durchfallen.
+
+    Sie misst, was die Nebenlaeufigkeit auf DIESER Maschine gerade
+    einbringt. Das ist eine nuetzliche Zahl und ein schlechter Test: sie
+    haengt an allem, was sonst noch laeuft. Deshalb wird sie gedruckt und
+    nicht geprueft.
+
+    Aufruf mit mehreren Wiederholungen:  python -m tests.test_phasen --messen
+    """
+    import time
+
+    from potenzial_engine import modul1_geodata as m1
+
+    dauern = {"geo": 0.05, "kataster": 0.10, "gemeinde": 0.10, "gwr": 0.30,
+              "radon": 0.30, "topo": 0.30, "umgebung": 0.60, "oereb": 0.30,
+              "nutzung": 0.30, "restrikt": 0.30}
+    sequenziell = sum(dauern.values())
+
+    class Wert:
+        def __init__(self, d): self._d = d
+        def model_dump(self): return self._d
+
+    def attrappe(dauer, rueckgabe):
+        def f(*a, **kw):
+            time.sleep(dauer)
+            return rueckgabe() if callable(rueckgabe) else rueckgabe
+        return f
+
+    original = {name: getattr(m1, name) for name in (
+        "geocode_address", "get_parcel_data", "get_municipality_data", "get_gwr_data",
+        "get_radon_data", "get_topography", "get_umgebung", "get_oereb_data",
+        "klassifiziere_nutzung", "hole_restriktionen_fuer_parzelle")}
+    messungen = []
+    try:
+        m1.geocode_address = attrappe(dauern["geo"], {
+            "lv95_e": 2647661.0, "lv95_n": 1248717.0,
+            "wgs84_lat": 47.38, "wgs84_lon": 8.06, "canton_hint": "ag"})
+        m1.get_parcel_data = attrappe(dauern["kataster"], {
+            "found": True, "egrid": "CH1", "parzellengeometrie": [(0, 0), (10, 0), (10, 10)]})
+        m1.get_municipality_data = attrappe(dauern["gemeinde"], {"kanton": "AG",
+                                                                 "gemeinde": "Buchs (AG)"})
+        m1.get_gwr_data = attrappe(dauern["gwr"], {"found": False})
+        m1.get_radon_data = attrappe(dauern["radon"], {"found": False})
+        m1.get_topography = attrappe(dauern["topo"], Wert({"hoehe": 400}))
+        m1.get_umgebung = attrappe(dauern["umgebung"], Wert({"fehler": {}}))
+        m1.get_oereb_data = attrappe(dauern["oereb"], {"found": True, "rechtsvorschriften": []})
+        m1.klassifiziere_nutzung = attrappe(dauern["nutzung"], {"gefunden": True,
+                                                                "basiszone": None})
+        m1.hole_restriktionen_fuer_parzelle = attrappe(dauern["restrikt"], {"gefunden": True})
+
+        for _ in range(max(1, wiederholungen)):
+            t0 = time.perf_counter()
+            m1.run_modul1("Teststrasse 1")
+            messungen.append(time.perf_counter() - t0)
+    finally:
+        for name, fn in original.items():
+            setattr(m1, name, fn)
+
+    schnellste = min(messungen)
+    print("--- Diagnose: Laufzeit von Modul 1 (keine Zusicherung) ---")
+    print(f"      {'Summe der Einzelzeiten (sequenziell)':<38}{sequenziell:5.2f} s")
+    if len(messungen) > 1:
+        beschriftung = f"nebenlaeufig, {len(messungen)} Laeufe"
+        print(f"      {beschriftung:<38}{schnellste:5.2f} s bis {max(messungen):5.2f} s")
+    else:
+        print(f"      {'nebenlaeufig gemessen':<38}{schnellste:5.2f} s")
+    print(f"      {'Verhaeltnis (schnellster Lauf)':<38}{schnellste / sequenziell:5.2f}")
+    print("      Unter Last steigt dieser Wert. Das ist eine Eigenschaft der")
+    print("      Maschine, nicht des Codes -- deshalb steht hier keine Grenze.")
     print()
 
 
@@ -311,12 +451,22 @@ def test_einzelne_quelle_blockiert_nicht() -> None:
 
 
 def main() -> None:
+    # Reiner Messmodus: keine Zusicherungen, nur die Laufzeitdiagnose.
+    if "--messen" in sys.argv:
+        miss_modul1_laufzeit(wiederholungen=5)
+        return
+
     test_teilergebnis()
     test_potenzialkette_nachholbar()
     test_signatur_und_schritte()
     test_meldung_stoppt_nichts()
     test_nebenlaeufigkeit()
     test_einzelne_quelle_blockiert_nicht()
+
+    # Die Laufzeit wird gezeigt, nicht geprueft. Sie steht hier, damit sie
+    # nicht in Vergessenheit geraet -- aber unterhalb der Zusicherungen und
+    # ohne Einfluss auf das Ergebnis der Reihe.
+    miss_modul1_laufzeit()
 
     print("=" * 68)
     if FEHLER:
