@@ -39,6 +39,7 @@ SUITEN: list[tuple[str, bool]] = [
     ("tests.test_umgebung", False),
     ("tests.test_sonnenstand", False),
     ("tests.test_zwischenspeicher", False),
+    ("tests.test_oberflaeche", False),
     ("tests.test_klassifikation", True),
 ]
 

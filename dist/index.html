@@ -30,6 +30,8 @@
   --shadow-s: 0 1px 2px rgba(15,32,42,.08);
   --r: 10px;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --bg: var(--panel);
+  --bg-2: var(--panel-2);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -68,30 +70,91 @@ h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
 a { color: var(--accent); }
 img { max-width: 100%; }
 
-/* ---------- Grundraster: Karte links, Dossier rechts ---------- */
+/* ---------- Grundraster ----------
+   Zwei Zustaende, nicht ein Schieberegler dazwischen:
+     Start    -- die Karte traegt die Suche, das Dossier ist noch leer.
+     Dossier  -- der Bericht bekommt die Flaeche; die Karte wandert in ihren
+                 eigenen Reiter.
+   Eine dauerhaft geteilte Ansicht kostete 30-40 % der Breite fuer ein Bild,
+   das beim Lesen des Berichts niemand ansieht -- und zwang jede Tabelle in
+   eine eigene Seitwaertsscrollleiste. */
 .app { display: flex; height: 100vh; width: 100vw; }
 .mapwrap { position: relative; flex: 1 1 auto; min-width: 0; }
 #map { position: absolute; inset: 0; background: var(--panel-2); }
 .leaflet-control-attribution { font-size: 10px; }
 .dossier {
-  flex: 0 0 470px; width: 470px; height: 100vh; overflow-y: auto;
+  flex: 0 0 470px; width: 470px; height: 100vh;
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
   background: var(--panel); border-left: 1px solid var(--line);
   box-shadow: -6px 0 24px rgba(15,32,42,.07);
-  min-width: 0;
 }
-/* Ausserhalb des Kartenreiters gehoert der Bildschirm dem Bericht. Die
-   Karte bleibt als Kontext sichtbar, aber schmal. */
-.app.breit .dossier { flex: 1 1 auto; width: auto; }
-.app.breit .mapwrap { flex: 0 0 clamp(280px, 30%, 560px); }
+/* Der Scrollbereich ist der Inhalt, nicht die Spalte: die Kopfleiste mit der
+   Suche bleibt oben stehen, und "nach oben" beim Reiterwechsel wirkt. */
+.dossier-inner { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 60px; }
+
+/* --- Dossierzustand --------------------------------------------------- */
+.app.nurdossier .mapwrap { display: none; }
+.app.nurdossier .dossier {
+  flex: 1 1 auto; width: auto; border-left: none; box-shadow: none;
+  background: var(--paper);
+}
+/* Eine Zeile Fliesstext ueber 2000 px ist unlesbar, ein Kennzahlenraster
+   ueber 2000 px wirkt leer. Deshalb eine Bahn, zentriert. */
+.app.nurdossier .dossier-inner { padding: 0 clamp(14px, 3vw, 32px) 80px; }
+.app.nurdossier .dossier-inner > * {
+  max-width: 1280px; margin-left: auto; margin-right: auto;
+}
+.app.nurdossier section.sec {
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px;
+  padding: 22px clamp(16px, 2.2vw, 28px) 24px; margin-bottom: 16px;
+  box-shadow: var(--shadow-s);
+}
+.app.nurdossier .dosshead {
+  background: transparent; border-bottom: none; padding: 22px 2px 4px;
+}
+.app.nurdossier .navbar {
+  background: var(--paper); padding: 6px 0 12px; border-bottom: none; gap: 5px;
+}
+
+/* --- Kopfleiste: die Suche bleibt erreichbar, ohne die Karte ----------- */
+.kopfleiste {
+  flex: none; display: flex; align-items: center; gap: 14px;
+  padding: 10px clamp(14px, 3vw, 32px); border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.kopfleiste[hidden] { display: none; }
+.kopfleiste > .searchcard {
+  position: relative; inset: auto; max-width: 1280px; width: 100%;
+  margin: 0 auto; padding: 0; border: none; box-shadow: none; background: none;
+  display: flex; align-items: center; gap: 14px;
+}
+.kopfleiste .brandline { margin-bottom: 0; flex: none; }
+.kopfleiste .brandline .sub { display: none; }
+.kopfleiste .searchrow { flex: 1 1 auto; min-width: 0; max-width: 620px; }
+.kopfleiste .dzustand { margin-left: auto; }
+@media (max-width: 720px) {
+  .kopfleiste > .searchcard { flex-wrap: wrap; }
+  .kopfleiste .brandline h1 { display: none; }
+}
+
+/* --- Die Karte in ihrem eigenen Reiter --------------------------------- */
+.kartenbuehne {
+  position: relative; height: clamp(420px, 66vh, 780px);
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--panel-2); margin-bottom: 12px;
+}
+.kartenbuehne #map { position: absolute; inset: 0; }
+
 @media (max-width: 1100px) {
   .dossier { flex-basis: 400px; width: 400px; }
-  .app.breit .mapwrap { flex: 0 0 clamp(220px, 26%, 360px); }
 }
 @media (max-width: 860px) {
   body { overflow: auto; }
   .app { flex-direction: column; height: auto; }
   .mapwrap { flex: none; height: 55vh; }
   .dossier { flex: none; width: 100%; height: auto; border-left: none; border-top: 1px solid var(--line); }
+  .dossier-inner { overflow-y: visible; }
+  .kartenbuehne { height: 62vh; }
 }
 
 /* ---------- Suche ---------- */
@@ -131,6 +194,54 @@ img { max-width: 100%; }
 .suggest button:last-child { border-bottom: none; }
 .suggest button:hover { background: var(--accent-soft); }
 
+/* ---------- Uebersicht: eine Antwort je Frage ----------
+   Ruhige Flaeche, eine grosse Aussage, darunter hoechstens drei Zeilen.
+   Kein Rahmen um jede Kleinigkeit -- der Rahmen markiert die Antwort, und
+   die Antwort ist eine je Frage. */
+.antwort {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--line);
+  border-radius: 10px; padding: 14px 16px; background: var(--panel-2); margin: 0 0 6px;
+}
+.antwort.gut { border-left-color: var(--ok); }
+.antwort.offen { border-left-color: var(--warn); }
+.antwort.stop { border-left-color: var(--stop); }
+.antwort.wartet { border-left-color: var(--ink-3); }
+.akopf { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.akopf .gross { font-size: 21px; font-weight: 700; letter-spacing: -.015em; line-height: 1.25; }
+.akopf .gross.klein { font-size: 16px; }
+.akopf .alab { font-size: 12px; color: var(--ink-3); }
+.atext { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); line-height: 1.55; max-width: 74ch; }
+.ahinweis { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-3); line-height: 1.5; max-width: 74ch; }
+/* Zwei Angaben sollen nicht ueber 1200 px auseinandergezogen werden:
+   feste Spaltenbreite, links beginnend, umbrechend wenn es eng wird. */
+.azeilen { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 360px));
+  justify-content: start; gap: 0 40px; margin-top: 10px;
+  border-top: 1px solid var(--line-2); padding-top: 4px; }
+.azeile { display: flex; gap: 10px; align-items: baseline; font-size: 13px; padding: 5px 0; }
+.azeile .k { color: var(--ink-3); flex: 0 0 auto; min-width: 118px; }
+.azeile .v { font-weight: 600; overflow-wrap: anywhere; }
+.afuss { margin-top: 12px; }
+.reiterlink {
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--accent);
+  background: none; border: 1px solid var(--line); border-radius: 7px;
+  padding: 5px 11px; cursor: pointer;
+}
+.reiterlink:hover { background: var(--accent-soft); border-color: var(--accent); }
+.dossmeta { font-size: 13.5px; color: var(--ink-2); margin-top: 3px; }
+.dossbadge { margin-top: 10px; }
+
+/* ---------- Das Urteil des Potenzialreiters ---------- */
+.urteil {
+  border: 1px solid var(--line); border-left: 4px solid var(--warn);
+  border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; background: var(--panel-2);
+}
+.urteil.gut { border-left-color: var(--ok); }
+.urteil h4 { font-size: 22px; font-weight: 700; letter-spacing: -.015em; line-height: 1.25; }
+.urteil h4 .unit { font-size: 14px; color: var(--ink-3); font-weight: 500; }
+.urteil .ulab { font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+.urteil .uwarum { font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 700; margin: 14px 0 5px; }
+
 /* ---------- Layer-Steuerung ---------- */
 .szbtn.klein { padding: 3px 9px; font-size: 11px; }
 .ansichtwahl { display: flex; gap: 4px; }
@@ -153,6 +264,17 @@ img { max-width: 100%; }
 .layercard > summary::after { content: "\25B8"; margin-left: auto; color: var(--ink-3); }
 .layercard[open] > summary::after { content: "\25BE"; }
 .layerbody { padding: 4px 12px 12px; border-top: 1px solid var(--line-2); }
+/* Im Kartenreiter steht die Ebenenwahl unter der Karte statt schwebend
+   darueber: dort verdeckte sie einen Viertel des Bildes, und ausserhalb
+   der Karte schwebte sie ueber der Seite. */
+#karte-steuerung .layercard {
+  position: static; width: auto; box-shadow: none; border-color: var(--line-2);
+}
+#karte-steuerung .layerbody {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0 26px; align-items: start; padding: 6px 14px 14px;
+}
+#karte-steuerung .layergroup { margin-top: 8px; }
 .layergroup { margin-top: 10px; }
 .layergroup h4 { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
 .layeropt { display: flex; align-items: center; gap: 7px; padding: 4px 0; font-size: 13px; cursor: pointer; }
@@ -201,7 +323,6 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 @keyframes flash { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { section.sec.flash { animation: none; } }
 .sechead { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
-.sechead .num { display: none; }
 .sechead h3 { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .sechead .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
 .subhead { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); margin: 16px 0 8px; font-weight: 700; }
@@ -217,6 +338,7 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 .kzgrid .card.leer .bigval { font-size: 12px; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.tiles.eng { grid-template-columns: repeat(auto-fit, minmax(150px, 230px)); justify-content: start; }
 .tile { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 9px 11px; }
 .tile .lbl { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; overflow-wrap: anywhere; }
 .tile .val { font-family: var(--mono); font-size: 17px; font-weight: 600; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
@@ -583,7 +705,7 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
 <body>
 
 <div class="app" id="app">
-  <div class="mapwrap">
+  <div class="mapwrap" id="kartenheim">
     <div id="map"></div>
 
     <div class="searchcard">
@@ -632,6 +754,7 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
   </div>
 
   <aside class="dossier" id="dossier">
+    <div class="kopfleiste" id="kopfleiste" hidden></div>
     <div class="dossier-inner" id="dossier-inner">
       <div class="empty">
         <h2>Grundst&uuml;cksdossier</h2>
@@ -779,7 +902,7 @@ function selektiere(layer, sectionId) {
     });
     if (layer.bringToFront) layer.bringToFront();
   }
-  if (sectionId) springeZu(sectionId);
+  void sectionId;
 }
 // Kategorie 61 des Bundesmodells heisst woertlich "Bereiche
 // rechtsgueltiger Sondernutzungsplaene".
@@ -1349,7 +1472,7 @@ function scrZeile(p) {
 }
 
 function scrBlock() {
-  var kopf = '<div class="sechead"><span class="num">09</span><h3>Grundstückssuche</h3>' +
+  var kopf = '<div class="sechead"><h3>Grundstückssuche</h3>' +
     '<span class="right"><span class="badge mute">Stufe 1</span></span></div>';
 
   var steuerung =
@@ -1670,6 +1793,7 @@ var LADESCHRITTE = [
 var ladeStart = 0, ladeTimer = null;
 function renderLoading() {
   ladeStart = Date.now();
+  parkeKarte();
   inner.innerHTML = '<div class="loadwrap"><h2>Analyse läuft</h2>' +
     '<p style="color:var(--ink-2);font-size:13px">' + esc(gewaehlteAdresse) + "</p>" +
     '<div class="bar"><i id="ladebalken"></i></div>' +
@@ -1878,7 +2002,8 @@ function renderFehler(msg, art, unterart) {
         "wahrscheinlich \u00fcberlastet."
     }[unterart] || "Bitte sp\u00e4ter noch einmal versuchen.";
 
-    inner.innerHTML =
+    parkeKarte();
+  inner.innerHTML =
       '<div class="empty"><h2>Analyse-Server nicht erreichbar</h2>' +
       '<div class="note warn">' + esc(msg) + "</div>" +
       '<p style="font-size:12.5px;color:var(--ink-2);margin-top:14px">' + esc(rat) + "</p>" +
@@ -1894,6 +2019,7 @@ function renderFehler(msg, art, unterart) {
   }
 
   // Fachlich: der Dienst hat geantwortet und sagt, warum es nicht geht.
+  parkeKarte();
   inner.innerHTML = '<div class="empty"><h2>Analyse nicht möglich</h2><div class="note stop">' +
     esc(msg) + "</div>" +
     '<p style="font-size:12.5px;color:var(--ink-3);margin-top:14px">Die Engine gibt bewusst keinen Wert aus, wenn die amtliche Grundlage fehlt — das ist ein Ergebnis, keine Oberflächenstörung.</p></div>';
@@ -2092,24 +2218,20 @@ function zeichneErgebnisAufKarte(erg) {
   // Zoom 18 statt 19: eine 83 m2 grosse Altstadtparzelle fuellte sonst den
   // ganzen Bildschirm, und der Zusammenhang -- Strasse, Nachbarschaft,
   // Ortskern -- war weg. Live beobachtet an Aarau, Bahnhofstrasse 1.
-  if (bounds) map.fitBounds(bounds, { padding: [70, 70], maxZoom: 18 });
+  // Beim Zeichnen ist der Kartenreiter meist nicht offen und der Container
+  // 0 x 0 gross -- fitBounds ergaebe dann Zoomstufe 0. Der Rahmen wird
+  // deshalb gemerkt und beim Oeffnen des Reiters gesetzt.
+  kartenRahmen = bounds || null;
+  kartenRahmenGesetzt = false;
+  if (bounds && reiterAktiv === "karte") {
+    map.fitBounds(bounds, { padding: [70, 70], maxZoom: 18 });
+    kartenRahmenGesetzt = true;
+  }
   var kanton = (m1.oereb || {}).kanton;
   if (kanton) document.getElementById("kantonhint").textContent = "Kanton " + kanton;
 }
 
 /* ===================== Dossier ===================== */
-var SEKTIONEN = [
-  ["sec-grundstueck", "Grundstück"],
-  ["sec-standort", "Standort"],
-  ["sec-baurecht", "Baurecht"],
-  ["sec-restriktionen", "Restriktionen"],
-  ["sec-potenzial", "Potenzial"],
-  ["sec-szenarien", "Szenarien"],
-  ["sec-entwicklung", "Entwicklung"],
-  ["sec-quellen", "Quellen"],
-  ["sec-wirtschaft", "Wirtschaftlichkeit"],
-  ["sec-screening", "Grundstückssuche"]
-];
 function esc(v) {
   if (v === null || v === undefined || v === "") return "–";
   return String(v).replace(/[&<>"']/g, function (c) {
@@ -2153,9 +2275,17 @@ function kvRows(paare) {
       (leer(v) ? esc(na || "nicht verfügbar") : esc(v)) + "</div></div>";
   }).join("") + "</div>";
 }
+function reiterVon(sektionsId) {
+  var treffer = REITER.filter(function (r) { return r[2].indexOf(sektionsId) >= 0; })[0];
+  return treffer ? treffer[0] : null;
+}
 function springeZu(id) {
   var el = document.getElementById(id);
   if (!el) return;
+  // Liegt das Ziel in einem anderen Reiter, ist es hidden -- dann zuerst
+  // den Reiter oeffnen, sonst scrollt die Seite ins Nichts.
+  var reiter = reiterVon(id);
+  if (reiter && reiter !== reiterAktiv) zeigeReiter(reiter);
   el.scrollIntoView({ behavior: "smooth", block: "start" });
   el.classList.remove("flash");
   void el.offsetWidth;
@@ -2197,12 +2327,46 @@ var REITER = [
   ["baurecht", "Baurecht", ["sec-baurecht", "sec-restriktionen"]],
   ["karte", "Karte", ["sec-karte"]],
   ["potenzial", "Potenzial",
-   ["sec-potenzial", "sec-szenarien", "sec-entwicklung",
-    "sec-wirtschaft", "sec-screening"]],
+   ["sec-potenzial", "sec-szenarien", "sec-wirtschaft", "sec-screening"]],
   ["markt", "Markt", ["sec-markt"]],
   ["quellen", "Daten & Quellen", ["sec-grundstueck", "sec-standort", "sec-quellen"]]
 ];
 var reiterAktiv = "uebersicht";
+
+/* Der Parkplatz der Karte.
+
+   Leaflet haengt an SEINEM Container-Element. Wird dieses Element von einem
+   innerHTML-Schreiber mitgeloescht, ist die Karte tot und kommt erst mit
+   einem Neuladen der Seite zurueck. Deshalb wohnt #map ausserhalb des
+   Dossiers und wird nur fuer die Dauer des Kartenreiters hineingereicht --
+   und vor jedem Neuschreiben des Dossiers zurueckgeholt. */
+function parkeKarte() {
+  var karte = document.getElementById("map");
+  var heim = document.getElementById("kartenheim");
+  if (karte && heim && karte.parentNode !== heim) heim.appendChild(karte);
+}
+
+/* Der Wechsel von der Suchansicht in die Dossieransicht.
+
+   Mit ihm wandert die Suche aus der Karte in die Kopfleiste: sie muss
+   erreichbar bleiben, auch wenn die Karte nicht mehr zu sehen ist. */
+function dossierAnsicht(an) {
+  var app = document.getElementById("app");
+  if (app) app.classList.toggle("nurdossier", !!an);
+  var suche = document.querySelector(".searchcard");
+  var leiste = document.getElementById("kopfleiste");
+  var heim = document.getElementById("kartenheim");
+  if (!suche || !leiste || !heim) return;
+  if (an && suche.parentNode !== leiste) leiste.appendChild(suche);
+  if (!an && suche.parentNode !== heim) heim.appendChild(suche);
+  leiste.hidden = !an;
+}
+
+/* Die Karte wurde eingepasst, waehrend ihr Container 0 x 0 gross war --
+   das ergibt einen unbrauchbaren Ausschnitt. Der Rahmen wird deshalb
+   gemerkt und beim ersten Oeffnen des Kartenreiters noch einmal gesetzt. */
+var kartenRahmen = null;
+var kartenRahmenGesetzt = false;
 
 function zeigeReiter(name) {
   reiterAktiv = name;
@@ -2218,171 +2382,244 @@ function zeigeReiter(name) {
   });
   // Die Kartensteuerung liegt im Reiter "Karte" statt als Kasten ueber der
   // Karte -- dort verdeckte sie einen Viertel des Bildes.
-  var karte = document.getElementById("layercard");
+  var steuerung = document.getElementById("layercard");
   var ziel = document.getElementById("karte-steuerung");
-  if (karte && ziel && karte.parentNode !== ziel) ziel.appendChild(karte);
-  if (karte) karte.open = true;
+  if (steuerung && ziel && steuerung.parentNode !== ziel) ziel.appendChild(steuerung);
+  if (steuerung) steuerung.open = true;
+
+  // Die Karte selbst: im Kartenreiter auf die Buehne, sonst auf den
+  // Parkplatz. So teilt sie die Dossieransicht nie mehr.
+  var karte = document.getElementById("map");
+  var buehne = document.getElementById("kartenbuehne");
+  if (karte) {
+    if (name === "karte" && buehne) {
+      if (karte.parentNode !== buehne) buehne.appendChild(karte);
+    } else {
+      parkeKarte();
+    }
+  }
+
   var inner = document.getElementById("dossier-inner");
   if (inner) inner.scrollTop = 0;
-  // Nur im Kartenreiter ist die Karte das Werkzeug. Sonst gehoert der
-  // Bildschirm dem Bericht -- eine 470-px-Spalte zwingt jede Card in eine
-  // eigene Zeile und jede Tabelle in eine Seitwaertsscrollleiste.
-  var app = document.getElementById("app");
-  if (app) app.classList.toggle("breit", name !== "karte");
   // Leaflet misst seinen Container nur beim Anlegen und bei resize. Ohne
   // diesen Anstoss bleibt nach dem Umschalten die halbe Karte grau.
-  if (window.map && map.invalidateSize) setTimeout(function () { map.invalidateSize(); }, 210);
+  if (name === "karte" && window.map && map.invalidateSize) {
+    setTimeout(function () {
+      map.invalidateSize();
+      if (kartenRahmen && !kartenRahmenGesetzt) {
+        map.fitBounds(kartenRahmen, { padding: [70, 70], maxZoom: 18 });
+        kartenRahmenGesetzt = true;
+      }
+    }, 60);
+  }
   void eintrag;
 }
 
-/* --- 00 Uebersicht: nur das, was zuerst zaehlt --- */
+/* --- Uebersicht ------------------------------------------------------
+   Sie beantwortet der Reihe nach: was gilt hier, was steht heute, welche
+   Regeln gelten, was ist tatsaechlich moeglich, was schraenkt ein -- und
+   hoert dann auf. Die Herleitungen liegen je einen Klick entfernt; eine
+   Uebersicht, die alles zeigt, ist keine. */
+function uAntwort(klasse, inhalt) {
+  return '<div class="antwort' + (klasse ? " " + klasse : "") + '">' + inhalt + "</div>";
+}
+function uZeilen(paare) {
+  var echte = paare.filter(function (p) { return !leer(p[1]); });
+  if (!echte.length) return "";
+  return '<div class="azeilen">' + echte.map(function (p) {
+    return '<div class="azeile"><span class="k">' + esc(p[0]) + "</span>" +
+      '<span class="v">' + esc(p[1]) + "</span></div>";
+  }).join("") + "</div>";
+}
+function reiterLink(reiter, text) {
+  return '<button class="reiterlink" data-reiter-link="' + esc(reiter) + '">' +
+    esc(text) + " \u2192</button>";
+}
+
 function secUebersicht(erg, m1, zz) {
-  var pz = m1.kataster || {};
   var nk = m1.nutzungsklassifikation || {};
   var basis = nk.basiszone || {};
   var amtl = ((m1.oereb || {}).amtliche_zonenbezeichnungen || [])[0] || {};
   var zone = zz.zone || {};
   var snp = zz.status === "sondernutzungsplan_massgebend";
+  var laeuft = erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined;
+  var zonenName = zoneKlarname(basis.typ_kommunal_bezeichnung
+    || basis.typ_kantonal_bezeichnung || amtl.zonenbezeichnung);
 
-  // Die wichtigste Aussage zuerst -- und zwar als Status, nicht versteckt
-  // im Baurechtsabschnitt. Ein massgebender Sondernutzungsplan steuert die
-  // gesamte weitere Beurteilung.
-  var leitsatz = "";
-  // "Noch nicht gerechnet" ist etwas anderes als "nicht bestimmbar". Solange
-  // die Reglementsauswertung laeuft, gibt es KEINE Zonenzuordnung -- daraus
-  // "Zone nicht eindeutig" zu machen waere eine Behauptung ueber das
-  // Grundstueck, wo nur ein Arbeitsschritt aussteht.
-  if (erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined) {
-    leitsatz = '<div class="leit warn"><div class="leitkopf">' +
-      '<span class="badge warn">Baurecht wird noch geprüft</span></div>' +
-      '<p class="leittext">Grundstück, Karte und Grundnutzung stehen fest. Welche ' +
-      'Kennzahlen der Bau- und Nutzungsordnung für diese Zone gelten, wird gerade ' +
-      'ausgewertet — bis dahin werden hier bewusst keine Potenzialzahlen gezeigt. ' +
-      'Über das Grundstück ist damit nichts Nachteiliges gesagt.</p></div>';
+  /* --- Was gilt hier? ----------------------------------------------- */
+  var gilt;
+  if (laeuft) {
+    // "Wird noch geprueft" ist etwas anderes als "nicht bestimmbar". Solange
+    // die Reglementsauswertung laeuft, ist ueber das Grundstueck nichts
+    // Nachteiliges gesagt.
+    gilt = uAntwort("wartet",
+      '<div class="akopf"><span class="gross">' + esc(zonenName || "Zone wird ermittelt") + "</span>" +
+      '<span class="badge warn">Baurecht wird gepr\u00fcft</span></div>' +
+      '<p class="atext">Grundst\u00fcck, Karte und Grundnutzung stehen fest. Welche Kennzahlen ' +
+      'der Bau- und Nutzungsordnung gelten, wird gerade ausgewertet.</p>');
   } else if (snp) {
     var plaene = alsListe(zz.sondernutzungsplaene).map(function (p) {
       return zoneKlarname(p.typ_kommunal_bezeichnung || p.typ_kantonal_bezeichnung || p.bezeichnung);
     }).filter(Boolean);
-    leitsatz =
-      '<div class="leit stop"><div class="leitkopf">' +
-        '<span class="badge stop">Sondernutzungsplan massgebend</span></div>' +
-        '<p class="leittext">Die ordentliche Bauzone reicht hier nicht aus, um das ' +
-        'Entwicklungspotenzial zu bestimmen. Der Planinhalt geht vor und muss manuell ' +
-        'geprüft werden — es werden deshalb bewusst keine Potenzialzahlen aus der ' +
-        'ordentlichen Zone abgeleitet.</p>' +
-        (plaene.length ? '<p class="leittext"><b>' + esc(plaene.join(" · ")) + "</b></p>" : "") +
-      "</div>";
+    gilt = uAntwort("stop",
+      '<div class="akopf"><span class="gross">' + esc(zonenName || "Sondernutzungsplan") + "</span>" +
+      '<span class="badge stop">Sondernutzungsplan massgebend</span></div>' +
+      '<p class="atext">Der Planinhalt geht der ordentlichen Bauzone vor und muss von Hand ' +
+      'gepr\u00fcft werden. Kennzahlen der Regelbauweise gelten hier nicht.</p>' +
+      uZeilen([["Grundnutzung", zonenName],
+               ["Massgebend", plaene.length ? plaene.join(" \u00b7 ") : "Sondernutzungsplan"]]));
   } else if (zz.status === "gefunden") {
-    leitsatz = '<div class="leit ok"><div class="leitkopf">' +
+    gilt = uAntwort("gut",
+      '<div class="akopf"><span class="gross">' + esc(zonenName || zone.zonenbezeichnung) + "</span>" +
       '<span class="badge ok">Zone eindeutig zugeordnet</span></div>' +
-      '<p class="leittext">Die Kennzahlen der Bau- und Nutzungsordnung lassen sich auf ' +
-      'diese Parzelle anwenden.</p></div>';
+      uZeilen([["Grundnutzung", zonenName],
+               ["Massgebend", "ordentliche Grundnutzung (kein Sondernutzungsplan)"]]));
   } else {
-    leitsatz = '<div class="leit warn"><div class="leitkopf">' +
+    gilt = uAntwort("offen",
+      '<div class="akopf"><span class="gross">' + esc(zonenName || "Zone nicht eindeutig") + "</span>" +
       '<span class="badge warn">Zone nicht eindeutig</span></div>' +
-      '<p class="leittext">' + esc(zz.hinweis || zz.grund ||
-        "Die massgebende Zone liess sich nicht eindeutig bestimmen. Ohne sie gibt es " +
-        "keine belastbaren Potenzialzahlen.") + "</p></div>";
+      '<p class="atext">' + esc(lesbar(zz.hinweis || zz.grund ||
+        "Die massgebende Zone liess sich nicht eindeutig bestimmen. Ohne sie gibt es keine " +
+        "belastbaren Kennzahlen.")) + "</p>");
   }
 
-  var eckwerte = [];
-  var eckwerteGrund = null;
-  if (erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined) {
-    eckwerteGrund = "Die Bau- und Nutzungsordnung wird gerade ausgewertet. Die Eckwerte " +
-      "erscheinen hier, sobald sie vorliegen.";
-  } else if (snp) {
-    eckwerteGrund = "Nicht bestimmbar: der Sondernutzungsplan geht vor, und seine Masse " +
-      "stehen im Plan selbst. Die Ziffern der ordentlichen Zone gelten hier nicht und " +
-      "werden deshalb bewusst nicht gezeigt. Der Plan muss von Hand geprüft werden.";
-  } else if (zz.status !== "gefunden") {
-    eckwerteGrund = "Nicht bestimmbar: die massgebende Zone liess sich nicht eindeutig " +
-      "zuordnen. Ohne sie gibt es keine Kennzahlen.";
+  /* --- Was steht heute? --------------------------------------------- */
+  // Auf einem bebauten Grundstueck ist der Bestand die halbe Antwort. Er
+  // stand bisher erst im Potenzialreiter.
+  var b = (erg.bestand_und_neubaugeometrie || {}).bestand;
+  var steht;
+  if (!b) {
+    steht = uAntwort("", '<p class="atext">Der Bestand wird ermittelt.</p>');
+  } else if (!b.gebaeude) {
+    steht = uAntwort("",
+      '<div class="akopf"><span class="gross">unbebaut</span></div>' +
+      '<p class="atext">Im Geb\u00e4ude- und Wohnungsregister ist auf dieser Parzelle kein ' +
+      'Geb\u00e4ude verzeichnet.</p>');
+  } else {
+    var gf = b.grundflaeche || {}, gs = b.geschosse || {}, ab = b.geschossflaeche_abgeleitet || {};
+    var geschosse = alsListe(gs.wert);
+    steht = uAntwort("",
+      '<div class="akopf"><span class="gross">' +
+        (leer(gf.wert_m2) ? "Grundfl\u00e4che nicht verf\u00fcgbar" : fmt(gf.wert_m2, 0) + " m\u00b2") +
+        '</span><span class="alab">Bestandsgrundfl\u00e4che</span></div>' +
+      uZeilen([
+        ["Geschosse", geschosse.length ? geschosse.join(" \u00b7 ") + " Geschosse gemessen" : null],
+        ["Geb\u00e4ude", b.gebaeude > 1 ? b.gebaeude + " auf der Parzelle" : null],
+        ["Geschossfl\u00e4che", leer(ab.wert_m2) ? null : "ca. " + fmt(ab.wert_m2, 0) + " m\u00b2 (N\u00e4herung)"]
+      ]) +
+      (leer(ab.wert_m2) ? "" :
+        '<p class="ahinweis">Die Bestands-Geschossfl\u00e4che ist nicht gemessen, sondern ' +
+        'angen\u00e4hert (' + esc(lesbar(ab.rechnung)) + ') \u2014 das Register f\u00fchrt keine.</p>'));
   }
+
+  /* --- Welche Regeln gelten fuer die Bebauung? ----------------------- */
+  // Bewusst nicht "Was ist baulich moeglich?": 2 Vollgeschosse und AZ 0.45
+  // sind Kennzahlen der ZONE. Was auf DIESER Parzelle daraus wird, steht
+  // erst nach Abstaenden und Baubereich fest -- im Potenzialreiter.
+  var w = function (v) { return (v && typeof v === "object") ? v.wert : v; };
+  var eckwerte = [];
   if (!snp) {
-    var az = zone.ausnuetzungsziffer_az, bmz = zone.baumassenziffer_bmz;
-    var vg = zone.vollgeschosse_max, gh = zone.gebaeudehoehe_m || zone.gesamthoehe_m;
-    var w = function (v) { return (v && typeof v === "object") ? v.wert : v; };
     eckwerte = [
-      ["Vollgeschosse", leer(w(vg)) ? null : w(vg)],
-      ["Gebäudehöhe", leer(w(gh)) ? null : fmt(w(gh), 1) + " m"],
-      ["Ausnützungsziffer", leer(w(az)) ? null : w(az)],
-      ["Baumassenziffer", leer(w(bmz)) ? null : w(bmz)]
+      ["Vollgeschosse", leer(w(zone.vollgeschosse_max)) ? null : String(w(zone.vollgeschosse_max))],
+      ["Geb\u00e4udeh\u00f6he", leer(w(zone.gebaeudehoehe_m || zone.gesamthoehe_m)) ? null
+        : fmt(w(zone.gebaeudehoehe_m || zone.gesamthoehe_m), 1) + " m"],
+      ["Ausn\u00fctzungsziffer", leer(w(zone.ausnuetzungsziffer_az)) ? null : String(w(zone.ausnuetzungsziffer_az))],
+      ["Baumassenziffer", leer(w(zone.baumassenziffer_bmz)) ? null : String(w(zone.baumassenziffer_bmz))]
     ].filter(function (p) { return !leer(p[1]); });
   }
+  var regelGrund = laeuft
+    ? "Die Bau- und Nutzungsordnung wird gerade ausgewertet."
+    : (snp ? "Die Masse stehen im Sondernutzungsplan, nicht in der Regelbauweise. Ziffern der " +
+             "ordentlichen Zone w\u00e4ren hier scheingenau."
+           : (zz.status !== "gefunden"
+              ? "Ohne eindeutig zugeordnete Zone gibt es keine Kennzahlen."
+              : "F\u00fcr diese Zone f\u00fchrt die Bau- und Nutzungsordnung keine Kennzahlen."));
+  var regeln = eckwerte.length
+    ? '<div class="tiles eng">' + eckwerte.map(function (p) { return tile(p[0], p[1]); }).join("") + "</div>" +
+      '<div class="note">Kennzahlen der Zone. Was daraus auf dieser konkreten Parzelle ' +
+      'tats\u00e4chlich gebaut werden kann, wird im Reiter <b>Potenzial</b> gepr\u00fcft.</div>'
+    : '<div class="note warn">' + esc(regelGrund) + "</div>";
 
-  // Einschraenkungen: nur die, die diese Parzelle tatsaechlich betreffen.
+  /* --- Was ist tatsaechlich moeglich? -------------------------------- */
+  // Hier steht nur das Urteil. Die G1-Kaskade, die Sensitivitaetsbandbreite
+  // und die Randfaelle gehoeren in den Potenzialreiter -- vorne gelesen
+  // wirkt ein Rechenrand wie ein Ergebnis.
+  var zp = (erg.bestand_und_neubaugeometrie || {}).zusaetzliches_potenzial;
+  var moeglich;
+  if (!zp) {
+    moeglich = uAntwort("", '<p class="atext">Wird ermittelt.</p>');
+  } else if (zp.status === "bestimmbar") {
+    moeglich = uAntwort("gut",
+      '<div class="akopf"><span class="gross">' +
+        fmt(zp.zusaetzliche_geschossflaeche_m2, 1) + ' m\u00b2</span>' +
+        '<span class="alab">zus\u00e4tzliche Geschossfl\u00e4che</span></div>' +
+      (zp.rechnung ? '<p class="ahinweis">' + esc(lesbar(zp.rechnung)) + "</p>" : "") +
+      '<div class="afuss">' + reiterLink("potenzial", "Herleitung im Reiter Potenzial") + "</div>");
+  } else {
+    moeglich = uAntwort("offen",
+      '<div class="akopf"><span class="gross klein">Potenzial derzeit nicht abschliessend ' +
+      'bestimmbar</span></div>' +
+      '<p class="atext">Die baurechtlich relevante Abstandsgeometrie bzw. die ' +
+      'Bestandessituation l\u00e4sst derzeit keine belastbare Einzelzahl zu.</p>' +
+      '<div class="afuss">' + reiterLink("potenzial", "Details im Reiter Potenzial") + "</div>");
+  }
+
+  /* --- Welche Einschraenkungen gibt es? ------------------------------ */
   var r = m1.restriktionsgeometrie || {};
-  var einschraenkungen = [];
+  var ein = [];
   if ((r.gewaesserraum_flaechen || []).length) {
-    einschraenkungen.push(["Gewässerraum", (r.gewaesserraum_flaechen || []).length + " Fläche(n)"]);
+    ein.push(["Gew\u00e4sserraum", (r.gewaesserraum_flaechen || []).length + " Fl\u00e4che(n) auf der Parzelle"]);
   }
   if (!leer(r.waldgrenze_min_abstand_m)) {
-    einschraenkungen.push(["Waldabstand", fmt(r.waldgrenze_min_abstand_m, 1) + " m zur Waldgrenze"]);
+    ein.push(["Waldabstand", fmt(r.waldgrenze_min_abstand_m, 1) + " m zur Waldgrenze"]);
   }
   if ((r.baulinien_gefunden || []).length) {
-    einschraenkungen.push(["Baulinien", (r.baulinien_gefunden || []).length + " gefunden"]);
+    ein.push(["Baulinien", (r.baulinien_gefunden || []).length + " gefunden"]);
   }
   ueberlagerungenVon(nk).slice(0, 4).forEach(function (u) {
-    einschraenkungen.push([zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "Überlagerung",
-                           "rechtskräftige Überlagerung"]);
+    ein.push([zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "\u00dcberlagerung",
+              "rechtskr\u00e4ftige \u00dcberlagerung"]);
   });
   betroffeneOerebThemen(m1).slice(0, 4).forEach(function (k) {
-    einschraenkungen.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen"]);
+    ein.push([oerebThemaName(k), "laut \u00d6REB-Kataster betroffen"]);
+  });
+
+  // Die amtliche Quelle liefert je Teilflaeche einen Eintrag; "Verkehrs-
+  // anlagen" stand deshalb zweimal untereinander. Zusammengefasst wird nur
+  // die Anzeige -- die Liste im Reiter Baurecht bleibt vollstaendig.
+  var gesehen = {};
+  ein = ein.filter(function (z) {
+    var k = z[0] + "|" + z[1];
+    if (gesehen[k]) return false;
+    gesehen[k] = true;
+    return true;
   });
 
   return '<section class="sec" id="sec-uebersicht">' +
-    '<div class="sechead"><span class="num">–</span><h3>Übersicht</h3></div>' +
-    // Adresse, Parzelle, Flaeche und Gemeinde stehen unveraendert im
-    // Dossierkopf direkt darueber. Sie hier zu wiederholen hat den Blick
-    // verwaessert, statt ihn zu fuehren.
-    '<h4 class="subhead">Was gilt hier?</h4>' +
-    leitsatz +
-    // Die vollstaendige Rangfolge A-D steht im Reiter "Baurecht". Sie hier
-    // zu wiederholen hat aus der Uebersicht eine zweite Baurechtsseite
-    // gemacht -- die Uebersicht soll die Aussage bringen, nicht die
-    // Herleitung.
-    kvRows([
-      ["Grundnutzung", zoneKlarname(basis.typ_kommunal_bezeichnung
-        || basis.typ_kantonal_bezeichnung || amtl.zonenbezeichnung)],
-      ["Massgebend", snp ? "Sondernutzungsplan" :
-        (zz.status === "gefunden" ? "ordentliche Bauzone" : null)]
-    ]) +
-    '<div class="note">Die vollständige Rangfolge — Grundnutzung, Sondernutzung, ' +
-    'Überlagerungen, Restriktionen — steht im Reiter <b>Baurecht</b>.</div>' +
-    // Diese Ueberschrift verschwindet NIE. Ein Makler muss den Unterschied
-    // zwischen "hier ist nichts moeglich" und "das wurde nicht bestimmt"
-    // sehen -- ein fehlender Abschnitt sagt weder das eine noch das andere.
-    '<h4 class="subhead">Was ist baulich möglich?</h4>' +
-    (eckwerte.length
-      ? '<div class="tiles">' +
-        eckwerte.map(function (p) { return tile(p[0], p[1]); }).join("") + "</div>" +
-        '<div class="note">Kennzahlen der Zone. Was daraus auf dieser Parzelle wirklich ' +
-        'gebaut werden kann, steht im Reiter <b>Potenzial</b> — dort sind Grenzabstände, ' +
-        'Baubereich und Restriktionen eingerechnet.</div>'
-      : '<div class="note warn">' + esc(eckwerteGrund ||
-          "Für diese Zone sind in der Bau- und Nutzungsordnung keine Kennzahlen " +
-          "gefunden worden.") + "</div>") +
-    '<h4 class="subhead">Wichtigste Einschränkungen</h4>' +
-    (einschraenkungen.length
-      ? kvRows(einschraenkungen) +
-        '<div class="note">Einzelheiten im Reiter <b>Baurecht</b>.</div>'
-      : '<div class="note">Geprüft wurden Gewässerraum, Waldabstand, Baulinien, ' +
-        'rechtskräftige Überlagerungen und die ÖREB-Themen. Nichts davon betrifft ' +
-        'diese Parzelle.</div>') +
-    '<div class="note">EGRID, Koordinaten, BFS-Nummer und die Registerdaten stehen im ' +
-    'Reiter <b>Daten &amp; Quellen</b>.</div>' +
+    '<div class="sechead"><h3>\u00dcbersicht</h3></div>' +
+    '<h4 class="subhead">Was gilt hier?</h4>' + gilt +
+    '<h4 class="subhead">Was steht heute?</h4>' + steht +
+    '<h4 class="subhead">Welche Regeln gelten f\u00fcr die Bebauung?</h4>' + regeln +
+    '<h4 class="subhead">Was ist tats\u00e4chlich m\u00f6glich?</h4>' + moeglich +
+    '<h4 class="subhead">Wichtigste Einschr\u00e4nkungen</h4>' +
+    (ein.length
+      ? uAntwort("", uZeilen(ein) +
+          '<div class="afuss">' + reiterLink("baurecht", "Details im Reiter Baurecht") + "</div>")
+      : '<div class="note">Gepr\u00fcft wurden Gew\u00e4sserraum, Waldabstand, Baulinien, rechtskr\u00e4ftige ' +
+        '\u00dcberlagerungen und die \u00d6REB-Themen. Nichts davon betrifft diese Parzelle.</div>') +
   "</section>";
 }
 
-/* --- Karte: die Steuerung bekommt einen Ort --- */
+/* --- Karte: eigener Reiter, volle Breite, Steuerung darunter --- */
 function secKarte() {
   return '<section class="sec" id="sec-karte">' +
-    '<div class="sechead"><span class="num">–</span><h3>Karte</h3></div>' +
+    '<div class="sechead"><h3>Karte</h3></div>' +
+    '<div class="kartenbuehne" id="kartenbuehne"></div>' +
     '<div class="note">Beim Öffnen sind Parzelle und Baubereich eingeblendet. ' +
-    'Zonen, Restriktionen, Bestand und Szenario lassen sich hier dazuschalten — ' +
-    'alle gleichzeitig machen die Karte unlesbar. Ein Klick auf eine Fläche auf der ' +
-    'Karte zeigt, worum es sich handelt; ein Klick auf freie Fläche fragt die amtlichen ' +
-    'Daten an dieser Stelle direkt ab.</div>' +
+    'Zonen, Restriktionen, Bestand und Szenario lassen sich dazuschalten — ' +
+    'alle gleichzeitig machen die Karte unlesbar. Ein Klick auf eine Fläche zeigt, ' +
+    'worum es sich handelt; ein Klick auf freie Fläche fragt die amtlichen Daten an ' +
+    'dieser Stelle direkt ab.</div>' +
     '<div id="karte-steuerung"></div>' +
   "</section>";
 }
@@ -2390,6 +2627,7 @@ function secKarte() {
 function renderDossier(erg) {
   var m1 = erg.modul1_geodaten || {};
   var zz = erg.zonen_zuordnung || {};
+  parkeKarte();
   inner.innerHTML =
     zwischenspeicherHinweis(erg) +
     headHtml(erg, m1, zz) +
@@ -2399,11 +2637,12 @@ function renderDossier(erg) {
     secUebersicht(erg, m1, zz) +
     secBaurecht(erg, m1, zz) + secRestriktionen(m1) +
     secKarte() +
-    secPotenzial(erg) + secSzenarien(erg) + secEntwicklung(erg) + scrBlock() +
+    secPotenzial(erg) + secSzenarien(erg) + scrBlock() +
     secMarkt(erg) + secWirtschaft(erg) +
     secGrundstueck(m1) + secStandort(m1) + secQuellen(erg);
   var zsNeu = document.getElementById("zs-neu");
   if (zsNeu) zsNeu.onclick = function () { starteAnalyse(true); };
+  dossierAnsicht(true);
   verdrahteDossier();
   verdrahteSzenarien();
   verdrahteWirtschaft();
@@ -2411,7 +2650,9 @@ function renderDossier(erg) {
     b.onclick = function () { zeigeReiter(b.dataset.reiter); };
   });
   zeigeReiter(reiterAktiv);
-  if ((erg.zonen_zuordnung || {}).status === "gefunden") wRechne();
+  // Nur rechnen, wenn das Formular auch steht -- sonst sucht wRechne()
+  // Felder, die secWirtschaft() bewusst nicht gerendert hat.
+  if (document.getElementById("w-ergebnis")) wRechne();
 }
 
 function statusBadge(zz, gerechnet) {
@@ -2430,18 +2671,20 @@ function headHtml(erg, m1, zz) {
   var nk = m1.nutzungsklassifikation || {};
   var basis = nk.basiszone || {};
   var amtl = ((m1.oereb || {}).amtliche_zonenbezeichnungen || [])[0] || {};
-  return '<div class="dosshead"><div class="eyebrow">Grundstücksdossier</div>' +
+  var zone = zoneKlarname(basis.typ_kommunal_bezeichnung || basis.typ_kantonal_bezeichnung
+    || amtl.zonenbezeichnung || amtl.bezeichnung);
+  // Was ist das Grundstueck? Drei Angaben, eine Zeile. EGRID, Koordinaten
+  // und BFS-Nummer stehen unter "Daten & Quellen" -- sie beantworten keine
+  // Frage, die ein Makler beim Oeffnen stellt.
+  var meta = [];
+  if (!leer(pz.flaeche_m2)) meta.push(fmt(pz.flaeche_m2, 1) + " m\u00b2");
+  if (!leer(pz.parzellennummer)) meta.push("Parzelle " + pz.parzellennummer);
+  if (zone) meta.push(zone);
+  return '<div class="dosshead"><div class="eyebrow">Grundst\u00fccksdossier</div>' +
     "<h2>" + esc(erg.adresse) + "</h2>" +
-    '<div style="margin-bottom:10px">' +
+    '<div class="dossmeta">' + esc(meta.join("  \u00b7  ")) + "</div>" +
+    '<div class="dossbadge">' +
       statusBadge(zz, !(erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined)) +
-    "</div>" +
-    '<div class="headgrid">' +
-      "<div><dt>Parzelle</dt><dd>" + esc(pz.parzellennummer) + "</dd></div>" +
-      "<div><dt>Fläche</dt><dd>" + (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "–") + "</dd></div>" +
-      '<div><dt>Gemeinde</dt><dd style="font-family:Archivo,sans-serif">' + esc((m1.gemeinde || {}).gemeinde) + "</dd></div>" +
-      '<div style="grid-column:1/-1"><dt>Grundnutzungszone (amtlich)</dt><dd style="font-family:Archivo,sans-serif;font-weight:600">' +
-        esc(zoneKlarname(basis.typ_kommunal_bezeichnung || basis.typ_kantonal_bezeichnung
-            || amtl.zonenbezeichnung || amtl.bezeichnung) || "wird ermittelt …") + "</dd></div>" +
     "</div></div>";
 }
 
@@ -2465,7 +2708,7 @@ function secGrundstueck(m1) {
     : '<div class="note warn">Kein Gebäude im GWR an dieser Adresse gefunden — das Grundstück ist entweder unbebaut oder das Gebäude ist nicht am Adresspunkt registriert.</div>';
 
   return '<section class="sec" id="sec-grundstueck">' +
-    '<div class="sechead"><span class="num">01</span><h3>Grundstück &amp; Bestand</h3><span class="right">' + mapBtn("parzelle", "Auf Karte") + "</span></div>" +
+    '<div class="sechead"><h3>Grundstück &amp; Bestand</h3><span class="right">' + mapBtn("parzelle", "Auf Karte") + "</span></div>" +
     '<div class="tiles">' +
       tile("Parzellenfläche", leer(pz.flaeche_m2) ? null : fmt(pz.flaeche_m2, 1), "m²", true) +
       tile("Parzelle", pz.parzellennummer) +
@@ -2486,6 +2729,28 @@ function secGrundstueck(m1) {
       : "") +
     '<h4 class="subhead">Gebäudebestand (GWR)</h4>' + bestand +
   "</section>";
+}
+
+/* Eine Stoerungsmeldung nur, wenn tatsaechlich etwas gemeldet wurde.
+   Die Engine liefert hier je nach Lage einen Text, eine Liste, ein
+   Woerterbuch je Teilabfrage -- oder ein leeres Woerterbuch, das in JS
+   wahr ist und ungeprueft zu "[object Object]" wurde. */
+function fehlerHinweis(titel, fehler) {
+  if (leer(fehler)) return "";
+  var teile = [];
+  if (typeof fehler === "string") {
+    teile = [fehler];
+  } else if (Array.isArray(fehler)) {
+    teile = fehler.map(function (x) { return typeof x === "string" ? x : JSON.stringify(x); });
+  } else if (typeof fehler === "object") {
+    teile = Object.keys(fehler).map(function (k) {
+      var v = fehler[k];
+      return klartext(k) + ": " + (typeof v === "string" ? v : JSON.stringify(v));
+    });
+  }
+  teile = teile.filter(function (x) { return x && x !== "{}" && x !== "[]"; });
+  if (!teile.length) return "";
+  return '<div class="note warn">' + esc(titel) + ": " + esc(lesbar(teile.join(" \u00b7 "))) + "</div>";
 }
 
 /* --- 02 Standort --- */
@@ -2519,7 +2784,7 @@ function secStandort(m1) {
   });
 
   return '<section class="sec" id="sec-standort">' +
-    '<div class="sechead"><span class="num">02</span><h3>Standort</h3></div>' +
+    '<div class="sechead"><h3>Standort</h3></div>' +
     '<div class="tiles">' +
       tile("Höhe", leer(t.hoehe_m) ? null : fmt(t.hoehe_m, 1), "m ü. M.") +
       tile("Hangneigung", leer(t.slope_deg) ? null : fmt(t.slope_deg, 1), "°") +
@@ -2531,11 +2796,12 @@ function secStandort(m1) {
       ["Schule", dist(u.schule_naechste)],
       ["Spital", dist(u.spital_naechstes)],
       ["Einkauf", dist(u.supermarkt_naechster)],
-      ["Radon-Konfidenz", r.konfidenz],
+      ["Radon (Rohwert \u201econfidence\u201c der BAG-Karte)", leer(r.konfidenz) ? null
+        : r.konfidenz + " \u2014 keine Prozentangabe"],
       ["Topografie-Quelle", t.quelle]
     ]) +
     (umweltZeilen.length ? '<h4 class="subhead">Umweltthemen (ÖREB)</h4>' + kvRows(umweltZeilen) : "") +
-    (u.fehler ? '<div class="note warn">Umgebungsabfrage teilweise fehlgeschlagen: ' + esc(u.fehler) + "</div>" : "") +
+    fehlerHinweis("Umgebungsabfrage teilweise fehlgeschlagen", u.fehler) +
   "</section>";
 }
 
@@ -2607,7 +2873,7 @@ function kantenprotokoll(erg, m1) {
   var ausG1 = zeilen.length > 0;
   if (!ausG1) zeilen = alsListe(kl.kanten);
   if (!zeilen.length) {
-    if (kl.reason) return '<h4 class="subhead">Kantenprotokoll</h4><div class="note warn">Kantenklassifikation nicht verfügbar: ' + esc(kl.reason) + "</div>";
+    if (kl.reason) return '<div class="note warn">Kantenklassifikation nicht verfügbar: ' + esc(kl.reason) + "</div>";
     return "";
   }
 
@@ -2647,12 +2913,11 @@ function kantenprotokoll(erg, m1) {
   var uebrige = zeilen.filter(function (k) { return k.art === "nicht_relevant"; });
   var rows = massgebend.map(zeileHtml).join("");
 
-  return '<h4 class="subhead">Kantenprotokoll</h4>' +
-    '<div class="note">Jede Kante wird geometrisch zugeordnet: liegt hinter der Kante ein Katasterpolygon, durch das eine Strassenachse verläuft, ist es eine Strassenparzelle. Quelle: ' +
+  return '<div class="note">Jede Kante wird geometrisch zugeordnet: liegt hinter der Kante ein Katasterpolygon, durch das eine Strassenachse verläuft, ist es eine Strassenparzelle. Quelle: ' +
       esc(alsListe(kl.quellen_layer).join(", ")) + (kl.abgerufen_am ? " · abgerufen " + esc(kl.abgerufen_am) : "") + "</div>" +
     kopf +
     (offen.length ? '<div class="note warn"><b>Nicht kantenweise gerechnet.</b> Offen: ' + esc(offen.join(" · ")) +
-      ". Es wurde bewusst kein Ersatzwert eingesetzt; stattdessen gilt die Bandbreite aus Abschnitt 05.</div>" : "") +
+      ". Es wurde bewusst kein Ersatzwert eingesetzt; stattdessen gilt die Bandbreite im Reiter Potenzial.</div>" : "") +
     hinweise.map(function (h) { return '<div class="note warn">' + esc(h) + "</div>"; }).join("") +
     '<div class="scroller"><table class="src"><thead><tr><th>Kante</th><th>Länge</th><th>Grenzt an</th><th>Abstand</th><th>Beleg</th><th>Begründung</th></tr></thead><tbody>' +
       rows + "</tbody></table></div>" +
@@ -2797,10 +3062,21 @@ function klartext(schluessel) {
 // im Reiter "Daten & Quellen" steht die Bezeichnung unveraendert.
 var TECHNISCHES_PRAEFIX = /^[A-Za-zÄÖÜäöü]{2,12}[_\-.]\s*(?=[A-ZÄÖÜ])/;
 
+function koerperName(name) {
+  var t = String(name === null || name === undefined ? "" : name).trim();
+  if (!t || /^(EGID\s+)?(None|null|undefined|nan)$/i.test(t)) {
+    return "Bestandsgeb\u00e4ude (ohne EGID im Register)";
+  }
+  return t;
+}
 function zoneKlarname(name) {
   var t = String(name || "").trim();
   if (!t) return "";
-  return t.replace(TECHNISCHES_PRAEFIX, "").trim() || t;
+  // Die amtlichen Bezeichnungen stehen in ASCII-Umschrift: aus
+  // "Verkehrsflaeche iB" wird "Verkehrsflaeche iB" -- lesbar() macht
+  // daraus "Verkehrsflaeche" mit Umlaut und laesst Kuerzel wie "iB" oder
+  // "OeZ" in Ruhe.
+  return lesbar(t.replace(TECHNISCHES_PRAEFIX, "").trim() || t);
 }
 
 var OEREB_THEMA = {
@@ -2821,7 +3097,7 @@ var OEREB_THEMA = {
 
 function oerebThemaName(schluessel) {
   if (OEREB_THEMA[schluessel]) return OEREB_THEMA[schluessel];
-  var t = String(schluessel || "").replace(/_/g, " ").trim();
+  var t = lesbar(String(schluessel || "").replace(/_/g, " ").trim());
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Thema";
 }
 
@@ -2869,7 +3145,8 @@ function zonenHierarchie(m1, zz) {
           ? '<span class="badge mute">tritt zurück</span>'
           : '<span class="badge ok">massgebend</span>') + "</div>" +
         '<div class="f">' +
-        esc([basis.typ_kantonal_bezeichnung, basis.hauptnutzung_bezeichnung]
+        esc([zoneKlarname(basis.typ_kantonal_bezeichnung),
+             zoneKlarname(basis.hauptnutzung_bezeichnung)]
             .filter(Boolean).join(" · ") || "kantonale Einordnung nicht verfügbar") +
         (basis.rechtsstatus === "inKraft" ? " · rechtskräftig" : "") + "</div>" +
       "</div>"
@@ -2882,7 +3159,7 @@ function zonenHierarchie(m1, zz) {
         return '<div class="zeintrag massgebend"><div class="zezeile"><b>' +
           esc(zoneKlarname(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung) || "Sondernutzungsplan") +
           '</b><span class="badge stop">massgebend</span></div>' +
-          '<div class="f">' + esc(s.typ_kantonal_bezeichnung || "") +
+          '<div class="f">' + esc(zoneKlarname(s.typ_kantonal_bezeichnung) || "") +
           (s.rechtsstatus === "inKraft" ? " · rechtskräftig" : "") + "</div></div>";
       }).join("") +
       '<div class="note stop">Der Sondernutzungsplan geht der ordentlichen Bauzone vor. ' +
@@ -2903,7 +3180,7 @@ function zonenHierarchie(m1, zz) {
           esc(zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "Überlagerung") +
           '</b><span class="badge warn">zu beachten</span></div>' +
           '<div class="f">' + esc([EBENE_TEXT[u.ebene] || u.ebene,
-                                   u.hauptnutzung_bezeichnung].filter(Boolean).join(" · ")) +
+                                   zoneKlarname(u.hauptnutzung_bezeichnung)].filter(Boolean).join(" · ")) +
           "</div></div>";
       }).join("")
     : '<div class="f">Keine rechtskräftigen Überlagerungen im Abfragebereich gefunden.</div>';
@@ -2951,7 +3228,9 @@ function secBaurecht(erg, m1, zz) {
   var zonenTeil;
 
   if (zz.status === "sondernutzungsplan_massgebend") {
-    zonenTeil = '<div class="note stop"><b>Sondernutzungsplan geht der Grundnutzung vor.</b><br>' + esc(zz.hinweis) + "</div>" +
+    // Der Hinweis kommt als Prosa der Engine, in ASCII-Umschrift und mit
+    // Feldnamen darin. satz() ist die Anzeigeschicht dafuer.
+    zonenTeil = '<div class="note stop"><b>Sondernutzungsplan geht der Grundnutzung vor.</b><br>' + satz(zz.hinweis) + "</div>" +
       alsListe(zz.sondernutzungsplaene).map(function (s) {
         return '<div class="card"><div class="cardhead"><h4>' +
           esc(zoneKlarname(s.typ_kommunal_bezeichnung || s.typ_kantonal_bezeichnung)) +
@@ -3004,7 +3283,7 @@ function secBaurecht(erg, m1, zz) {
   var pruefhinweise = alsListe(m2.unklarheiten_und_pruefhinweise);
 
   return '<section class="sec" id="sec-baurecht">' +
-    '<div class="sechead"><span class="num">03</span><h3>Baurecht</h3><span class="right">' + mapBtn("zonen", "Zonen auf Karte") + "</span></div>" +
+    '<div class="sechead"><h3>Baurecht</h3><span class="right">' + mapBtn("zonen", "Zonen auf Karte") + "</span></div>" +
     '<div class="note">Vier Ebenen, in der Reihenfolge, in der sie einander vorgehen. ' +
     'Massgebend ist immer die oberste, die tatsächlich greift.</div>' +
     zonenHierarchie(m1, zz) +
@@ -3030,7 +3309,12 @@ function secBaurecht(erg, m1, zz) {
       : '<div class="note warn">Die massgebende Grundnutzung liess sich nicht eindeutig ' +
         "bestimmen — die Kennzahlen unten stehen entsprechend unter Vorbehalt.</div>") +
     '<h4 class="subhead">Zonenzuordnung</h4>' + zonenTeil +
-    kantenprotokoll(erg, m1) +
+    // Das Kantenprotokoll ist ein Nachweis, keine Aussage: eine Tabelle
+    // mit Kantenlaengen, Katasternummern und EGRIDs. Es bleibt
+    // vollstaendig erhalten, steht aber eingeklappt.
+    detailBlock("Kantenprotokoll — wie jede Grundstueckskante zugeordnet wurde",
+                kantenprotokoll(erg, m1),
+                "Keine Kantenklassifikation vorhanden.") +
     (sonder ? '<h4 class="subhead">Sonderregelungen &amp; Boni</h4>' + sonder : "") +
     (zonenListe.length
       ? '<details class="more"><summary>Alle ' + zonenListe.length + ' im Reglement erkannten Zonen</summary><div>' +
@@ -3060,7 +3344,7 @@ function secRestriktionen(m1) {
   var keine = !rg.gefunden || (anzGw + anzBl + anzRf === 0 && !alsListe(rg.waldgrenzen_gefunden).length);
 
   return '<section class="sec" id="sec-restriktionen">' +
-    '<div class="sechead"><span class="num">04</span><h3>Restriktionen</h3><span class="right">' + mapBtn("restrikt", "Auf Karte") + "</span></div>" +
+    '<div class="sechead"><h3>Restriktionen</h3><span class="right">' + mapBtn("restrikt", "Auf Karte") + "</span></div>" +
     '<div class="tiles">' +
       tile("Gewässerraum", anzGw ? anzGw + " Fläche(n)" : "keine") +
       tile("Baulinien", anzBl ? anzBl : "keine") +
@@ -3072,7 +3356,7 @@ function secRestriktionen(m1) {
     ]) +
     (keine ? '<div class="note ok">An dieser Parzelle wurden keine restriktionsrelevanten Geometrien (Gewässerraum, Baulinien, Waldabstand) gefunden — der Baubereich wird deshalb allein durch die Grenzabstände begrenzt.</div>' : "") +
     (hinweise.length ? '<div class="note warn"><ul class="plain" style="margin:0">' +
-      hinweise.map(function (h) { return "<li>" + esc(h) + "</li>"; }).join("") + "</ul></div>" : "") +
+      hinweise.map(function (h) { return "<li>" + satz(h) + "</li>"; }).join("") + "</ul></div>" : "") +
     '<div class="note">Restriktionen werden geometrisch abgefragt und in der G1-Berechnung direkt von der bebaubaren Fläche abgezogen — sie sind damit rechenwirksam, nicht nur informativ.</div>' +
   "</section>";
 }
@@ -3361,13 +3645,10 @@ function ebeneZusatz(z) {
     inhalt = ebeneLeit(fmt(z.zusaetzliche_geschossflaeche_m2, 1), "m²", "zusätzliche Geschossfläche") +
       (z.rechnung ? '<div class="enote">' + esc(lesbar(z.rechnung)) + "</div>" : "");
   } else {
+    // Grund und offene Punkte stehen im Urteil ganz oben. Sie hier ein
+    // zweites Mal auszurollen machte aus der Ebene eine Textwand.
     inhalt = '<div class="eleit offen">Nicht abschliessend bestimmbar</div>' +
-      (z.grund ? '<div class="egrund">' + esc(lesbar(z.grund)) + "</div>" : "") +
-      (alsListe(z.offene_punkte).length
-        ? '<ul class="plain">' + alsListe(z.offene_punkte).map(function (p) {
-            return "<li>" + esc(lesbar(p)) + "</li>";
-          }).join("") + "</ul>"
-        : "");
+      '<div class="enote">Die Begr\u00fcndung steht oben unter \u201eWarum?\u201c.</div>';
   }
   return '<div class="ebene' + (z && z.status === "bestimmbar" ? " gut" : " offen") + '">' +
     ebeneKopf(3, "Zusätzliches Potenzial", "Was ist zusätzlich möglich?") + inhalt + "</div>";
@@ -3471,6 +3752,34 @@ function bestandssituationBlock(bs) {
     (bs.hinweis ? '<div class="note' + (bs.pruefen ? " warn" : "") + '">' + esc(lesbar(bs.hinweis)) + "</div>" : "");
 }
 
+/* Das Urteil zuerst: was ist moeglich, und wenn nichts Belastbares --
+   warum nicht. Erst danach die drei Ebenen, erst darunter die Herleitung.
+   Umgekehrt gelesen wirkt jeder Zwischenwert wie ein Ergebnis. */
+function potenzialUrteil(erg) {
+  var zp = (erg.bestand_und_neubaugeometrie || {}).zusaetzliches_potenzial;
+  if (!zp) {
+    return '<div class="urteil"><h4>Wird ermittelt</h4>' +
+      '<div class="ulab">Die Geometrieberechnung l\u00e4uft noch.</div></div>';
+  }
+  if (zp.status === "bestimmbar") {
+    return '<div class="urteil gut"><h4>' + fmt(zp.zusaetzliche_geschossflaeche_m2, 1) +
+      ' <span class="unit">m\u00b2</span></h4>' +
+      '<div class="ulab">zus\u00e4tzliche Geschossfl\u00e4che</div>' +
+      (zp.rechnung ? '<div class="uwarum">Rechnung</div><p class="atext">' +
+        esc(lesbar(zp.rechnung)) + "</p>" : "") + "</div>";
+  }
+  var offen = alsListe(zp.offene_punkte);
+  return '<div class="urteil"><h4>Nicht abschliessend bestimmbar</h4>' +
+    '<div class="ulab">kein belastbarer Einzelwert f\u00fcr das zus\u00e4tzliche Potenzial</div>' +
+    '<div class="uwarum">Warum?</div>' +
+    '<p class="atext">' + esc(lesbar(zp.grund ||
+      "Die Abstandsgeometrie bzw. die Bestandessituation l\u00e4sst keinen belastbaren " +
+      "Einzelwert zu.")) + "</p>" +
+    (offen.length ? '<ul class="plain">' + offen.map(function (x) {
+      return "<li>" + esc(lesbar(x)) + "</li>";
+    }).join("") + "</ul>" : "") + "</div>";
+}
+
 function secPotenzial(erg) {
   var m1 = erg.modul1_geodaten || {}, zz = erg.zonen_zuordnung || {};
   var bnb = erg.bestand_und_neubaugeometrie || {};
@@ -3486,13 +3795,14 @@ function secPotenzial(erg) {
       : siaTabelle(sia);
   }
   var pruef = f ? alsListe(f.datenpruefung).map(function (b) {
-    return '<div class="note stop"><b>Datenprüfung:</b> ' + esc(lesbar(b.meldung)) + "</div>";
+    return '<div class="note stop"><b>Datenpr\u00fcfung:</b> ' + esc(lesbar(b.meldung)) + "</div>";
   }).join("") : "";
 
   return '<section class="sec" id="sec-potenzial">' +
-    '<div class="sechead"><span class="num">05</span><h3>Potenzial</h3><span class="right">' +
+    '<div class="sechead"><h3>Potenzial</h3><span class="right">' +
       mapBtn("baubereich", "Baubereich") + "</span></div>" +
     pruef +
+    potenzialUrteil(erg) +
     '<div class="ebenen">' +
       ebeneBestand(bnb.bestand) +
       ebeneRechtsrahmen(erg, m1, zz, bnb.heutiger_rechtsrahmen) +
@@ -3501,15 +3811,15 @@ function secPotenzial(erg) {
     '<h4 class="subhead">Herleitung und Details</h4>' +
     detailBlock("Herleitung", g1Herleitung(erg)) +
     detailBlock("SIA 416", siaInhalt,
-      "Ohne belastbare Geschossfläche gibt es keine SIA-416-Kaskade — siehe Herleitung.") +
-    detailBlock("Flächen & Wohnungen", flTeilFlaechen(f),
-      "Ohne belastbare Geschossfläche lassen sich keine Flächen und Wohnungen ableiten.") +
+      "Ohne belastbare Geschossfl\u00e4che gibt es keine SIA-416-Kaskade \u2014 siehe Herleitung.") +
+    detailBlock("Fl\u00e4chen & Wohnungen", flTeilFlaechen(f),
+      "Ohne belastbare Geschossfl\u00e4che lassen sich keine Fl\u00e4chen und Wohnungen ableiten.") +
     detailBlock("Geschosse", flTeilGeschosse(f),
       "Der Geschossaufbau wird erst aus einer belastbaren Geometrie abgeleitet.") +
     detailBlock("Annahmen", flTeilAnnahmen(f),
-      "Solange nichts gerechnet wird, gibt es auch keine Annahmen, die zu prüfen wären.") +
+      "Solange nichts gerechnet wird, gibt es auch keine Annahmen, die zu pr\u00fcfen w\u00e4ren.") +
     detailBlock("Rechenweg", flTeilRechenweg(f),
-      "Kein Rechenweg vorhanden — die Kaskade startet erst mit einer belastbaren Geschossfläche.") +
+      "Kein Rechenweg vorhanden \u2014 die Kaskade startet erst mit einer belastbaren Geschossfl\u00e4che.") +
   "</section>";
 }
 
@@ -3883,7 +4193,7 @@ function zeichneSzenario(id) {
       fillOpacity: k.art === "bestand" ? 0.45 : 0.32,
       dashArray: k.art === "bestand" ? null : "6,3"
     };
-    var popup = "<b>" + esc(k.name) + "</b><span class=\"m\">" +
+    var popup = "<b>" + esc(koerperName(k.name)) + "</b><span class=\"m\">" +
       fmt(k.flaeche_m2, 1) + " m² Grundfläche<br>max. " + esc(k.max_laenge_m) + " × " +
       esc(k.max_breite_m) + " m<br>" +
       (leer(k.geschosse) ? "" : esc(k.geschosse) + " Geschoss(e)") +
@@ -3921,7 +4231,7 @@ function szenarioKarteZeile(s) {
       ? '<details class="more"><summary>Baukörper (' + alsListe(s.baukoerper).length + ')</summary><div>' +
         '<div class="scroller"><table class="src"><thead><tr><th>Name</th><th>Art</th><th>Fläche</th><th>max. L × B</th><th>Geschosse</th><th>Höhe</th><th>Herkunft</th></tr></thead><tbody>' +
         alsListe(s.baukoerper).map(function (k) {
-          return "<tr><td><b>" + esc(k.name) + "</b></td><td>" + begriff(k.art) + "</td>" +
+          return "<tr><td><b>" + esc(koerperName(k.name)) + "</b></td><td>" + begriff(k.art) + "</td>" +
             "<td>" + fmt(k.flaeche_m2, 1) + " m²</td>" +
             "<td>" + esc(k.max_laenge_m) + " × " + esc(k.max_breite_m) + " m</td>" +
             "<td>" + esc(k.geschosse) + "</td><td>" + (leer(k.hoehe_m) ? "–" : esc(k.hoehe_m) + " m") + "</td>" +
@@ -4773,16 +5083,66 @@ function datenExportieren(format) {
   window.open(url, "_blank");
 }
 
+function szenarienTabelle(sz) {
+  var vergleich = alsListe(sz.vergleich);
+  if (!vergleich.length) return "";
+  return '<div class="scroller"><table class="src"><thead><tr><th>Szenario</th><th>Machbarkeit</th>' +
+    '<th>Geschosse</th><th>H\u00f6he</th><th>GF</th><th>NF</th><th>HNF</th><th>NWF</th>' +
+    "<th>Wohnungen</th><th>Konflikte</th></tr></thead><tbody>" +
+    vergleich.map(function (z) {
+      var badge = MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit, "mute"];
+      var m = function (v) { return leer(v) ? "\u2013" : fmt(v, 0) + " m\u00b2"; };
+      return '<tr data-szenario="' + esc(z.id) + '"><td><b>' + esc(z.bezeichnung) + "</b></td>" +
+        '<td><span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></td>" +
+        "<td>" + esc(z.geschosse) + "</td>" +
+        "<td>" + (leer(z.hoehe_m) ? "\u2013" : esc(z.hoehe_m) + " m") + "</td>" +
+        "<td>" + m(z.geschossflaeche_m2) + "</td><td>" + m(z.nutzflaeche_nf_m2) + "</td>" +
+        "<td>" + m(z.hauptnutzflaeche_hnf_m2) + "</td><td><b>" + m(z.wohnflaeche_nwf_m2) + "</b></td>" +
+        "<td>" + (leer(z.wohnungen) ? "\u2013" : esc(z.wohnungen)) + "</td>" +
+        "<td>" + (z.anzahl_konflikte ? '<span class="badge warn">' + z.anzahl_konflikte + "</span>" : "\u2013") +
+        "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+}
+function szenarienHabenWerte(erg) {
+  return alsListe(((erg || {}).szenarien || {}).vergleich).some(function (z) {
+    return !leer(z.geschossflaeche_m2) || !leer(z.wohnflaeche_nwf_m2);
+  });
+}
 function secSzenarien(erg) {
-  var kopf = '<div class="sechead"><span class="num">07</span><h3>Entwicklungsszenarien</h3></div>';
+  var kopf = '<div class="sechead"><h3>Entwicklungsszenarien</h3></div>';
   var sz = erg.szenarien;
-  if (!sz) {
+
+  // Drei Lagen, die auseinandergehalten werden muessen:
+  //   a) noch nicht gebaut    -- die Berechnungslogik fehlt uns
+  //   b) gerechnet, ohne Wert -- die Engine hat geprueft und nichts gefunden
+  //   c) gerechnet, mit Wert  -- der volle Abschnitt weiter unten
+  // (a) und (b) sahen frueher beide gleich aus: (a) als fuenf Karten
+  // Entwicklungsdokumentation, (b) als Tabelle mit siebzig Gedankenstrichen.
+  if (!sz || sz.status !== "berechnet") {
     return '<section class="sec" id="sec-szenarien">' + kopf +
-      '<div class="note warn">Für diese Analyse wurden keine Szenarien gerechnet.</div></section>';
+      '<div class="antwort wartet"><div class="akopf">' +
+      '<span class="gross klein">Noch nicht berechnet</span>' +
+      '<span class="badge mute">in Vorbereitung</span></div>' +
+      '<p class="atext">Die Berechnungslogik f\u00fcr Bestand, Sanierung, Anbau, Aufstockung ' +
+      'und Ersatzneubau wird als n\u00e4chster fachlicher Block erg\u00e4nzt. Es werden bewusst ' +
+      'keine simulierten Ergebnisse angezeigt.</p>' +
+      (sz && sz.grund ? '<p class="ahinweis">' + satz(sz.grund) + "</p>" : "") +
+      "</div></section>";
   }
-  if (sz.status !== "berechnet") {
+  if (!szenarienHabenWerte(erg)) {
+    // Gerechnet und ohne Ergebnis ist ein Befund, kein Leerlauf. Er steht
+    // vollstaendig da; nur die Tabelle liegt unter einem Aufklapper.
     return '<section class="sec" id="sec-szenarien">' + kopf +
-      '<div class="note warn"><b>Keine Szenarien.</b> ' + satz(sz.grund) + "</div></section>";
+      '<div class="antwort offen"><div class="akopf">' +
+      '<span class="gross klein">Kein belastbares Szenario</span>' +
+      '<span class="badge warn">gepr\u00fcft</span></div>' +
+      '<p class="atext">Alle Szenarien wurden gerechnet. Keines ergab einen belastbaren ' +
+      'Wert \u2014 es wird deshalb keiner gezeigt.</p>' +
+      alsListe((sz.ausnuetzungsbudget || {}).hinweise).map(function (h) {
+        return '<p class="ahinweis">' + esc(lesbar(h)) + "</p>";
+      }).join("") +
+      detailBlock("Was die Engine je Szenario gepr\u00fcft hat", szenarienTabelle(sz)) +
+      "</div></section>";
   }
 
   var b = sz.ausnuetzungsbudget || {};
@@ -4801,21 +5161,9 @@ function secSzenarien(erg) {
       return '<div class="note ' + (h.indexOf("UEBERBAUT") >= 0 ? "stop" : "warn") + '">' + esc(h) + "</div>";
     }).join("");
 
-  var tabelle = '<h4 class="subhead">Vergleich</h4>' +
-    '<div class="scroller"><table class="src"><thead><tr><th>Szenario</th><th>Machbarkeit</th>' +
-    '<th>Geschosse</th><th>Höhe</th><th>GF</th><th>NF</th><th>HNF</th><th>NWF</th><th>Wohnungen</th><th>Konflikte</th></tr></thead><tbody>' +
-    vergleich.map(function (z) {
-      var badge = MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit, "mute"];
-      var m = function (v) { return leer(v) ? "–" : fmt(v, 0) + " m²"; };
-      return '<tr data-szenario="' + esc(z.id) + '"><td><b>' + esc(z.bezeichnung) + "</b></td>" +
-        '<td><span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></td>" +
-        "<td>" + esc(z.geschosse) + "</td>" +
-        "<td>" + (leer(z.hoehe_m) ? "–" : esc(z.hoehe_m) + " m") + "</td>" +
-        "<td>" + m(z.geschossflaeche_m2) + "</td><td>" + m(z.nutzflaeche_nf_m2) + "</td>" +
-        "<td>" + m(z.hauptnutzflaeche_hnf_m2) + "</td><td><b>" + m(z.wohnflaeche_nwf_m2) + "</b></td>" +
-        "<td>" + (leer(z.wohnungen) ? "–" : esc(z.wohnungen)) + "</td>" +
-        "<td>" + (z.anzahl_konflikte ? '<span class="badge warn">' + z.anzahl_konflikte + "</span>" : "–") + "</td></tr>";
-    }).join("") + "</tbody></table></div>";
+  // Dieselbe Tabelle wie im nicht belastbaren Fall -- eine Herleitung,
+  // zwei Orte, ein Baustein.
+  var tabelle = '<h4 class="subhead">Vergleich</h4>' + szenarienTabelle(sz);
 
   var waehler = '<div id="projektleiste"></div><div class="szwahl" id="szwahl">' +
     vergleich.map(function (z) {
@@ -5851,7 +6199,7 @@ function secSzenarien(erg) {
         var koerperMesh = koerper(k.ring, mx, my, h, BAUKOERPER_FARBE[k.art] || "#0369a1",
                                   k.art === "bestand" ? 0.9 : 0.62);
         u3dGruppen.projekt.add(koerperMesh);
-        legende.push({ name: k.name, art: k.art, hoehe: k.hoehe_m });
+        legende.push({ name: koerperName(k.name), art: k.art, hoehe: k.hoehe_m });
       });
     }
 
@@ -5963,29 +6311,11 @@ function verdrahte3DSteuerung() {
   einmal("mess-reset", "click", function () { window.messZuruecksetzen(); });
 }
 
-function secEntwicklung(erg) {
-  return '<section class="sec" id="sec-entwicklung">' +
-    '<div class="sechead"><h3>Szenarien in Vorbereitung</h3><span class="right"><span class="badge mute">Struktur, noch nicht gerechnet</span></span></div>' +
-    '<div class="note">Die fünf Szenarien sind fachlich definiert und dokumentiert, die Berechnungslogik existiert aber noch nicht. Es werden bewusst keine simulierten Ergebnisse angezeigt.</div>' +
-    '<details class="more"><summary>Die fünf Szenarien und was ihnen noch fehlt (' +
-      alsListe(erg.entwicklungsszenarien).length + ')</summary><div>' +
-    alsListe(erg.entwicklungsszenarien).map(function (s) {
-      var flaechen = alsListe(s.benoetigte_flaechendaten);
-      var eingaben = alsListe(s.benoetigte_zusatzeingaben);
-      return '<div class="card"><div class="cardhead"><h4>' + esc(SZ_LABEL[s.szenario] || s.szenario) +
-        '</h4><span class="badge warn">nicht berechnet</span></div>' +
-        "<p>" + satz(s.beschreibung) + "</p>" +
-        '<details class="more"><summary>Was dafür noch fehlt</summary><div>' +
-          (flaechen.length ? '<h4 class="subhead" style="margin-top:0">Benötigte Flächendaten</h4><ul class="plain">' +
-            flaechen.map(function (x) { return "<li>" + satz(x) + "</li>"; }).join("") + "</ul>" : "") +
-          (eingaben.length ? '<h4 class="subhead">Benötigte Zusatzeingaben</h4><ul class="plain">' +
-            eingaben.map(function (x) { return "<li>" + satz(x) + "</li>"; }).join("") + "</ul>" : "") +
-          (s.heute_bereits_abgedeckt_durch ? '<div class="note" style="margin-top:8px"><b>Heute bereits abgedeckt durch:</b> ' +
-            satz(s.heute_bereits_abgedeckt_durch) + "</div>" : "") +
-        "</div></details></div>";
-    }).join("") + "</div></details>" +
-  "</section>";
-}
+/* Die Liste "was jedem Szenario noch fehlt" stand frueher hier. Sie war
+   Entwicklungsdokumentation im Kundenprodukt: fuenf Karten mit je zwei
+   Unterlisten von Anforderungen an uns selbst. Die Daten kommen weiterhin
+   aus der Engine (erg.entwicklungsszenarien); gezeigt wird stattdessen ein
+   Satz in secSzenarien(). */
 
 /* --- 07 Quellen --- */
 var QTYP = { amtliche_quelle: "amtlich", llm_extraktion: "Reglement", modellannahme: "Annahme", geometrie_berechnung: "berechnet" };
@@ -5993,12 +6323,21 @@ function secQuellen(erg) {
   var q = alsListe(erg.quellen);
   function wertTxt(w) {
     if (w === null || w === undefined) return "–";
-    if (typeof w === "object") return Object.keys(w).map(function (k) { return klartext(k) + ": " + w[k]; }).join(", ");
+    if (typeof w === "object") {
+      // Verschachtelte Werte wurden frueher nur eine Ebene tief aufgeloest;
+      // alles darunter landete als "[object Object]" in der Nachweistabelle.
+      return Object.keys(w).map(function (k) {
+        var v = w[k];
+        var t = (v !== null && typeof v === "object") ? JSON.stringify(v) : String(v);
+        if (t.length > 70) t = t.slice(0, 70) + "…";
+        return klartext(k) + ": " + t;
+      }).join(", ");
+    }
     var s = String(w);
     return s.length > 90 ? s.slice(0, 90) + "…" : s;
   }
   return '<section class="sec" id="sec-quellen">' +
-    '<div class="sechead"><span class="num">07</span><h3>Quellen &amp; Nachweis</h3><span class="right"><span class="badge mute">' + q.length + " Nachweise</span></span></div>" +
+    '<div class="sechead"><h3>Quellen &amp; Nachweis</h3><span class="right"><span class="badge mute">' + q.length + " Nachweise</span></span></div>" +
     '<div class="note">Jeder amtliche Wert oben ist auf Endpunkt und Layer rückverfolgbar. Werte ohne amtliche Quelle werden nicht ausgegeben.</div>' +
     '<details class="more"><summary>Alle ' + q.length + ' Nachweise im Einzelnen</summary><div>' +
     '<div class="scroller"><table class="src"><thead><tr><th>Feld</th><th>Wert</th><th>Quelle</th></tr></thead><tbody>' +
@@ -6992,15 +7331,29 @@ function wAktivesSzenario() {
 }
 
 function secWirtschaft(erg) {
-  var blockiert = (erg.zonen_zuordnung || {}).status !== "gefunden";
-  var kopf = '<div class="sechead"><span class="num">08</span><h3>Wirtschaftlichkeit</h3>' +
+  var kopf = '<div class="sechead"><h3>Wirtschaftlichkeit</h3>' +
     '<span class="right"><span class="badge mute">dynamisch</span></span></div>';
-  if (blockiert) {
+  // Zwei verschiedene Gruende, warum hier nichts zu rechnen ist. Beide
+  // fuehrten bisher zum vollen Formular mit "CHF -" in jedem Feld: sechs
+  // grosse Kennzahlenkacheln ohne eine einzige Zahl, dazu Wohnungsmix und
+  // Kostenaufstellung. Das sieht aus wie ein Fehler und ist keiner.
+  var grund = null;
+  if ((erg.zonen_zuordnung || {}).status !== "gefunden") {
+    grund = "Ohne eindeutige Zonenzuordnung gibt es keine belastbare Fl\u00e4che \u2014 und damit " +
+      "keine belastbare Wirtschaftlichkeit.";
+  } else if (!szenarienHabenWerte(erg)) {
+    grund = "Die Wirtschaftlichkeit rechnet auf einem Szenario. Solange keines belastbar " +
+      "gerechnet werden kann, g\u00e4be jede Zahl hier eine Genauigkeit vor, die es nicht gibt.";
+  }
+  if (grund) {
     return '<section class="sec" id="sec-wirtschaft">' + kopf +
-      '<div class="note warn">Ohne eindeutige Zonenzuordnung gibt es keine belastbare Fläche — und damit keine belastbare Wirtschaftlichkeit. Die Eingabe bleibt deshalb bewusst gesperrt.</div></section>';
+      '<div class="antwort wartet"><div class="akopf">' +
+      '<span class="gross klein">Noch nicht berechenbar</span></div>' +
+      '<p class="atext">' + esc(grund) + "</p></div></section>";
   }
   return '<section class="sec" id="sec-wirtschaft">' + kopf +
-    '<div class="note">Jede Änderung rechnet Flächen, Wohnungen, Kosten, Gewinn, Marge und den maximal tragbaren Landwert neu — die baurechtliche Analyse wird dabei <b>nicht</b> wiederholt.</div>' +
+    '<div class="note">Jede \u00c4nderung rechnet Fl\u00e4chen, Wohnungen, Kosten, Gewinn, Marge und den ' +
+    'maximal tragbaren Landwert neu \u2014 die baurechtliche Analyse wird dabei <b>nicht</b> wiederholt.</div>' +
     '<div id="w-status" class="wstatus"></div>' +
     '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
     '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
@@ -7010,6 +7363,7 @@ function secWirtschaft(erg) {
     '<div id="w-bkp">' + bkpBlock() + "</div>" +
   "</section>";
 }
+
 
 /* --- Markt: Referenzen und eigene Annahmen, sichtbar getrennt ----------
 
@@ -7025,7 +7379,7 @@ function secWirtschaft(erg) {
 */
 function secMarkt(erg) {
   var blockiert = (erg.zonen_zuordnung || {}).status !== "gefunden";
-  var kopf = '<div class="sechead"><span class="num">07</span><h3>Markt</h3>' +
+  var kopf = '<div class="sechead"><h3>Markt</h3>' +
     '<span class="right"><span class="badge mute">Referenzen &amp; Annahmen</span></span></div>';
   if (blockiert) {
     return '<section class="sec" id="sec-markt">' + kopf +
@@ -7252,9 +7606,14 @@ function verdrahteSzenarien() {
   if (erstes) szenarioKarte(erstes.id);
 }
 function verdrahteDossier() {
-  Array.prototype.forEach.call(document.querySelectorAll("#navbar button"), function (b) {
-    b.addEventListener("click", function () { springeZu(b.dataset.sec); });
+  // "Details im Reiter Potenzial" soll den Reiter oeffnen, nicht nur
+  // beschreiben, wo etwas steht.
+  Array.prototype.forEach.call(document.querySelectorAll("[data-reiter-link]"), function (b) {
+    b.addEventListener("click", function () { zeigeReiter(b.dataset.reiterLink); });
   });
+  // "Auf Karte" wechselt in den Kartenreiter und passt die Ansicht dort
+  // ein. Vorher lag die Karte daneben und der Knopf musste nur zoomen --
+  // jetzt ist sie eine eigene Ansicht, und der Knopf muss sie oeffnen.
   Array.prototype.forEach.call(document.querySelectorAll(".maplink"), function (b) {
     b.addEventListener("click", function () {
       var g = gruppen[b.dataset.zoom];
@@ -7266,28 +7625,21 @@ function verdrahteDossier() {
         var bb = l.getBounds ? l.getBounds() : null;
         if (bb) bounds = bounds ? bounds.extend(bb) : bb;
       });
-      if (bounds) map.fitBounds(bounds, { padding: [60, 60], maxZoom: 19 });
-      layers.forEach(function (l) { if (l.setStyle && l._basisStil) l.setStyle({ weight: l._basisStil.weight + 2 }); });
+      zeigeReiter("karte");
+      // Erst nach invalidateSize kennt Leaflet seine neue Groesse; ein
+      // fitBounds davor landet auf einem 0 x 0 grossen Container.
       setTimeout(function () {
-        layers.forEach(function (l) { if (l.setStyle && l._basisStil && l !== selektiert) l.setStyle(l._basisStil); });
-      }, 1400);
+        if (bounds) {
+          map.fitBounds(bounds, { padding: [60, 60], maxZoom: 19 });
+          kartenRahmenGesetzt = true;
+        }
+        layers.forEach(function (l) { if (l.setStyle && l._basisStil) l.setStyle({ weight: l._basisStil.weight + 2 }); });
+        setTimeout(function () {
+          layers.forEach(function (l) { if (l.setStyle && l._basisStil && l !== selektiert) l.setStyle(l._basisStil); });
+        }, 1400);
+      }, 120);
     });
   });
-
-  if (window.IntersectionObserver) {
-    var obs = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (!en.isIntersecting) return;
-        Array.prototype.forEach.call(document.querySelectorAll("#navbar button"), function (b) {
-          b.classList.toggle("active", b.dataset.sec === en.target.id);
-        });
-      });
-    }, { root: document.getElementById("dossier"), rootMargin: "-40px 0px -75% 0px" });
-    SEKTIONEN.forEach(function (s) {
-      var el = document.getElementById(s[0]);
-      if (el) obs.observe(el);
-    });
-  }
 }
 </script>
 
