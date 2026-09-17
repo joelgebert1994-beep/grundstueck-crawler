@@ -758,7 +758,11 @@ var STIL = {
   zone:      { color: "#2a7f8f", weight: 1.5, fillColor: "#2a7f8f", fillOpacity: .13 },
   zoneUeber: { color: "#6a4c93", weight: 2,   fillColor: "#6a4c93", fillOpacity: .15, dashArray: "5,4" },
   baubereich:{ color: "#1f7a4d", weight: 2,   fillColor: "#1f7a4d", fillOpacity: .30 },
-  randfall:  { color: "#1f7a4d", weight: 1.5, fillColor: "#1f7a4d", fillOpacity: .12, dashArray: "6,5" },
+  // Obergrenze: weite Striche, sehr blass -- der aeussere Rand.
+  randfallOben:  { color: "#1f7a4d", weight: 1.5, fillColor: "#1f7a4d", fillOpacity: .09, dashArray: "9,6" },
+  // Untergrenze: dichte Punkte, kraeftiger -- sonst ist der Splitter von
+  // 0.7 m² auf der Karte ueberhaupt nicht zu sehen.
+  randfallUnten: { color: "#1f7a4d", weight: 2.5, fillColor: "#1f7a4d", fillOpacity: .34, dashArray: "2,3" },
   restrikt:  { color: "#b4661a", weight: 2,   fillColor: "#b4661a", fillOpacity: .22, dashArray: "6,3" },
   bestand:   { color: "#6b7280", weight: 2,   fillColor: "#6b7280", fillOpacity: .45 }
 };
@@ -784,7 +788,7 @@ function _kategorie61(f) {
   return code.slice(0, 2) === "61";
 }
 
-function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung, dauerhaft) {
+function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung, dauerhaft, richtung) {
   var layers = [];
   toRings(geom).forEach(function (ring) {
     var poly = L.polygon(ring, stil);
@@ -797,9 +801,11 @@ function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung,
       // Dauerhaft nur beim ersten Polygon: der Baubereich besteht bei einer
       // Bandbreite aus mehreren Flaechen, und jede trug ihr eigenes
       // Etikett -- "Baubereich" stand dann zweimal uebereinander.
+      var lage = (richtung && typeof richtung === "object") ? richtung : { direction: richtung || "center" };
       poly.bindTooltip(beschriftung, {
         permanent: !!dauerhaft && layers.length === 0,
-        direction: "center", className: "kartenlabel", opacity: 1 });
+        direction: lage.direction || "center", offset: lage.offset || [0, 0],
+        className: "kartenlabel", opacity: 1 });
     }
     poly.on("click", function () { selektiere(poly, sectionId); });
     poly.addTo(gruppe);
@@ -1971,8 +1977,27 @@ function zeichneErgebnisAufKarte(erg) {
   var g1 = erg.g1_ergebnis;
   if (g1) {
     var randfall = String(g1.modus || "").indexOf("bandbreite_") === 0;
+    var bandbreite = g1.bandbreite || {};
+    var obenName = bandbreite.obergrenze_szenario;
+    var flaechen = bandbreite.baubereich_m2 || [];
+    // "Randfälle 0.7–96.4 m²" sagt in vier Worten, worum es geht: eine
+    // Spanne. Zwei getrennte Etiketten sagten stattdessen zweimal
+    // "Fläche" -- und sahen aus wie zwei Baukoerper.
+    var spannentext = (flaechen.length === 2 && !leer(flaechen[0]))
+      ? "Randfälle " + fmt(flaechen[0], 1) + "–" + fmt(flaechen[1], 1) + " m² · keine belastbare Fläche"
+      : "Randfälle · keine belastbare Fläche";
     var einzel = g1.szenarien ? Object.keys(g1.szenarien).map(function (k) { return [k, g1.szenarien[k]]; })
                               : (g1.ergebnis ? [["", g1.ergebnis]] : []);
+    // Faellt die Obergrenze aus (aelterer Bandbreiten-Modus ohne das
+    // Feld), traegt die groesste Flaeche das Etikett -- die aeussere.
+    if (randfall && !obenName) {
+      var groesste = null;
+      einzel.forEach(function (paar) {
+        if (!paar[1] || leer(paar[1].baubereich_m2)) return;
+        if (!groesste || paar[1].baubereich_m2 > groesste[1]) groesste = [paar[0], paar[1].baubereich_m2];
+      });
+      obenName = groesste ? groesste[0] : null;
+    }
     einzel.forEach(function (paar) {
       var name = paar[0], e = paar[1];
       if (!e || !e.baubereich_koordinaten) return;
@@ -1997,11 +2022,29 @@ function zeichneErgebnisAufKarte(erg) {
             ? "<br>begrenzt durch " + esc(klartext(e.fussabdruck_limitiert_durch)) : "") + "<br>" +
           "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²</span>";
       }
-      // Beide Raender tragen ihr eigenes Etikett -- sie sind verschiedene
-      // Dinge, und ohne Etikett sieht man zwei Flaechen ohne Erklaerung.
+      // Beide Raender trugen je ein dauerhaftes Etikett. Da sie fast
+      // deckungsgleich liegen, standen die beiden Beschriftungen
+      // uebereinander und waren nicht mehr zu lesen. Jetzt traegt nur die
+      // aeussere Flaeche ein dauerhaftes Etikett, und es beschreibt das
+      // PAAR -- eine Spanne, nicht einen Baukoerper. Der einzelne Rand
+      // steht beim Ueberfahren und im Popup.
+      var istOben = randfall && name === obenName;
+      var etikett, dauerhaft, stil;
+      if (!randfall) {
+        etikett = "Bebaubare Fläche"; dauerhaft = true; stil = STIL.baubereich;
+      } else if (istOben) {
+        etikett = spannentext; dauerhaft = true; stil = STIL.randfallOben;
+      } else {
+        etikett = "Randfall (Untergrenze): " + bezeichnung; dauerhaft = false;
+        stil = STIL.randfallUnten;
+      }
       anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten,
-        randfall ? STIL.randfall : STIL.baubereich, popupB, "sec-potenzial",
-        randfall ? "Randfall: " + bezeichnung : "Bebaubare Fläche", true).length;
+        stil, popupB, "sec-potenzial", etikett, dauerhaft,
+        dauerhaft && randfall
+          // Die Randfall-Huelle liegt in der Parzelle -- ohne Versatz
+          // steht ihr Etikett auf dem der Parzelle.
+          ? { direction: "center", offset: [0, 24] }
+          : { direction: dauerhaft ? "center" : "bottom" }).length;
     });
   }
   // Auch ohne G1 zuruecksetzen: sonst behielte die Bedienleiste die
