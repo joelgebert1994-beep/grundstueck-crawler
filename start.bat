@@ -54,6 +54,22 @@ if "%GEMINI_API_KEY%"=="" (
         )
     )
 )
+
+REM --- Zugangsschluessel fuer den oeffentlichen Weg -------------------
+REM  Ist das Backend ueber einen Tunnel oeffentlich erreichbar, ist dies
+REM  der einzige Riegel davor, dass jeder im Internet /analyze aufrufen
+REM  kann -- und jeder Aufruf kostet Rechenzeit und LLM-Kontingent.
+REM  /marktdaten/loeschen liegt hinter demselben Riegel.
+REM  Ohne Schluessel laeuft alles lokal ganz normal weiter; der Riegel
+REM  greift nur, wenn einer gesetzt ist.
+REM  Derselbe Wert gehoert in Cloudflare Pages als BACKEND_SCHLUESSEL.
+if "%ZUGANGSSCHLUESSEL%"=="" (
+    if exist "%~dp0.env.lokal" (
+        for /f "usebackq tokens=1,* delims==" %%a in ("%~dp0.env.lokal") do (
+            if /i "%%a"=="ZUGANGSSCHLUESSEL" set "ZUGANGSSCHLUESSEL=%%b"
+        )
+    )
+)
 if "%GEMINI_API_KEY%"=="" (
     echo   HINWEIS: GEMINI_API_KEY ist nicht gesetzt.
     echo   Die Auswertung der Bau- und Nutzungsordnung wird fehlschlagen.

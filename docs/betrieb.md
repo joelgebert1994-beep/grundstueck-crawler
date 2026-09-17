@@ -18,6 +18,75 @@
 | Secrets | `GEMINI_API_KEY` als Umgebungsvariable | nie im Repo, `.gitignore` deckt `.env` ab |
 | Health-Check | `GET /health` | unterscheidet *erreichbar* von *einsatzbereit* |
 
+### HTTP 530 am Original-Link: Ursache und Handgriff
+
+**Am 17.09.2026 beobachtet.** `https://grundstueck-crawler.pages.dev` lieferte
+die Seite (HTTP 200), aber jede Analyse scheiterte mit **HTTP 530, Fehlercode
+1016**.
+
+**1016 heisst „Origin DNS error"** — und das ist die entscheidende
+Unterscheidung. Der Proxy in `functions/api/[[path]].js` meldet die anderen
+Fälle selbst und mit eigenem JSON:
+
+| Lage | Antwort |
+|---|---|
+| `BACKEND_URL` fehlt | 503, `art: nicht_konfiguriert` |
+| Origin erreichbar, aber tot | 502, `art: backend_offline` |
+| Schlüssel falsch | 401, `art: nicht_konfiguriert` |
+| **Hostname löst nicht auf** | **530 / 1016 — von Cloudflares Edge, nicht vom Worker** |
+
+Ein 1016 kommt also nie von einem Fehler im Worker oder in der Engine. Er
+heisst immer: *der in `BACKEND_URL` hinterlegte Hostname existiert nicht
+(mehr).*
+
+**Die Ursache ist strukturell und steht schon in der Tabelle oben:** der
+Quick Tunnel bekommt bei jedem Start eine **neue zufällige Adresse**
+(`*.trycloudflare.com`). Endet der Tunnel, verschwindet der DNS-Eintrag;
+`BACKEND_URL` zeigt danach ins Leere. Der letzte Tunnel lief am
+**04.09.2026**, die Adresse lautete `dist-overnight-personal-stream`.
+Zwei Wochen später löste sie nicht mehr auf.
+
+**Handgriff, wenn es wieder auftritt** (die Reihenfolge zählt):
+
+```
+1. Backend starten            start.bat          → /health muss "bereit": true sagen
+2. Tunnel starten             cloudflared tunnel --url http://127.0.0.1:8787
+                              → neue https://...trycloudflare.com aus der Ausgabe nehmen
+3. Adresse hinterlegen        npx wrangler pages secret put BACKEND_URL                                   --project-name=grundstueck-crawler
+4. NEU DEPLOYEN               npx wrangler pages deploy dist                                   --project-name=grundstueck-crawler
+```
+
+Schritt 4 wird leicht vergessen und ist trotzdem zwingend: **ein Pages-Secret
+wirkt erst für den nächsten Deploy.** Ein bestehender Deploy behält seine
+Bindungen, auch wenn das Secret längst neu gesetzt ist.
+
+### Der Zugangsschlüssel gehört dazu
+
+Ein Quick Tunnel veröffentlicht `localhost:8787` im offenen Internet. Ohne
+Riegel kann jeder, der die Adresse kennt, `/analyze` auslösen (Rechenzeit und
+LLM-Kontingent) und `/marktdaten/loeschen` aufrufen. Eine zufällige URL ist
+keine Authentisierung.
+
+Beide Seiten können das längst, es war nur nicht gesetzt:
+
+| Seite | Variable | Wo dauerhaft |
+|---|---|---|
+| Backend | `ZUGANGSSCHLUESSEL` | `.env.lokal` neben `start.bat` (steht in `.gitignore`) |
+| Pages | `BACKEND_SCHLUESSEL` | `wrangler pages secret put` |
+
+Beide müssen **denselben Wert** tragen. Ist auf dem Backend keiner gesetzt,
+lässt es alles durch — lokal bequem, über einen Tunnel fahrlässig.
+
+### Was den Handgriff überflüssig macht
+
+Die Schritte 2–4 sind bei jedem Neustart nötig, weil die Adresse wechselt.
+Zwei Wege heben das auf:
+
+* **Benannter Tunnel** (`cloudflared tunnel create` + DNS-Eintrag). Feste
+  Adresse, `BACKEND_URL` bleibt dann stehen. Der PC muss weiterhin laufen.
+* **Dienst auf einer eigenen Maschine** — siehe `docs/einrichtung_oracle.md`.
+  Dann ist weder Tunnel noch eingeschalteter PC nötig.
+
 ### Gefundene Produktionsblocker
 
 1. **`google-genai` war in `pyproject.toml` nicht deklariert.** Ein Container-Build
