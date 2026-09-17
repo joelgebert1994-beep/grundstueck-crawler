@@ -237,6 +237,7 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 .kv .k { color: var(--ink-2); overflow-wrap: break-word; }
 .kv .v { font-family: var(--mono); font-variant-numeric: tabular-nums; word-break: break-word; }
 .kv .v.na { font-family: "Archivo", sans-serif; color: var(--ink-3); font-size: 12px; }
+.kv .v.text { font-family: "Archivo", sans-serif; }
 /* Eine einzelne Zeile soll nicht auf halber Breite enden. */
 .kv.eins { grid-template-columns: 1fr; }
 
@@ -757,6 +758,7 @@ var STIL = {
   zone:      { color: "#2a7f8f", weight: 1.5, fillColor: "#2a7f8f", fillOpacity: .13 },
   zoneUeber: { color: "#6a4c93", weight: 2,   fillColor: "#6a4c93", fillOpacity: .15, dashArray: "5,4" },
   baubereich:{ color: "#1f7a4d", weight: 2,   fillColor: "#1f7a4d", fillOpacity: .30 },
+  randfall:  { color: "#1f7a4d", weight: 1.5, fillColor: "#1f7a4d", fillOpacity: .12, dashArray: "6,5" },
   restrikt:  { color: "#b4661a", weight: 2,   fillColor: "#b4661a", fillOpacity: .22, dashArray: "6,3" },
   bestand:   { color: "#6b7280", weight: 2,   fillColor: "#6b7280", fillOpacity: .45 }
 };
@@ -857,6 +859,19 @@ Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), fu
     if (ev.target.checked) gruppen[name].addTo(map); else map.removeLayer(gruppen[name]);
   });
 });
+// Heisst die Ebene "Bebaubare Fläche", waehrend sie zwei Rechenraender
+// zeigt, ist schon die Bedienleiste eine Falschaussage.
+function benenneBaubereichEbene(randfall) {
+  var opt = document.getElementById("opt-baubereich");
+  if (!opt) return;
+  var text = randfall ? "Bebaubare Fläche — Randfälle" : "Bebaubare Fläche";
+  // Der Beschriftungstext ist der letzte Textknoten im Label.
+  for (var i = opt.childNodes.length - 1; i >= 0; i--) {
+    var kn = opt.childNodes[i];
+    if (kn.nodeType === 3 && kn.nodeValue.trim()) { kn.nodeValue = text; return; }
+  }
+}
+
 function setLayerVerfuegbar(name, anzahl) {
   // Defensiv: die Layerleiste kann fehlen (Dossierfenster, Ausdruck). Ein
   // Absturz hier hat real eine ganze Analyse verschluckt, obwohl es nur um
@@ -1921,7 +1936,7 @@ function zeichneErgebnisAufKarte(erg) {
     // es fuer dieses Grundstueck, und was folgt daraus.
     var popupZ = "<b>" + esc(zName) + "</b><span class=\"m\">" +
       (ueberlagernd ? "Überlagerung" : "Grundnutzung") +
-      (f.hauptnutzung_bezeichnung ? " · " + esc(f.hauptnutzung_bezeichnung) : "") + "<br>" +
+      (f.hauptnutzung_bezeichnung ? " · " + satz(f.hauptnutzung_bezeichnung) : "") + "<br>" +
       (istBasis
         ? (snpMassgebend
             ? "<b>Gilt für dieses Grundstück</b> — tritt aber hinter den Sondernutzungsplan zurück."
@@ -1942,29 +1957,56 @@ function zeichneErgebnisAufKarte(erg) {
   setLayerVerfuegbar("bauzone", anzZ);
   setLayerVerfuegbar("sondernutzung", anzSnp);
 
-  /* Baubereich: echtes G1-Rechenergebnis, kein Symbolbild */
+  /* Baubereich: echtes G1-Rechenergebnis, kein Symbolbild.
+
+     Wichtig ist die Unterscheidung zwischen einem belastbaren Baubereich
+     und einem Rechenrand. Bestimmen die Eingangsdaten die Geometrie nicht
+     eindeutig, liefert G1 zwei Raender einer Sensitivitaet -- in Rheineck
+     0.7 m² und 96.4 m². Beide wurden bis hierher als "Bebaubare Fläche"
+     gezeichnet, mit "Baubereich 0.7 m²" im Popup. Das liest sich wie ein
+     zulaessiger Fussabdruck und ist keiner: der Potenzial-Reiter sagt zu
+     derselben Parzelle ausdruecklich "nicht abschliessend bestimmbar".
+     Die Karte sagt es jetzt genauso. */
   var anzB = 0;
   var g1 = erg.g1_ergebnis;
   if (g1) {
+    var randfall = String(g1.modus || "").indexOf("bandbreite_") === 0;
     var einzel = g1.szenarien ? Object.keys(g1.szenarien).map(function (k) { return [k, g1.szenarien[k]]; })
                               : (g1.ergebnis ? [["", g1.ergebnis]] : []);
-    // Bei einer Bandbreite gibt es zwei Baubereiche (optimistisch und
-    // konservativ). Beide werden gezeichnet, aber nur der erste bekommt ein
-    // dauerhaftes Etikett -- sonst stand "Baubereich" zweimal uebereinander
-    // auf derselben Stelle.
-    var ersterBaubereich = true;
     einzel.forEach(function (paar) {
       var name = paar[0], e = paar[1];
       if (!e || !e.baubereich_koordinaten) return;
-      var popupB = "<b>Baubereich G1" + (name ? " — " + esc(SZENARIO_G1_LABEL[name] || name) : "") + "</b><span class=\"m\">" +
-        "Baubereich " + fmt(e.baubereich_m2, 1) + " m²<br>" +
-        "Fussabdruck " + fmt(e.fussabdruck_m2, 1) + " m² (" + esc(e.fussabdruck_limitiert_durch) + ")<br>" +
-        "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²</span>";
-      anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten, STIL.baubereich, popupB,
-        "sec-potenzial", "Bebaubare Fläche", ersterBaubereich).length;
-      ersterBaubereich = false;
+      var bezeichnung = SZENARIO_G1_LABEL[name] || name;
+      var popupB;
+      if (randfall) {
+        popupB = "<b>Randfall — keine belastbare Fläche</b><span class=\"m\">" +
+          esc(bezeichnung) + "<br><br>" +
+          "Einer von zwei Rechenrändern einer Sensitivität, nicht ein zulässiger " +
+          "Baukörper. Welche Nachbarseite den grossen Grenzabstand trägt, ist ohne " +
+          "Gebäudeentwurf nicht bestimmbar — deshalb wird beides gerechnet und keines " +
+          "als Ergebnis ausgegeben.<br><br>" +
+          "Fläche dieses Randes " + fmt(e.baubereich_m2, 1) + " m²<br>" +
+          "rechnerische Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²<br><br>" +
+          "Die Einordnung steht im Reiter Potenzial unter „Herleitung“.</span>";
+      } else {
+        popupB = "<b>Bebaubare Fläche</b><span class=\"m\">" +
+          (name ? esc(bezeichnung) + "<br>" : "") +
+          "Baubereich " + fmt(e.baubereich_m2, 1) + " m²<br>" +
+          "Fussabdruck " + fmt(e.fussabdruck_m2, 1) + " m²" +
+          (e.fussabdruck_limitiert_durch
+            ? "<br>begrenzt durch " + esc(klartext(e.fussabdruck_limitiert_durch)) : "") + "<br>" +
+          "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²</span>";
+      }
+      // Beide Raender tragen ihr eigenes Etikett -- sie sind verschiedene
+      // Dinge, und ohne Etikett sieht man zwei Flaechen ohne Erklaerung.
+      anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten,
+        randfall ? STIL.randfall : STIL.baubereich, popupB, "sec-potenzial",
+        randfall ? "Randfall: " + bezeichnung : "Bebaubare Fläche", true).length;
     });
   }
+  // Auch ohne G1 zuruecksetzen: sonst behielte die Bedienleiste die
+  // Beschriftung der vorigen Analyse.
+  benenneBaubereichEbene(!!g1 && String(g1.modus || "").indexOf("bandbreite_") === 0);
   setLayerVerfuegbar("baubereich", anzB);
 
   /* Bestand: echte Gebaeudegrundrisse mit GWR-Merkmalen */
@@ -1972,7 +2014,7 @@ function zeichneErgebnisAufKarte(erg) {
   alsListe((m1.bestand || {}).gebaeude).forEach(function (g) {
     if (!g.grundriss) return;
     var popup = "<b>" + esc(g.adresse || ("EGID " + g.egid)) + "</b><span class=\"m\">" +
-      esc(g.kategorie_text || "Kategorie unbekannt") + "<br>" +
+      satz(g.kategorie_text || "Kategorie unbekannt") + "<br>" +
       (leer(g.baujahr) ? "Baujahr unbekannt" : "Baujahr " + esc(g.baujahr)) + ", " +
       (leer(g.geschosse) ? "Geschosszahl unbekannt" : esc(g.geschosse) + " Geschoss(e)") + "<br>" +
       "Grundriss " + fmt(g.grundriss_flaeche_m2, 1) + " m²" +
@@ -1991,12 +2033,12 @@ function zeichneErgebnisAufKarte(erg) {
       "sec-restriktionen", "Gewässerraum").length;
   });
   alsListe(rg.baulinien_gefunden).forEach(function (bl) {
-    var p = "<b>Baulinie</b><span class=\"m\">" + esc(bl.art || bl.typ || "Baulinie") + "<br>Quelle: Kanton " + esc(bl.kanton) + "</span>";
+    var p = "<b>Baulinie</b><span class=\"m\">" + begriff(bl.art || bl.typ || "Baulinie") + "<br>Quelle: Kanton " + esc(bl.kanton) + "</span>";
     anzB2 += zeichneLinien(gruppen.baulinie, bl.koordinaten || bl.geometrie_koordinaten,
       STIL.restrikt, p, "sec-restriktionen", "Baulinie").length;
   });
   alsListe(rg.restriktionsflaechen_fuer_g1).forEach(function (rf) {
-    var p = "<b>Restriktionsfläche (in G1 abgezogen)</b><span class=\"m\">" + esc(rf.typ || rf.quelle || "Restriktion") + "</span>";
+    var p = "<b>Restriktionsfläche (in G1 abgezogen)</b><span class=\"m\">" + begriff(rf.typ || rf.quelle || "Restriktion") + "</span>";
     anzR += zeichnePolygone(gruppen.restrikt, rf.koordinaten || rf, STIL.restrikt, p,
       "sec-restriktionen", esc(rf.typ || "Restriktion")).length;
   });
@@ -2052,11 +2094,19 @@ function tile(lbl, val, unit, hl) {
     '<div class="val' + (ist ? " na" : "") + '">' + (ist ? "nicht bestimmbar" : esc(val)) +
     (!ist && unit ? ' <span class="unit">' + esc(unit) + "</span>" : "") + "</div></div>";
 }
+// Ziffernschrift nur fuer Zahlenwerte: "289.1 m²", "0.45", "CH32777...".
+// Nicht fuer "ordentliche Bauzone" oder "Wohnzone W2" -- ein Wort von vier
+// Kleinbuchstaben genuegt als Beleg, dass es Text ist und keine Groesse.
+function istZahlenwert(v) {
+  var t = String(v);
+  return /\d/.test(t) && !/[a-zäöüß]{4,}/.test(t);
+}
 function kvRows(paare) {
   var gueltig = paare.filter(function (p) { return p; });
   return '<div class="kv' + (gueltig.length < 2 ? " eins" : "") + '">' + gueltig.map(function (p) {
     var k = p[0], v = p[1], na = p[2];
-    return '<div class="kvpaar"><div class="k">' + esc(k) + '</div><div class="v' + (leer(v) ? " na" : "") + '">' +
+    var klasse = leer(v) ? " na" : (istZahlenwert(v) ? "" : " text");
+    return '<div class="kvpaar"><div class="k">' + esc(k) + '</div><div class="v' + klasse + '">' +
       (leer(v) ? esc(na || "nicht verfügbar") : esc(v)) + "</div></div>";
   }).join("") + "</div>";
 }
@@ -2832,9 +2882,11 @@ function zonenHierarchie(m1, zz) {
   }
   betroffeneOerebThemen(m1).forEach(function (k) {
     var wert = ((m1.oereb || {}).umweltrisiken || {})[k];
-    var status = (wert && typeof wert === "object") ? wert.status : wert;
-    rTeile.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen — Einzelheiten im " +
-                 "Reiter Daten & Quellen (" + esc(String(status)) + ")"]);
+    var status = String((wert && typeof wert === "object") ? wert.status : wert || "");
+    // Sagt der Status mehr als "betroffen", steht er dabei -- sonst nicht.
+    var zusatz = /^betroffen$/i.test(status.trim()) ? "" : " (" + klartext(status) + ")";
+    rTeile.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen" + zusatz +
+                 " — Einzelheiten im Reiter Daten & Quellen"]);
   });
   var d = rTeile.length
     ? kvRows(rTeile)
@@ -2919,14 +2971,21 @@ function secBaurecht(erg, m1, zz) {
       ["Kantonaler Zonentyp", zoneKlarname(basis.typ_kantonal_bezeichnung)],
       ["Hauptnutzung", basis.hauptnutzung_bezeichnung],
       ["Rechtsstatus", klartext(basis.rechtsstatus)],
-      ["Bestimmtheit der Zuordnung", klartext(nk.basiszone_status)],
+      ["Punktabfrage ergab", klartext(nk.basiszone_status)],
+      ["Daraus zugeordnet", zz.status === "gefunden" ? "eindeutig" : klartext(zz.status)],
       ["Ermittelt über", klartext(nk.quelle)],
       ["Ausgewertetes Reglement", m2.dokument_titel],
       ["Stand", m2.stand_datum]
     ]) + "</div></details>" +
-    (nk.basiszone_status && nk.basiszone_status !== "eindeutig"
-      ? '<div class="note warn">Die Grundnutzungszone ist laut Klassifikation <b>' + begriff(nk.basiszone_status) +
-        "</b> — die Kennzahlen unten stehen entsprechend unter Vorbehalt.</div>" : "") +
+    (zz.status === "gefunden"
+      ? (zz.basiszone_quelle === "nutzungsklassifikation_flaechenanteil"
+          ? '<div class="note ok">Die Punktabfrage der Nutzungsplanung fand hier mehrere ' +
+            'Grundnutzungen nebeneinander — die Zonengrenze verläuft an dieser Parzelle. ' +
+            'Massgebend ist die Grundnutzung, welche die Parzellenfläche tatsächlich deckt; ' +
+            'genau danach wurde zugeordnet.</div>'
+          : "")
+      : '<div class="note warn">Die massgebende Grundnutzung liess sich nicht eindeutig ' +
+        "bestimmen — die Kennzahlen unten stehen entsprechend unter Vorbehalt.</div>") +
     '<h4 class="subhead">Zonenzuordnung</h4>' + zonenTeil +
     kantenprotokoll(erg, m1) +
     (sonder ? '<h4 class="subhead">Sonderregelungen &amp; Boni</h4>' + sonder : "") +
@@ -3076,7 +3135,21 @@ function satz(v) {
     bewahrt.push(kennung);
     return "\u0001" + (bewahrt.length - 1) + "\u0001";
   });
-  t = lesbar(t.replace(SCHLUESSEL_WORT, function (w) { return klartext(w); }));
+  t = t.replace(SCHLUESSEL_WORT, function (w) { return klartext(w); });
+  // Ein Abzug der Form {'schluessel': wert} wird zur lesbaren Aufzaehlung.
+  t = t.replace(/\{([^{}]*)\}/g, function (ganz, inhalt) {
+    var paare = inhalt.match(/'[a-z_][a-z0-9_]*':\s*[^,]+/g);
+    if (!paare) return ganz;
+    return paare.map(function (paar) {
+      var teil = paar.match(/'([a-z_][a-z0-9_]*)':\s*(.+)/);
+      return klartext(teil[1]) + " " + teil[2].trim();
+    }).join(" · ");
+  });
+  // "limitiert durch geometrie" -- nur wo ein Begriff hinterlegt ist.
+  t = t.replace(/(durch\s+)([a-z][a-z0-9_]*)/g, function (ganz, vor, wort) {
+    return FACHBEGRIFF[wort] ? vor + FACHBEGRIFF[wort] : ganz;
+  });
+  t = lesbar(t);
   return esc(t.replace(/\u0001(\d+)\u0001/g, function (_, i) { return bewahrt[+i]; }));
 }
 // begriff() ist dasselbe fuer einen Wert, der NUR ein Schluessel ist --
@@ -3365,7 +3438,7 @@ function secPotenzial(erg) {
   if (sia) {
     siaInhalt = bandbreite
       ? Object.keys(sia).map(function (n) {
-          return '<h4 class="subhead">' + esc(SZENARIO_G1_LABEL[n] || n) + "</h4>" + siaTabelle(sia[n]);
+          return flUeberschrift(n) + siaTabelle(sia[n]);
         }).join("")
       : siaTabelle(sia);
   }
@@ -3529,7 +3602,12 @@ function flTeile(f) {
   return [["", f]];
 }
 function flUeberschrift(name) {
-  return name ? '<h4 class="subhead">' + esc(SZENARIO_G1_LABEL[name] || name) + "</h4>" : "";
+  if (!name) return "";
+  // Die Kaskade wird je Rand einmal gerechnet. Ohne das Wort "Randfall"
+  // liest sich jede dieser Tabellen wie ein Ergebnis.
+  var randfall = /^(nachbarn_|alle_kanten_)/.test(name);
+  return '<h4 class="subhead">' + (randfall ? "Randfall: " : "") +
+    esc(SZENARIO_G1_LABEL[name] || name) + "</h4>";
 }
 function flNichtBestimmbar(f) {
   if (!f) return "";
