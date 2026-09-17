@@ -201,10 +201,20 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 @keyframes flash { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { section.sec.flash { animation: none; } }
 .sechead { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
-.sechead .num { font-family: var(--mono); font-size: 11px; color: var(--ink-3); font-weight: 600; }
+.sechead .num { display: none; }
 .sechead h3 { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
 .sechead .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
 .subhead { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); margin: 16px 0 8px; font-weight: 700; }
+
+/* Kennzahlen der Zone: nebeneinander, solange Platz ist. Was das
+   Reglement nicht hergibt, bekommt eine flachere Karte -- die Angabe
+   bleibt vollstaendig, sie draengt sich nur nicht mehr vor. */
+.kzgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 9px; align-items: start; margin-bottom: 10px; }
+.kzgrid .card { margin-bottom: 0; }
+.kzgrid .card.leer { padding: 9px 11px; opacity: .72; }
+.kzgrid .card.leer .cardhead { margin-bottom: 4px; }
+.kzgrid .card.leer .cardhead h4 { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.kzgrid .card.leer .bigval { font-size: 12px; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .tile { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 9px 11px; }
@@ -221,11 +231,14 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 }
 .maplink:hover { background: var(--accent-soft); border-color: var(--accent); }
 
-.kv { display: grid; grid-template-columns: minmax(120px, 44%) 1fr; gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
-.kv > * { background: var(--panel); padding: 7px 10px; font-size: 13px; }
-.kv .k { color: var(--ink-2); }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.kvpaar { display: grid; grid-template-columns: minmax(96px, 42%) 1fr; gap: 1px; background: var(--line-2); min-width: 0; }
+.kvpaar > * { background: var(--panel); padding: 7px 10px; font-size: 13px; min-width: 0; }
+.kv .k { color: var(--ink-2); overflow-wrap: break-word; }
 .kv .v { font-family: var(--mono); font-variant-numeric: tabular-nums; word-break: break-word; }
 .kv .v.na { font-family: "Archivo", sans-serif; color: var(--ink-3); font-size: 12px; }
+/* Eine einzelne Zeile soll nicht auf halber Breite enden. */
+.kv.eins { grid-template-columns: 1fr; }
 
 .card { border: 1px solid var(--line); border-radius: 9px; padding: 12px; margin-bottom: 10px; background: var(--panel); }
 .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -285,6 +298,21 @@ details.more > div { padding-top: 10px; }
 .ezv.na { font-family: "Archivo", sans-serif; font-size: 12px; color: var(--ink-3); }
 .ezh { font-size: 11px; color: var(--ink-3); margin-top: 2px; font-family: var(--mono); }
 .ebene .badge { vertical-align: 1px; }
+
+/* Die drei Datenarten im Markt-Reiter. Die Nummer ist hier echte
+   Ordnung -- extern, eigen, angenommen -- und nicht die alte
+   Abschnittszaehlung. */
+.sechead .enum2 { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--ink-3);
+  border: 1px solid var(--line-2); border-radius: 50%; width: 17px; height: 17px; flex: none;
+  display: flex; align-items: center; justify-content: center; }
+.mkturteil { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; margin: 10px 0; background: var(--panel-2); }
+.mkturteil.offen { border-color: var(--warn); background: var(--warn-soft); }
+.mktzahlen { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline; }
+.mktzahlen b { font-family: var(--mono); font-size: 19px; font-variant-numeric: tabular-nums; }
+.mkturteil .f { margin-top: 8px; }
+.mkturteil ul.plain { margin-top: 8px; }
+/* Lange Objektlisten scrollen in ihrem eigenen Bereich, nicht die Seite. */
+.mktliste { max-height: 420px; overflow-y: auto; }
 
 .zitat { border-left: 3px solid var(--line); padding: 4px 0 4px 10px; margin: 7px 0; font-size: 12.5px; color: var(--ink-2); font-style: italic; }
 .artikel { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
@@ -2025,10 +2053,11 @@ function tile(lbl, val, unit, hl) {
     (!ist && unit ? ' <span class="unit">' + esc(unit) + "</span>" : "") + "</div></div>";
 }
 function kvRows(paare) {
-  return '<div class="kv">' + paare.map(function (p) {
+  var gueltig = paare.filter(function (p) { return p; });
+  return '<div class="kv' + (gueltig.length < 2 ? " eins" : "") + '">' + gueltig.map(function (p) {
     var k = p[0], v = p[1], na = p[2];
-    return '<div class="k">' + esc(k) + '</div><div class="v' + (leer(v) ? " na" : "") + '">' +
-      (leer(v) ? esc(na || "nicht verfügbar") : esc(v)) + "</div>";
+    return '<div class="kvpaar"><div class="k">' + esc(k) + '</div><div class="v' + (leer(v) ? " na" : "") + '">' +
+      (leer(v) ? esc(na || "nicht verfügbar") : esc(v)) + "</div></div>";
   }).join("") + "</div>";
 }
 function springeZu(id) {
@@ -2387,10 +2416,13 @@ function secStandort(m1) {
     if (v.betroffen === false) txt = "keine Festlegung an diesem Standort";
     else if (alsListe(v.eintraege).length) {
       txt = alsListe(v.eintraege).map(function (x) {
-        return (x && typeof x === "object") ? (x.bezeichnung || x.typ || JSON.stringify(x)) : x;
+        if (!x) return "";
+        if (typeof x !== "object") return x;
+        return x.bezeichnung || x.typ ||
+          Object.keys(x).map(function (f) { return klartext(f) + ": " + x[f]; }).join(", ");
       }).join(" · ");
     } else txt = v.hinweis || "vorhanden";
-    umweltZeilen.push([UMWELT[k] || k, txt]);
+    umweltZeilen.push([UMWELT[k] || klartext(k), txt]);
   });
 
   return '<section class="sec" id="sec-standort">' +
@@ -2432,16 +2464,23 @@ function kennzahlBlock(label, kz, einheit) {
   var conf = kz.confidence || "–";
   var badge = conf === "hoch" ? "ok" : (conf === "nicht_bestimmbar" ? "mute" : "warn");
   var bed = alsListe(kz.bedingungen);
-  return '<div class="card"><div class="cardhead"><h4>' + esc(label) + '</h4><span class="badge ' + badge + '">' + esc(conf) + "</span></div>" +
+  return '<div class="card' + (hatWert ? "" : " leer") + '"><div class="cardhead"><h4>' + esc(label) +
+    '</h4>' + (hatWert ? '<span class="badge ' + badge + '">' + begriff(conf) + "</span>" : "") + "</div>" +
     '<div class="bigval' + (hatWert ? "" : " na") + '">' +
       (hatWert ? esc(kz.wert) + (einheit ? ' <span class="unit">' + esc(einheit) + "</span>" : "") : "nicht bestimmbar") + "</div>" +
-    (kz.unklarheit ? '<div class="note warn" style="margin-top:8px">' + esc(kz.unklarheit) + "</div>" : "") +
+    (kz.unklarheit ? '<div class="note warn" style="margin-top:8px">' + satz(kz.unklarheit) + "</div>" : "") +
     ((kz.artikel_referenz || kz.zitat || bed.length)
       ? '<details class="more"><summary>Rechtsgrundlage &amp; Bedingungen</summary><div>' +
-        (kz.artikel_referenz ? '<div class="artikel">' + esc(kz.artikel_referenz) + (kz.quelle_dokument ? " · " + esc(kz.quelle_dokument) : "") + "</div>" : "") +
-        (kz.zitat ? '<div class="zitat">„' + esc(kz.zitat) + "“</div>" : "") +
+        (kz.artikel_referenz ? '<div class="artikel">' + begriff(kz.artikel_referenz) + (kz.quelle_dokument ? " · " + satz(kz.quelle_dokument) : "") + "</div>" : "") +
+        (kz.zitat ? '<div class="zitat">„' + satz(kz.zitat) + "“</div>" : "") +
         (bed.length ? '<ul class="plain">' + bed.map(function (b) {
-          return "<li>" + esc(typeof b === "string" ? b : (b.bedingung || JSON.stringify(b))) + "</li>";
+          if (typeof b === "string") return "<li>" + satz(b) + "</li>";
+          var text = b.bedingung_text || b.bedingung || b.text;
+          var wert = b.wert_unter_bedingung;
+          return "<li>" + (text ? satz(text) : "Bedingung ohne Text") +
+            (leer(wert) ? "" : ' <b>' + esc(wert) + "</b> unter dieser Bedingung") +
+            (b.artikel_referenz ? ' <span class="artikel">' + begriff(b.artikel_referenz) + "</span>" : "") +
+            "</li>";
         }).join("") + "</ul>" : "") +
         "</div></details>"
       : "") +
@@ -2449,7 +2488,7 @@ function kennzahlBlock(label, kz, einheit) {
 }
 function zoneKennzahlen(zone) {
   if (!zone) return "";
-  return KENNZAHLEN.map(function (k) {
+  return '<div class="kzgrid">' + KENNZAHLEN.map(function (k) {
     var kz = zone[k[0]];
     if (kz === null || kz === undefined) return "";
     if (typeof kz !== "object") {
@@ -2457,7 +2496,7 @@ function zoneKennzahlen(zone) {
         esc(kz) + (k[2] ? ' <span class="unit">' + esc(k[2]) + "</span>" : "") + "</div></div>";
     }
     return kennzahlBlock(k[1], kz, k[2]);
-  }).join("");
+  }).join("") + "</div>";
 }
 var KANTEN_ART_TEXT = {
   strasse: ["Strasse", "ok"],
@@ -2495,20 +2534,20 @@ function kantenprotokoll(erg, m1) {
   // Relevanzschwelle. Die massgebenden Kanten stehen deshalb in der Tabelle,
   // die uebrigen dahinter -- weggelassen wird keine.
   var zeileHtml = function (k) {
-    var art = KANTEN_ART_TEXT[k.art] || [k.art || "–", "mute"];
+    var art = KANTEN_ART_TEXT[k.art] || [klartext(k.art) || "–", "mute"];
     var beleg = k.strassenname ? esc(k.strassenname) + (leer(k.strassen_objektart) ? "" : '<div class="f">Objektart ' + esc(k.strassen_objektart) + "</div>")
       : (k.nachbar_nummer ? "Parzelle " + esc(k.nachbar_nummer) + (k.nachbar_egrid ? " · " + esc(k.nachbar_egrid) : "")
       : (k.nachbar_egrid ? esc(k.nachbar_egrid) : "&ndash;"));
     var abstand = leer(k.abstand_m)
       ? '<span class="na">' + (ausG1 ? "nicht bestimmbar" : "&ndash;") + "</span>"
-      : esc(k.abstand_m) + " m" + (k.abstand_feld ? '<div class="f">' + esc(k.abstand_feld) + "</div>" : "");
+      : esc(k.abstand_m) + " m" + (k.abstand_feld ? '<div class="f">' + begriff(k.abstand_feld) + "</div>" : "");
     return "<tr><td>" + esc(k.nr) + "</td>" +
       "<td>" + (leer(k.laenge_m) ? "&ndash;" : esc(k.laenge_m) + " m") + "</td>" +
       '<td><span class="badge ' + art[1] + '">' + esc(art[0]) + "</span></td>" +
       "<td>" + abstand + "</td>" +
       '<td class="f">' + beleg + "</td>" +
-      "<td>" + esc(k.begruendung || "") +
-        (k.unsicherheit ? '<div class="note warn" style="margin-top:6px">' + esc(k.unsicherheit) + "</div>" : "") +
+      "<td>" + satz(k.begruendung || "") +
+        (k.unsicherheit ? '<div class="note warn" style="margin-top:6px">' + satz(k.unsicherheit) + "</div>" : "") +
       "</td></tr>";
   };
   var massgebend = zeilen.filter(function (k) { return k.art !== "nicht_relevant"; });
@@ -2566,6 +2605,35 @@ function kantenprotokoll(erg, m1) {
    Buchstabe gross), nicht erfunden.
 */
 var FACHBEGRIFF = {
+  // Woher die massgebende Grundnutzung stammt.
+  nutzungsklassifikation: "Nutzungsplanung des Kantons",
+  nutzungsklassifikation_flaechenanteil:
+    "Nutzungsplanung des Kantons, über den Flächenanteil an der Parzelle",
+  oereb_legendtext_fallback: "ÖREB-Kataster (Legendentext)",
+  zonencode: "Zonenkürzel",
+  namensaehnlichkeit: "Namensähnlichkeit",
+
+  // Anteile der Flaechenkaskade -- stehen als Schluessel in den Annahmen.
+  kf_anteil_an_gf: "Konstruktionsfläche, Anteil an der GF",
+  vf_ff_anteil_an_ngf: "Verkehrs- und Funktionsfläche, Anteil an der NGF",
+  hnf_anteil_an_nf: "Hauptnutzfläche, Anteil an der NF",
+  nwf_anteil_an_hnf: "Wohnfläche, Anteil an der HNF",
+  nnf_anteil_an_nf: "Nebennutzfläche, Anteil an der NF",
+  geschosshoehe_m: "Geschosshöhe",
+  lichte_raumhoehe_m: "lichte Raumhöhe",
+  konstruktive_hoehe_m: "konstruktive Höhe",
+  grenzabstand_klein_m: "kleiner Grenzabstand",
+  grenzabstand_gross_m: "grosser Grenzabstand",
+  strassenabstand_m: "Strassenabstand",
+  gebaeudehoehe_m: "Gebäudehöhe",
+  gesamthoehe_m: "Gesamthöhe",
+  vollgeschosse_max: "maximale Vollgeschosse",
+  ausnuetzungsziffer_az: "Ausnützungsziffer",
+  baumassenziffer_bmz: "Baumassenziffer",
+  ueberbauungsziffer_uz: "Überbauungsziffer",
+  anrechenbare_geschossflaechenziffer_abgf: "anrechenbare Geschossflächenziffer",
+  kommunal_oder_parzellenspezifisch: "kommunal oder parzellenspezifisch geregelt",
+
   // Was eine Groesse der G1-Kaskade begrenzt. Die Engine nennt hier ihren
   // internen Schluessel; auf dem Bildschirm gehoert der Grund hin.
   geometrie: "die Abstandsgeometrie",
@@ -2627,7 +2695,7 @@ function klartext(schluessel) {
   if (schluessel === null || schluessel === undefined || schluessel === "") return "–";
   var k = String(schluessel);
   if (FACHBEGRIFF[k]) return FACHBEGRIFF[k];
-  var t = k.replace(/_/g, " ").trim();
+  var t = lesbar(k.replace(/_/g, " ").trim());
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : "–";
 }
 
@@ -2810,7 +2878,7 @@ function secBaurecht(erg, m1, zz) {
       kvRows([
         ["Amtliche Bezeichnung", zz.amtliche_zonenbezeichnung],
         ["Übereinstimmung", leer(zz.aehnlichkeit) ? null : Math.round(zz.aehnlichkeit * 100) + " %"],
-        ["Herkunft der Basiszone", zz.basiszone_quelle]
+        ["Herkunft der Basiszone", klartext(zz.basiszone_quelle)]
       ]) + "</div>" +
       '<h4 class="subhead">Kennzahlen der geltenden Zone</h4>' + zoneKennzahlen(zz.zone);
   } else {
@@ -2822,16 +2890,16 @@ function secBaurecht(erg, m1, zz) {
     var vor = alsListe(s.voraussetzungen);
     var zonen = alsListe(s.gilt_fuer_zonen);
     return '<div class="card"><div class="cardhead"><h4>' + esc(s.titel) +
-      '</h4><span class="badge mute">' + esc(klartext(s.typ)) + "</span></div>" +
-      "<p>" + esc(s.beschreibung) + "</p>" +
-      (s.bonus_effekt ? '<div class="note ok"><b>Effekt:</b> ' + esc(s.bonus_effekt) + "</div>" : "") +
+      '</h4><span class="badge mute">' + begriff(s.typ) + "</span></div>" +
+      "<p>" + satz(s.beschreibung) + "</p>" +
+      (s.bonus_effekt ? '<div class="note ok"><b>Effekt:</b> ' + satz(s.bonus_effekt) + "</div>" : "") +
       '<details class="more"><summary>Voraussetzungen &amp; Rechtsgrundlage</summary><div>' +
         (vor.length
-          ? '<ul class="plain">' + vor.map(function (v) { return "<li>" + esc(v) + "</li>"; }).join("") + "</ul>"
+          ? '<ul class="plain">' + vor.map(function (v) { return "<li>" + satz(v) + "</li>"; }).join("") + "</ul>"
           : "<p>Keine Voraussetzungen angegeben.</p>") +
         (zonen.length ? '<div class="artikel">Gilt für: ' + esc(zonen.join(", ")) + "</div>" : "") +
-        (s.artikel_referenz ? '<div class="artikel">' + esc(s.artikel_referenz) + "</div>" : "") +
-        (s.zitat ? '<div class="zitat">„' + esc(s.zitat) + "“</div>" : "") +
+        (s.artikel_referenz ? '<div class="artikel">' + begriff(s.artikel_referenz) + "</div>" : "") +
+        (s.zitat ? '<div class="zitat">„' + satz(s.zitat) + "“</div>" : "") +
       "</div></details></div>";
   }).join("");
 
@@ -2845,7 +2913,7 @@ function secBaurecht(erg, m1, zz) {
     '<div class="note">Vier Ebenen, in der Reihenfolge, in der sie einander vorgehen. ' +
     'Massgebend ist immer die oberste, die tatsächlich greift.</div>' +
     zonenHierarchie(m1, zz) +
-    '<h4 class="subhead">Herleitung und Nachweise</h4>' +
+    '<details class="more"><summary>Herleitung und Nachweise</summary><div>' +
     kvRows([
       ["Grundnutzung (amtlich)", zoneKlarname(basis.typ_kommunal_bezeichnung)],
       ["Kantonaler Zonentyp", zoneKlarname(basis.typ_kantonal_bezeichnung)],
@@ -2855,9 +2923,9 @@ function secBaurecht(erg, m1, zz) {
       ["Ermittelt über", klartext(nk.quelle)],
       ["Ausgewertetes Reglement", m2.dokument_titel],
       ["Stand", m2.stand_datum]
-    ]) +
+    ]) + "</div></details>" +
     (nk.basiszone_status && nk.basiszone_status !== "eindeutig"
-      ? '<div class="note warn">Die Grundnutzungszone ist laut Klassifikation <b>' + esc(nk.basiszone_status) +
+      ? '<div class="note warn">Die Grundnutzungszone ist laut Klassifikation <b>' + begriff(nk.basiszone_status) +
         "</b> — die Kennzahlen unten stehen entsprechend unter Vorbehalt.</div>" : "") +
     '<h4 class="subhead">Zonenzuordnung</h4>' + zonenTeil +
     kantenprotokoll(erg, m1) +
@@ -2873,9 +2941,9 @@ function secBaurecht(erg, m1, zz) {
     (rv.length
       ? '<details class="more"><summary>Rechtsvorschriften aus dem ÖREB-Kataster (' + rv.length + ", davon " + rvBzo.length + ' bauordnungsrelevant)</summary><div><ul class="plain">' +
         rv.map(function (p) {
-          return "<li>" + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.titel) + "</a>" : esc(p.titel)) +
+          return "<li>" + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + satz(p.titel) + "</a>" : satz(p.titel)) +
             (p.ist_wahrscheinlich_bzo_reglement ? ' <span class="badge ok">BZO</span>' : "") +
-            (p.rechtsebene ? ' <span class="artikel">' + esc(p.rechtsebene) + "</span>" : "") + "</li>";
+            (p.rechtsebene ? ' <span class="artikel">' + begriff(p.rechtsebene) + "</span>" : "") + "</li>";
         }).join("") + "</ul></div></details>" : "") +
   "</section>";
 }
@@ -2923,7 +2991,7 @@ function g1Tabelle(e) {
   (function () {
     var hw = alsListe(e.hinweise);
     return hw.length ? '<details class="more"><summary>Berechnungshinweise (' + hw.length + ')</summary><div><ul class="plain">' +
-      hw.map(function (h) { return "<li>" + esc(lesbar(h)) + "</li>"; }).join("") + "</ul></div></details>" : "";
+      hw.map(function (h) { return "<li>" + satz(h) + "</li>"; }).join("") + "</ul></div></details>" : "";
   })();
 }
 var SIA_LABEL = {
@@ -2947,7 +3015,7 @@ function siaTabelle(w) {
   });
   return '<div class="kv">' + zeilen + "</div>" +
     (unklar.length ? '<details class="more"><summary>Warum NF/HNF/NNF nicht bestimmbar sind</summary><div><ul class="plain">' +
-      unklar.map(function (u) { return "<li>" + esc(lesbar(u)) + "</li>"; }).join("") + "</ul>" +
+      unklar.map(function (u) { return "<li>" + satz(u) + "</li>"; }).join("") + "</ul>" +
       '<p style="font-size:12.5px;color:var(--ink-3)">Diese Werte hängen vom Grundriss ab. Sie werden erst ausgewiesen, wenn belastbare Referenzprojekte hinterlegt sind — nicht über eine geschätzte Quote.</p></div></details>' : "");
 }
 /* ---------------------------------------------------------------------------
@@ -2975,7 +3043,55 @@ function siaTabelle(w) {
 // Woerter, in denen ae/oe/ue KEIN Umlaut ist. Ohne diese Liste wuerde aus
 // "vollstaendig NEUEN Baukoerpers" ein "NÜN" und aus "aktuellen" ein
 // "aktüllen".
-var KEIN_UMLAUT = /neu|quel|aktuell|eventuell|virtuell|individuell|manuell|steuer|dauer|bauer|teuer|feuer|aero|michael|israel/i;
+var KEIN_UMLAUT = /neu|quel|quer|aktuell|eventuell|virtuell|individuell|manuell|steuer|dauer|bauer|teuer|feuer|aero|shoelace|michael|israel/i;
+// Ein Grossbuchstabe MITTEN im Wort, neben Kleinbuchstaben, heisst: das
+// ist kein deutsches Fliesstextwort, sondern ein Kuerzel oder ein
+// technischer Name -- "OeZ", "OeBA", "UeG", "BauG". So schreibt die
+// Gemeinde sie, und sie zu "korrigieren" hiesse, eine amtliche
+// Bezeichnung zu veraendern. Durchgehende Grossschreibung ist davon
+// ausgenommen: "GENAEHERT" ist betonter Fliesstext und soll
+// "GENÄHERT" werden.
+function istKuerzel(wort) {
+  return /[a-zäöüß]/.test(wort) && /.[A-ZÄÖÜ]/.test(wort);
+}
+// Ein Schluessel der Engine, irgendwo in einem Satz. Nicht getroffen wird,
+// was hinter einem Punkt steht -- "ch.bfs.gebaeude_wohnungs_register" ist
+// eine Layerbezeichnung und bleibt, wie sie ist.
+var SCHLUESSEL_WORT = /(?<![.\w])[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g;
+var NUR_SCHLUESSEL = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/;
+
+// satz() ist esc() fuer Text AUS DER ENGINE: Schluessel werden zu
+// Begriffen, ASCII-Schreibweisen zu richtigen. Fuer Adressen,
+// Zonenbezeichnungen, Objektnamen und alles andere, was aus einem
+// Register oder vom Benutzer kommt, bleibt esc() zustaendig -- dort waere
+// jede Ersetzung eine Verfaelschung.
+// Punktgetrennte Kennungen: "ch.bfs.gebaeude_wohnungs_register",
+// "geocoding.lv95_koordinaten". Mindestens zwei Abschnitte, jeder mit
+// Kleinbuchstaben beginnend -- damit weder "289.1" noch "z.B." hineinfaellt.
+var KENNUNG = /\b[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*(?:\.[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*)+\b/g;
+function satz(v) {
+  if (leer(v)) return esc(v);
+  var bewahrt = [];
+  var t = String(v).replace(KENNUNG, function (kennung) {
+    bewahrt.push(kennung);
+    return "\u0001" + (bewahrt.length - 1) + "\u0001";
+  });
+  t = lesbar(t.replace(SCHLUESSEL_WORT, function (w) { return klartext(w); }));
+  return esc(t.replace(/\u0001(\d+)\u0001/g, function (_, i) { return bewahrt[+i]; }));
+}
+// begriff() ist dasselbe fuer einen Wert, der NUR ein Schluessel ist --
+// ein Aufzaehlungswert wie "nicht_bestimmbar" oder ein Feldname.
+function begriff(v) {
+  if (leer(v)) return esc(v);
+  var t = String(v);
+  return NUR_SCHLUESSEL.test(t) ? esc(klartext(t)) : esc(lesbar(t));
+}
+// Ein Feldpfad im Quellennachweis: "geocoding.lv95_koordinaten".
+function feldpfad(v) {
+  if (leer(v)) return esc(v);
+  return esc(lesbar(String(v).split(".").map(function (teil) { return klartext(teil); }).join(" › ")));
+}
+
 function lesbar(t) {
   if (leer(t)) return t;
   return String(t)
@@ -2983,7 +3099,7 @@ function lesbar(t) {
     .replace(/ x /g, " × ")
     .replace(/ -- /g, " — ")
     .replace(/[A-Za-zÄÖÜäöüß]+/g, function (wort) {
-      if (KEIN_UMLAUT.test(wort)) return wort;
+      if (KEIN_UMLAUT.test(wort) || istKuerzel(wort)) return wort;
       return wort.replace(/ae/g, "ä").replace(/oe/g, "ö").replace(/ue/g, "ü")
                  .replace(/Ae/g, "Ä").replace(/Oe/g, "Ö").replace(/Ue/g, "Ü")
                  .replace(/AE/g, "Ä").replace(/OE/g, "Ö").replace(/UE/g, "Ü");
@@ -3220,7 +3336,7 @@ function g1Herleitung(erg) {
     (function () {
       var kh = alsListe(g1.kennzahl_hinweise);
       return kh.length ? '<details class="more"><summary>Hinweise zu den verwendeten Kennzahlen (' + kh.length +
-        ')</summary><div><ul class="plain">' + kh.map(function (h) { return "<li>" + esc(lesbar(h)) + "</li>"; }).join("") +
+        ')</summary><div><ul class="plain">' + kh.map(function (h) { return "<li>" + satz(h) + "</li>"; }).join("") +
         "</ul></div></details>" : "";
     })();
 }
@@ -3317,23 +3433,23 @@ function annahmenTabelle(annahmen) {
       var a = annahmen[k];
       var badge = HERKUNFT_BADGE[a.herkunft] || [a.herkunft, "mute"];
       var bereich = a.referenzbereich ? a.referenzbereich[0] + " – " + a.referenzbereich[1] : "–";
-      return '<tr><td class="f">' + esc(a.schluessel) + "</td>" +
+      return "<tr><td>" + begriff(a.schluessel) + "</td>" +
         "<td>" + esc(a.wert) + (a.einheit === "m" ? " m" : "") + "</td>" +
         '<td><span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></td>" +
         "<td>" + esc(bereich) + "</td>" +
-        "<td>" + esc(lesbar(a.begruendung)) + "</td></tr>";
+        "<td>" + satz(a.begruendung) + "</td></tr>";
     }).join("") + "</tbody></table></div>";
 }
 function rechenwegTabelle(rechenweg) {
   if (!rechenweg || !rechenweg.length) return "";
   return '<div class="scroller"><table class="src"><thead><tr><th>Schritt</th><th>Eingang</th><th>Operation</th><th>Ergebnis</th><th>Herkunft</th></tr></thead><tbody>' +
     rechenweg.map(function (s) {
-      var name = FLAECHEN_LABEL[s.schritt] || lesbar(s.schritt);
+      var name = FLAECHEN_LABEL[s.schritt] || klartext(s.schritt);
       return "<tr><td>" + esc(name) + "</td>" +
         "<td>" + (leer(s.eingang) ? "–" : fmt(s.eingang, 1)) + "</td>" +
-        '<td class="f">' + esc(lesbar(s.operation)) + "</td>" +
-        "<td>" + (leer(s.ausgang) ? '<span class="na">nicht bestimmbar</span>' : "<b>" + fmt(s.ausgang, 1) + "</b> " + esc(lesbar(s.einheit))) + "</td>" +
-        "<td>" + esc(lesbar(s.herkunft)) + "</td></tr>";
+        '<td class="f">' + satz(s.operation) + "</td>" +
+        "<td>" + (leer(s.ausgang) ? '<span class="na">nicht bestimmbar</span>' : "<b>" + fmt(s.ausgang, 1) + "</b> " + satz(s.einheit)) + "</td>" +
+        "<td>" + satz(s.herkunft) + "</td></tr>";
     }).join("") + "</tbody></table></div>";
 }
 function wohnungsBlock(w) {
@@ -3382,8 +3498,8 @@ function geschossBlock(ga) {
         "<td>" + ja(g.zaehlt_als_vollgeschoss) + "</td><td>" + ja(g.zaehlt_zur_geschossflaeche) + "</td>" +
         "<td>" + ja(g.wohnnutzung_moeglich) + "</td></tr>";
     }).join("") + "</tbody></table></div>" +
-    alsListe(ga.hinweise).map(function (h) { return '<div class="note">' + esc(lesbar(h)) + "</div>"; }).join("") +
-    alsListe(ga.offene_punkte).map(function (h) { return '<div class="note warn">' + esc(lesbar(h)) + "</div>"; }).join("");
+    alsListe(ga.hinweise).map(function (h) { return '<div class="note">' + satz(h) + "</div>"; }).join("") +
+    alsListe(ga.offene_punkte).map(function (h) { return '<div class="note warn">' + satz(h) + "</div>"; }).join("");
 }
 function hoehenBlock(h) {
   if (!h || !h.geschosshoehe_m) return "";
@@ -3651,7 +3767,7 @@ function zeichneSzenario(id) {
       esc(k.max_breite_m) + " m<br>" +
       (leer(k.geschosse) ? "" : esc(k.geschosse) + " Geschoss(e)") +
       (leer(k.hoehe_m) ? "" : ", " + esc(k.hoehe_m) + " m hoch") + "<br>" +
-      esc(k.herkunft) + "</span>";
+      satz(k.herkunft) + "</span>";
     anz += zeichnePolygone(gruppen.szenario, [k.ring], stil, popup, "sec-szenarien").length;
   });
   setLayerVerfuegbar("szenario", anz);
@@ -3662,33 +3778,33 @@ function szenarioKarteZeile(s) {
   var f = (s.flaechen || {}).flaechen || {};
   return '<div class="card szenario" data-szenario-karte="' + esc(s.id) + '">' +
     '<div class="cardhead"><h4>' + esc(s.bezeichnung) + '</h4>' +
-    '<span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></div>" +
-    '<p class="szgrund">' + esc(s.begruendung) + "</p>" +
+    '<span class="badge ' + badge[1] + '">' + begriff(badge[0]) + "</span></div>" +
+    '<p class="szgrund">' + satz(s.begruendung) + "</p>" +
     '<div class="tiles">' +
       tile("Geschossfläche", leer(s.geschossflaeche_m2) ? null : fmt(s.geschossflaeche_m2, 0), "m²") +
       tile("Wohnfläche", leer((f.wohnflaeche_nwf || {}).wert) ? null : fmt(f.wohnflaeche_nwf.wert, 0), "m²") +
       tile("Wohnungen", (s.wohnungen || {}).anzahl_wohnungen) +
       tile("Geschosse", s.geschosse) +
     "</div>" +
-    (s.geschossflaeche_herkunft ? '<div class="note">' + esc(s.geschossflaeche_herkunft) + "</div>" : "") +
+    (s.geschossflaeche_herkunft ? '<div class="note">' + satz(s.geschossflaeche_herkunft) + "</div>" : "") +
     alsListe(s.konflikte).map(function (k) {
       return '<div class="note ' + (k.schwere === "ausschluss" ? "stop" : "warn") + '"><b>' +
-        esc(k.art) + ":</b> " + esc(k.meldung) + "</div>";
+        begriff(k.art) + ":</b> " + satz(k.meldung) + "</div>";
     }).join("") +
     (alsListe(s.unsicherheiten).length
       ? '<details class="more"><summary>Unsicherheiten (' + alsListe(s.unsicherheiten).length +
         ')</summary><div><ul class="plain">' +
-        alsListe(s.unsicherheiten).map(function (u) { return "<li>" + esc(u) + "</li>"; }).join("") +
+        alsListe(s.unsicherheiten).map(function (u) { return "<li>" + satz(u) + "</li>"; }).join("") +
         "</ul></div></details>" : "") +
     (alsListe(s.baukoerper).length
       ? '<details class="more"><summary>Baukörper (' + alsListe(s.baukoerper).length + ')</summary><div>' +
         '<div class="scroller"><table class="src"><thead><tr><th>Name</th><th>Art</th><th>Fläche</th><th>max. L × B</th><th>Geschosse</th><th>Höhe</th><th>Herkunft</th></tr></thead><tbody>' +
         alsListe(s.baukoerper).map(function (k) {
-          return "<tr><td><b>" + esc(k.name) + "</b></td><td>" + esc(k.art) + "</td>" +
+          return "<tr><td><b>" + esc(k.name) + "</b></td><td>" + begriff(k.art) + "</td>" +
             "<td>" + fmt(k.flaeche_m2, 1) + " m²</td>" +
             "<td>" + esc(k.max_laenge_m) + " × " + esc(k.max_breite_m) + " m</td>" +
             "<td>" + esc(k.geschosse) + "</td><td>" + (leer(k.hoehe_m) ? "–" : esc(k.hoehe_m) + " m") + "</td>" +
-            "<td>" + esc(k.herkunft) + "</td></tr>";
+            "<td>" + satz(k.herkunft) + "</td></tr>";
         }).join("") + "</tbody></table></div></div></details>" : "") +
     '<div class="szaktion"><button class="szbtn" data-szenario="' + esc(s.id) +
       '">Auf Karte und in 3D zeigen</button></div>' +
@@ -4545,7 +4661,7 @@ function secSzenarien(erg) {
   }
   if (sz.status !== "berechnet") {
     return '<section class="sec" id="sec-szenarien">' + kopf +
-      '<div class="note warn"><b>Keine Szenarien.</b> ' + esc(sz.grund) + "</div></section>";
+      '<div class="note warn"><b>Keine Szenarien.</b> ' + satz(sz.grund) + "</div></section>";
   }
 
   var b = sz.ausnuetzungsbudget || {};
@@ -5728,23 +5844,25 @@ function verdrahte3DSteuerung() {
 
 function secEntwicklung(erg) {
   return '<section class="sec" id="sec-entwicklung">' +
-    '<div class="sechead"><span class="num">06</span><h3>Entwicklungsszenarien</h3><span class="right"><span class="badge mute">Struktur, noch nicht gerechnet</span></span></div>' +
+    '<div class="sechead"><h3>Szenarien in Vorbereitung</h3><span class="right"><span class="badge mute">Struktur, noch nicht gerechnet</span></span></div>' +
     '<div class="note">Die fünf Szenarien sind fachlich definiert und dokumentiert, die Berechnungslogik existiert aber noch nicht. Es werden bewusst keine simulierten Ergebnisse angezeigt.</div>' +
+    '<details class="more"><summary>Die fünf Szenarien und was ihnen noch fehlt (' +
+      alsListe(erg.entwicklungsszenarien).length + ')</summary><div>' +
     alsListe(erg.entwicklungsszenarien).map(function (s) {
       var flaechen = alsListe(s.benoetigte_flaechendaten);
       var eingaben = alsListe(s.benoetigte_zusatzeingaben);
       return '<div class="card"><div class="cardhead"><h4>' + esc(SZ_LABEL[s.szenario] || s.szenario) +
         '</h4><span class="badge warn">nicht berechnet</span></div>' +
-        "<p>" + esc(s.beschreibung) + "</p>" +
+        "<p>" + satz(s.beschreibung) + "</p>" +
         '<details class="more"><summary>Was dafür noch fehlt</summary><div>' +
           (flaechen.length ? '<h4 class="subhead" style="margin-top:0">Benötigte Flächendaten</h4><ul class="plain">' +
-            flaechen.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
+            flaechen.map(function (x) { return "<li>" + satz(x) + "</li>"; }).join("") + "</ul>" : "") +
           (eingaben.length ? '<h4 class="subhead">Benötigte Zusatzeingaben</h4><ul class="plain">' +
-            eingaben.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
+            eingaben.map(function (x) { return "<li>" + satz(x) + "</li>"; }).join("") + "</ul>" : "") +
           (s.heute_bereits_abgedeckt_durch ? '<div class="note" style="margin-top:8px"><b>Heute bereits abgedeckt durch:</b> ' +
-            esc(s.heute_bereits_abgedeckt_durch) + "</div>" : "") +
+            satz(s.heute_bereits_abgedeckt_durch) + "</div>" : "") +
         "</div></details></div>";
-    }).join("") +
+    }).join("") + "</div></details>" +
   "</section>";
 }
 
@@ -5754,19 +5872,21 @@ function secQuellen(erg) {
   var q = alsListe(erg.quellen);
   function wertTxt(w) {
     if (w === null || w === undefined) return "–";
-    if (typeof w === "object") return Object.keys(w).map(function (k) { return k + ": " + w[k]; }).join(", ");
+    if (typeof w === "object") return Object.keys(w).map(function (k) { return klartext(k) + ": " + w[k]; }).join(", ");
     var s = String(w);
     return s.length > 90 ? s.slice(0, 90) + "…" : s;
   }
   return '<section class="sec" id="sec-quellen">' +
     '<div class="sechead"><span class="num">07</span><h3>Quellen &amp; Nachweis</h3><span class="right"><span class="badge mute">' + q.length + " Nachweise</span></span></div>" +
     '<div class="note">Jeder amtliche Wert oben ist auf Endpunkt und Layer rückverfolgbar. Werte ohne amtliche Quelle werden nicht ausgegeben.</div>' +
+    '<details class="more"><summary>Alle ' + q.length + ' Nachweise im Einzelnen</summary><div>' +
     '<div class="scroller"><table class="src"><thead><tr><th>Feld</th><th>Wert</th><th>Quelle</th></tr></thead><tbody>' +
     q.map(function (x) {
-      return '<tr><td class="f">' + esc(x.feld) + "</td><td>" + esc(wertTxt(x.wert)) + "</td><td>" +
-        (x.quelle_url ? '<a href="' + esc(x.quelle_url) + '" target="_blank" rel="noopener">' + esc(x.quelle_bezeichnung) + "</a>" : esc(x.quelle_bezeichnung)) +
+      return "<tr><td>" + feldpfad(x.feld) + '<div class="f">' + esc(x.feld) + "</div></td><td>" +
+        satz(wertTxt(x.wert)) + "</td><td>" +
+        (x.quelle_url ? '<a href="' + esc(x.quelle_url) + '" target="_blank" rel="noopener">' + satz(x.quelle_bezeichnung) + "</a>" : satz(x.quelle_bezeichnung)) +
         '<div class="artikel">' + esc(QTYP[x.quelle_typ] || x.quelle_typ) + (x.abgerufen_am ? " · " + esc(x.abgerufen_am) : "") + "</div></td></tr>";
-    }).join("") + "</tbody></table></div></section>";
+    }).join("") + "</tbody></table></div></div></details></section>";
 }
 
 /* --- 08 Wirtschaftlichkeit (Stufe 5) -- interaktiv ---
@@ -5837,6 +5957,7 @@ function wLage(groesse) {
    ==================================================================== */
 
 var mktObjekte = [];          // zuletzt geladene Vergleichsobjekte
+var mktLage = null;           // Urteil der Engine je Marktgroesse
 var mktOffen = false;         // Erfassungsbereich aufgeklappt?
 var mktMeldung = "";
 
@@ -5869,6 +5990,7 @@ function mktLaden(danach) {
   apiAbruf("/api/marktdaten" + (frage.length ? "?" + frage.join("&") : ""))
     .then(function (a) {
       mktObjekte = a.ok ? (a.daten.objekte || []) : [];
+      mktLage = a.ok ? (a.daten.marktlage || null) : null;
       if (!a.ok) mktMeldung = a.fehler || "Vergleichsobjekte nicht ladbar.";
       if (danach) danach();
       else mktZeichne();
@@ -5883,40 +6005,137 @@ function mktKennung(o) {
   return (o.merkmale || {})._id;
 }
 
+// "Radar 5806d79bef" ist eine Datenbankkennung, kein Objektname. Sie darf
+// im Nachweis stehen, nie als Bezeichnung. Ist keine brauchbare
+// Bezeichnung da, wird eine aus dem gebaut, was das Objekt beschreibt --
+// Art, Zimmer, Flaeche, Ort. Erfunden wird dabei nichts: jede Angabe
+// stammt aus dem Objekt selbst.
+var MKT_KENNUNG_ALS_NAME = /^(?:radar|objekt|obj)[\s:_-]*[0-9a-f]{6,}$/i;
+function mktUnbrauchbarerName(b) {
+  var t = String(b || "").trim();
+  if (!t) return true;
+  if (MKT_KENNUNG_ALS_NAME.test(t)) return true;
+  // Reine Platzhalter, real beobachtet: der Preishinweis als Objektname.
+  return /^(auf anfrage|preis auf anfrage|unbekannt|k\.a\.)$/i.test(t);
+}
+function mktName(o) {
+  o = o || {};
+  if (!mktUnbrauchbarerName(o.bezeichnung)) return String(o.bezeichnung);
+  var teile = [];
+  if (o.adresse) teile.push(o.adresse);
+  var beschreibung = [];
+  if (o.objektart) beschreibung.push(o.objektart);
+  if (!leer(o.zimmer)) beschreibung.push(o.zimmer + " Zimmer");
+  if (!leer(o.flaeche_m2)) beschreibung.push(fmt(o.flaeche_m2, 0) + " m²");
+  if (beschreibung.length) teile.push(beschreibung.join(", "));
+  var ort = [o.plz, o.gemeinde].filter(Boolean).join(" ");
+  if (ort) teile.push(ort);
+  return teile.length ? teile.join(" · ") : "Objekt ohne Bezeichnung";
+}
+// Die technische Kennung -- gehoert in den Nachweis, nicht in die Zeile.
+function mktTechnischeKennung(o) {
+  return (o || {}).objekt_id || ((o || {}).merkmale || {}).radar_object_id || "";
+}
+// Ein Objekt ohne Ortsangabe ist fuer eine Lage nicht einzuordnen. Das ist
+// eine Eigenschaft des Objekts und wird als solche gezeigt -- nicht
+// stillschweigend als "passt schon" behandelt.
+function mktOhneOrt(o) {
+  return !(o || {}).plz && !(o || {}).gemeinde;
+}
+
 function mktZeichne() {
   var ziel = document.getElementById("mkt-verwaltung");
   if (!ziel) return;
   var g = mktGebiet();
 
+  // Die Engine hat je Marktgroesse entschieden, welche Objekte sie
+  // verwendet und welche nicht -- mit Grund. Diese Zuordnung wird hier
+  // ausschliesslich ANGEZEIGT; entschieden wird sie nicht hier.
+  var lage = (mktLage || {}).verkauf || null;
+  var grundJeObjekt = {};
+  alsListe((lage || {}).ausgeschlossen).forEach(function (a) {
+    grundJeObjekt[a.bezeichnung] = a.grund;
+  });
+  var verwendet = {};
+  alsListe((lage || {}).objekte).forEach(function (a) {
+    verwendet[a.bezeichnung || a] = true;
+  });
+
+  var zeile = function (o, verwertbar) {
+    var ohneOrt = mktOhneOrt(o);
+    var kennung = mktTechnischeKennung(o);
+    var grund = grundJeObjekt[o.bezeichnung];
+    return "<tr>" +
+      "<td><b>" + esc(mktName(o)) + "</b>" +
+        (kennung ? '<div class="f">' + esc(kennung) + "</div>" : "") + "</td>" +
+      "<td>" + (ohneOrt
+        ? '<span class="badge warn">Ort nicht zugeordnet</span>'
+        : esc([o.plz, o.gemeinde].filter(Boolean).join(" "))) + "</td>" +
+      "<td>" + esc(o.objektart || "–") + "</td>" +
+      "<td>" + esc((o.datenstand || "").slice(0, 10)) + "</td>" +
+      "<td>" + (leer(o.preis_chf_pro_m2) ? "–" : chf(o.preis_chf_pro_m2)) + "</td>" +
+      "<td>" + (leer(o.mietzins_chf_pro_m2_jahr) ? "–" : chf(o.mietzins_chf_pro_m2_jahr)) + "</td>" +
+      "<td>" + (leer(o.bodenpreis_chf_pro_m2) ? "–" : chf(o.bodenpreis_chf_pro_m2)) + "</td>" +
+      "<td>" + esc(o.quelle || "–") +
+        '<div class="f">' + (o.preisart === "angebot" ? "Angebotspreis, kein Abschluss"
+          : klartext(o.preisart || "Preisart unbekannt")) + "</div></td>" +
+      "<td>" + (verwertbar ? '<span class="badge ok">verwertbar</span>'
+        : '<span class="badge mute">nicht verwertbar</span>' +
+          (grund ? '<div class="f">' + satz(grund) + "</div>" : "")) + "</td>" +
+      '<td><button class="m3knopf mkt-weg" data-id="' + esc(mktKennung(o)) +
+        '" title="Entfernen">×</button></td>' +
+    "</tr>";
+  };
+
+  var tabelle = function (objekte, verwertbar) {
+    if (!objekte.length) return "";
+    return '<div class="scroller mktliste"><table class="src"><thead><tr>' +
+      "<th>Objekt</th><th>Ort</th><th>Art</th><th>Stand</th>" +
+      "<th>Verkauf</th><th>Miete</th><th>Boden</th><th>Herkunft</th><th>Für die Berechnung</th><th></th>" +
+      "</tr></thead><tbody>" +
+      objekte.map(function (o) { return zeile(o, verwertbar); }).join("") +
+      "</tbody></table></div>";
+  };
+
+  var brauchbar = mktObjekte.filter(function (o) { return verwendet[o.bezeichnung]; });
+  var unbrauchbar = mktObjekte.filter(function (o) { return !verwendet[o.bezeichnung]; });
+  var ohneOrtAnzahl = mktObjekte.filter(mktOhneOrt).length;
+  var angebote = mktObjekte.filter(function (o) { return o.preisart === "angebot"; }).length;
+
+  var urteil = !lage ? "" :
+    '<div class="mkturteil' + (lage.anzahl ? "" : " offen") + '">' +
+      '<div class="mktzahlen">' +
+        '<div><b>' + mktObjekte.length + "</b> gefunden</div>" +
+        '<div><b>' + lage.anzahl + "</b> für die Marktberechnung verwertbar</div>" +
+        '<div class="f">Mindestens ' + ((lage.mindestanforderung || {}).min_objekte || 3) +
+          " verwertbare Referenzen sind nötig.</div>" +
+      "</div>" +
+      (alsListe(lage.begruendung).length
+        ? '<ul class="plain">' + alsListe(lage.begruendung).map(function (b) {
+            return "<li>" + satz(b) + "</li>";
+          }).join("") + "</ul>"
+        : "") +
+      '<div class="f">Davon ' + angebote + " Angebotspreise aus Inseraten — keine beurkundeten " +
+      "Abschlüsse" + (ohneOrtAnzahl ? ", und " + ohneOrtAnzahl + " Objekte ohne Ortszuordnung" : "") +
+      ".</div>" +
+    "</div>";
+
   var liste = !mktObjekte.length
     ? '<div class="note">Für ' + esc(g.gemeinde || "dieses Gebiet") +
       ' sind noch keine Vergleichsobjekte erfasst. Ohne Referenzen bleibt jeder ' +
       'Marktpreis eine reine Annahme — die Engine weist das als ' +
-      '<b>keine_daten</b> aus, statt eine Zahl zu erfinden.</div>'
-    : '<div class="scroller"><table class="src"><thead><tr>' +
-      "<th>Objekt</th><th>Ort</th><th>Art</th><th>Stand</th>" +
-      "<th>Verkauf</th><th>Miete</th><th>Boden</th><th>Quelle</th><th></th>" +
-      "</tr></thead><tbody>" +
-      mktObjekte.slice(0, 30).map(function (o) {
-        return "<tr>" +
-          "<td><b>" + esc(o.bezeichnung || "–") + "</b>" +
-            (o.flaeche_m2 ? '<div class="f">' + esc(o.flaeche_m2) + " m²</div>" : "") + "</td>" +
-          "<td>" + esc([o.plz, o.gemeinde].filter(Boolean).join(" ") || "–") + "</td>" +
-          "<td>" + esc(o.objektart || "–") + "</td>" +
-          "<td>" + esc((o.datenstand || "").slice(0, 10)) + "</td>" +
-          "<td>" + (leer(o.preis_chf_pro_m2) ? "–" : chf(o.preis_chf_pro_m2)) + "</td>" +
-          "<td>" + (leer(o.mietzins_chf_pro_m2_jahr) ? "–" : chf(o.mietzins_chf_pro_m2_jahr)) + "</td>" +
-          "<td>" + (leer(o.bodenpreis_chf_pro_m2) ? "–" : chf(o.bodenpreis_chf_pro_m2)) + "</td>" +
-          '<td><span class="f">' + esc(o.quelle || "–") + "</span>" +
-            (o.preisart === "angebot" ? '<div class="f">Angebotspreis</div>' : "") + "</td>" +
-          '<td><button class="m3knopf mkt-weg" data-id="' + esc(mktKennung(o)) +
-            '" title="Entfernen">×</button></td>' +
-        "</tr>";
-      }).join("") +
-      (mktObjekte.length > 30
-        ? '<tr><td colspan="9" class="f">… und ' + (mktObjekte.length - 30) +
-          " weitere. Die Auswertung verwendet alle.</td></tr>"
-        : "") + "</tbody></table></div>";
+      '<b>keine Daten</b> aus, statt eine Zahl zu erfinden.</div>'
+    : urteil +
+      (brauchbar.length
+        ? '<h4 class="subhead">Verwendet (' + brauchbar.length + ")</h4>" + tabelle(brauchbar, true)
+        : "") +
+      (unbrauchbar.length
+        ? '<details class="more"><summary>Nicht verwendet (' + unbrauchbar.length +
+          ") — mit Begründung je Objekt</summary><div>" +
+          '<div class="note">Diese Objekte bleiben erfasst und sichtbar. Sie gehen nur nicht ' +
+          'in die Marktberechnung ein — der Grund steht in der letzten Spalte.</div>' +
+          tabelle(unbrauchbar, false) + "</div></details>"
+        : "");
 
   var formular = !mktOffen ? "" :
     '<div class="mktform">' +
@@ -5963,9 +6182,12 @@ function mktZeichne() {
     "</div>";
 
   ziel.innerHTML =
-    '<h4 class="subhead">Vergleichsobjekte' +
-      (mktObjekte.length ? ' <span class="badge mute">' + mktObjekte.length + "</span>" : "") +
-    "</h4>" +
+    '<div class="sechead" style="margin-top:18px"><span class="enum2">2</span>' +
+      "<h3>Eigene Vergleichsobjekte</h3>" +
+      '<span class="right"><span class="badge warn">interne Daten, keine Marktquelle</span></span></div>' +
+    '<div class="note">Selbst erfasste Objekte und Übernahmen aus dem AkquiseRadar. ' +
+    'Das sind <b>eigene</b> Daten — sie stehen bewusst getrennt von externen ' +
+    'Marktquellen und ersetzen keine.</div>' +
     (mktMeldung ? '<div class="note warn">' + esc(mktMeldung) + "</div>" : "") +
     liste +
     (mktOffen ? "" : '<div class="szwahl"><button class="szbtn" id="mkt-neu">+ Vergleichsobjekt</button>' +
@@ -6690,7 +6912,11 @@ function secMarkt(erg) {
       'ein Preis je m² angewendet werden könnte. Die Eingabe bleibt deshalb gesperrt.</div></section>';
   }
   return '<section class="sec" id="sec-markt">' + kopf +
-    '<h4 class="subhead">Externe Marktquellen</h4>' +
+    '<div class="note">Drei Dinge, die nicht dasselbe sind und hier deshalb getrennt ' +
+    'stehen: was der Markt laut einer externen Quelle sagt, was wir selbst an ' +
+    'Vergleichsobjekten haben, und was Sie annehmen.</div>' +
+    '<div class="sechead"><span class="enum2">1</span><h3>Externe Marktdaten</h3>' +
+      '<span class="right"><span class="badge stop">keine Quelle angebunden</span></span></div>' +
     '<div class="note warn"><b>Keine externe Marktdatenquelle angeschlossen.</b> ' +
     'Anbieter wie Wüest Partner, IAZI oder RealAdvisor liefern Preisindikatoren je ' +
     'Gemeinde und Objektart. Solange keine davon angebunden ist, zeigt diese ' +
@@ -6698,9 +6924,14 @@ function secMarkt(erg) {
     'steht, stammt ausschliesslich aus selbst erfassten Vergleichsobjekten und aus ' +
     'Ihren eigenen Annahmen.<br>Sobald eine Quelle angebunden ist, erscheint sie hier ' +
     'mit Quelle, Stand, Datentyp und Bandbreite — und bleibt von Ihrer Annahme getrennt.</div>' +
-    '<h4 class="subhead">Referenzen und Annahmen je Marktgrösse</h4>' +
-    '<div id="w-markt">' + marktBlock(erg) + "</div>" +
     '<div id="mkt-verwaltung"></div>' +
+    '<div class="sechead" style="margin-top:18px"><span class="enum2">3</span>' +
+      "<h3>Eigene Annahmen</h3>" +
+      '<span class="right"><span class="badge ok">Ihre Entscheidung</span></span></div>' +
+    '<div class="note">Was Sie hier setzen, hat immer Vorrang vor jedem Systemvorschlag. ' +
+    'Ohne verwertbare Referenzen gibt es keinen Vorschlag — dann ist der Wert ' +
+    'ausschliesslich Ihre Annahme, und das Dossier weist ihn auch so aus.</div>' +
+    '<div id="w-markt">' + marktBlock(erg) + "</div>" +
   "</section>";
 }
 
