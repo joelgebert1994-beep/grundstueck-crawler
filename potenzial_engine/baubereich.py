@@ -253,6 +253,50 @@ class PotenzialErgebnis:
         }
 
 
+def vergleiche_bestand_mit_baubereich(
+    bestand_ringe: Optional[list],
+    baubereich_ringe: Optional[list],
+) -> Optional[dict]:
+    """Wie viel des bestehenden Gebaeudes liegt im heutigen Baubereich?
+
+    Reine Geometrie, keine rechtliche Aussage. Die Frage, die damit
+    beantwortbar wird: laesst sich der Bestand ueberhaupt mit den heute
+    modellierten Abstaenden erklaeren? Liegt er zu grossen Teilen ausserhalb,
+    ist er aelter als die geltende Ordnung -- was das rechtlich bedeutet
+    (Bestandesschutz, altrechtliche Baute, Ausnahmebewilligung), sagt diese
+    Funktion NICHT und darf sie nicht sagen.
+
+    Liefert None, wenn eine der beiden Geometrien fehlt.
+    """
+    if not bestand_ringe or not baubereich_ringe:
+        return None
+
+    def flaechen(ringe):
+        teile = []
+        for ring in ringe:
+            if not ring or len(ring) < 3:
+                continue
+            p = Polygon(ring)
+            if not p.is_valid:
+                p = p.buffer(0)
+            if not p.is_empty and p.area > 0:
+                teile.append(p)
+        return unary_union(teile) if teile else None
+
+    bestand = flaechen(bestand_ringe)
+    baubereich = flaechen(baubereich_ringe)
+    if bestand is None or baubereich is None or bestand.area <= 0:
+        return None
+
+    innen = bestand.intersection(baubereich).area
+    return {
+        "bestand_m2": round(bestand.area, 1),
+        "im_baubereich_m2": round(innen, 1),
+        "ausserhalb_m2": round(bestand.area - innen, 1),
+        "anteil_ausserhalb": round((bestand.area - innen) / bestand.area, 3),
+    }
+
+
 def berechne_potenzial(
     parzelle_koordinaten: Ring,
     kanten_abstaende: list[float],

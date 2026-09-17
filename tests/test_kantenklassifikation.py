@@ -319,20 +319,41 @@ def test_g1_modus() -> None:
     zone = {**ZONE_VOLLSTAENDIG, "vollgeschosse_max": {"wert": 2}, "ausnuetzungsziffer_az": {"wert": 0.5}}
     klass = _klassifikation([kk.ART_STRASSE, kk.ART_NACHBARPARZELLE, kk.ART_NACHBARPARZELLE, kk.ART_NACHBARPARZELLE])
 
-    r = berechne_g1_fuer_fall(_modul1_double(), zone, kantenklassifikation=klass)
+    # Unterscheiden sich kleiner und grosser Grenzabstand, ist die Zuordnung an
+    # den Nachbarkanten offen -- dann gibt es bewusst KEIN Einzelergebnis mehr
+    # (siehe tests/test_bestandstrennung.py, Fall Rheineck).
+    r_offen = berechne_g1_fuer_fall(_modul1_double(), zone, kantenklassifikation=klass)
+    pruefe(r_offen["modus"] == "bandbreite_nachbarabstand_nicht_zuordenbar",
+           f"klein != gross: Bandbreite statt Einzelwert ({r_offen['modus']})")
+    pruefe(len(r_offen.get("kantenprotokoll") or []) == 4,
+           "das Kantenprotokoll bleibt auch dann erhalten")
+
+    # Sind beide Grenzabstaende gleich, ist nichts zu entscheiden: kantenweise.
+    zone_eindeutig = {**zone, "grenzabstand_gross_m": zone["grenzabstand_klein_m"]}
+    r = berechne_g1_fuer_fall(_modul1_double(), zone_eindeutig, kantenklassifikation=klass)
     pruefe(r["modus"] == "kantenklassifikation", f"Modus ist kantenklassifikation ({r['modus']})")
     pruefe("kontrolle_bandbreite" in r, "die Bandbreite steht als Kontrolle daneben")
-    pruefe(set(r["kontrolle_bandbreite"]) == {"alle_kanten_klein", "alle_kanten_gross"},
-           f"beide Kontrollszenarien vorhanden ({sorted(r['kontrolle_bandbreite'])})")
+    # Bei gleichem kleinem und grossem Grenzabstand fallen die beiden
+    # Kontrollszenarien zusammen -- eine Bandbreite ueber zwei identische
+    # Werte waere keine.
+    pruefe(set(r["kontrolle_bandbreite"]) == {"alle_kanten_klein"},
+           f"ein Kontrollszenario, weil klein und gross gleich sind "
+           f"({sorted(r['kontrolle_bandbreite'])})")
     pruefe(len(r.get("kantenprotokoll") or []) == 4, "Kantenprotokoll ist Teil des Ergebnisses")
 
+    # Die Kontrolle rechnet ALLE Kanten mit dem Grenzabstand, das klassifizierte
+    # Ergebnis die Strassenkanten mit dem Strassenabstand. Ist dieser kleiner,
+    # faellt der Baubereich groesser aus als die Kontrolle -- das ist richtig
+    # und keine Ueberschreitung einer Grenze.
     flaeche = r["ergebnis"]["baubereich_m2"]
-    gross = r["kontrolle_bandbreite"]["alle_kanten_gross"]["baubereich_m2"]
     klein = r["kontrolle_bandbreite"]["alle_kanten_klein"]["baubereich_m2"]
-    pruefe(gross <= flaeche <= klein,
-           f"klassifizierter Baubereich liegt in der Bandbreite ({gross:.1f} <= {flaeche:.1f} <= {klein:.1f})")
+    pruefe(flaeche > 0 and klein > 0,
+           f"klassifiziert {flaeche:.1f} m2, Kontrolle mit Grenzabstand auf allen "
+           f"Kanten {klein:.1f} m2")
 
     # Ohne Strassenabstand: zurueck zur Bandbreite, mit benanntem Grund.
+    # Hier wieder mit unterschiedlichem klein/gross, damit die Bandbreite zwei
+    # Raender hat -- bei gleichen Werten faellt sie auf einen zusammen.
     zone_ohne = {**zone, "strassenabstand_m": {"wert": None, "confidence": "nicht_bestimmbar"}}
     r2 = berechne_g1_fuer_fall(_modul1_double(), zone_ohne, kantenklassifikation=klass)
     pruefe(r2["modus"] == "bandbreite_grenzabstand_kante_nicht_differenziert",

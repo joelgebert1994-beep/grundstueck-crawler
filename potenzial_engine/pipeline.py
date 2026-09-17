@@ -135,7 +135,9 @@ def _sia416_fuer_geschossflaeche(geschossflaeche_m2: Optional[float]) -> Optiona
 def _sia416_fuer_g1_ergebnis(g1_ergebnis: Optional[dict]) -> Optional[dict]:
     if not g1_ergebnis:
         return None
-    if g1_ergebnis.get("modus") == "bandbreite_grenzabstand_kante_nicht_differenziert":
+    # Beide Bandbreiten-Modi: die fehlende Kantenzuordnung UND die nicht
+    # zuordenbaren Nachbarabstaende liefern Szenarien statt eines Ergebnisses.
+    if str(g1_ergebnis.get("modus") or "").startswith("bandbreite_"):
         ausgabe = {}
         for name, e in (g1_ergebnis.get("szenarien") or {}).items():
             sia416 = _sia416_fuer_geschossflaeche(e.get("geschossflaeche_m2"))
@@ -1044,6 +1046,9 @@ def _teilergebnis_nach_modul1(adresse: str, modul1_result: dict) -> dict:
         "entwicklungsszenarien": ENTWICKLUNGSSZENARIEN_INFO,
         "modul2_bzo_analyse": None,
         "modul3_financial": None,
+        # Dasselbe Feldgeruest wie das Endergebnis: die Oberflaeche liest
+        # beide, und ein Feld, das erst spaeter auftaucht, waere eine Falle.
+        "bestand_und_neubaugeometrie": None,
     }
 
 
@@ -1115,6 +1120,165 @@ def analysiere_grundstueck(
     return Analyse(ergebnis=ergebnis, kontext={"modul1": modul1_result, "modul2": modul2_result})
 
 
+def _bestand_und_neubaugeometrie(
+    modul1_result: dict, g1_ergebnis: Optional[dict],
+) -> dict:
+    """Die drei Ebenen sauber getrennt -- Bestand, Neubaugeometrie, Zusatz.
+
+    Der Fehler, den das verhindert: G1 rechnet auf der gruenen Wiese. Sein
+    Fussabdruck ist der maximal zulaessige Fussabdruck eines NEUEN
+    Gebaeudekoerpers unter den heute modellierten Abstaenden -- weder der
+    freie zusaetzliche noch der bestehende. Ohne diese Trennung liest sich
+    "Fussabdruck 0.7 m2" wie "auf diesem Grundstueck ist nichts moeglich",
+    obwohl dort ein Haus mit 248 m2 Grundflaeche steht.
+
+    Die rechtliche Einordnung bleibt ausdruecklich offen: dass ein Gebaeude
+    die heutigen Abstaende unterschreitet, ist eine geometrische Feststellung
+    und KEIN Nachweis eines Bestandesschutzes.
+    """
+    from .baubereich import vergleiche_bestand_mit_baubereich
+
+    bestand = modul1_result.get("bestand") or {}
+    gebaeude = bestand.get("gebaeude") or []
+    grundrisse = [g.get("grundriss") for g in gebaeude if g.get("grundriss")]
+
+    # Die Grundflaeche des GWR gehoert zu DIESEM Gebaeude; das Katasterpolygon
+    # kann mehr umfassen. In Rheineck stehen 118 m2 (GWR) gegen 248 m2
+    # (Grundriss) -- das Polygon deckt die ganze Haeuserzeile. Gerechnet wird
+    # deshalb mit dem GWR-Wert, und die Abweichung wird ausgewiesen.
+    geschosse = [g.get("geschosse") for g in gebaeude]
+    flaechen = [g.get("grundflaeche_gwr_m2") for g in gebaeude]
+    bestand_gf = None
+    if gebaeude and all(g for g in geschosse) and all(f for f in flaechen):
+        bestand_gf = round(sum(f * g for f, g in zip(flaechen, geschosse)), 1)
+
+    ebene_bestand = {
+        "gebaeude": len(gebaeude),
+        "grundflaeche_gwr_m2": bestand.get("bebaute_flaeche_gwr_m2"),
+        "grundriss_flaeche_m2": bestand.get("bebaute_flaeche_grundriss_m2"),
+        "geschosse": [g for g in geschosse if g],
+        "geschossflaeche_m2": bestand_gf,
+        "geschossflaeche_rechnung": (
+            None if bestand_gf is None else
+            " + ".join(f"{f:,.0f} m2 x {g} Geschosse" for f, g in zip(flaechen, geschosse))),
+        "geschossflaeche_grund": (
+            None if bestand_gf is not None else
+            "Das Gebaeuderegister fuehrt fuer diese Parzelle keine vollstaendige "
+            "Geschosszahl oder Grundflaeche -- die bestehende Geschossflaeche ist "
+            "daraus nicht bestimmbar."),
+        "geschossflaeche_naeherung": (
+            None if bestand_gf is None else
+            "Genaehert als Grundflaeche x Geschosszahl -- das Register fuehrt keine "
+            "Geschossflaeche."),
+        "quelle": "Gebaeude- und Wohnungsregister (GWR) und amtliche Vermessung",
+    }
+
+    # --- Neubau nach heutiger Geometrie ---------------------------------
+    modus = (g1_ergebnis or {}).get("modus")
+    einzel = (g1_ergebnis or {}).get("ergebnis") or {}
+    bandbreite = (g1_ergebnis or {}).get("bandbreite") or {}
+    ebene_neubau = {
+        "bedeutung": (
+            "Maximal zulaessiger Fussabdruck und Geschossflaeche eines VOLLSTAENDIG "
+            "NEUEN Baukoerpers unter den heute modellierten Abstaenden. Nicht der "
+            "freie zusaetzliche und nicht der bestehende Fussabdruck."),
+        "belastbar": bool(einzel) and (g1_ergebnis or {}).get("baubereich_belastbar") is not False,
+    }
+    if einzel:
+        ebene_neubau.update(
+            baubereich_m2=einzel.get("baubereich_m2"),
+            fussabdruck_m2=einzel.get("fussabdruck_m2"),
+            geschossflaeche_m2=einzel.get("geschossflaeche_m2"))
+    elif bandbreite:
+        ebene_neubau.update(
+            bandbreite_baubereich_m2=bandbreite.get("baubereich_m2"),
+            bandbreite_geschossflaeche_m2=bandbreite.get("geschossflaeche_m2"),
+            grund=(g1_ergebnis or {}).get("grund_nicht_belastbar"))
+    elif str(modus or "").startswith("bandbreite_"):
+        ebene_neubau["grund"] = (g1_ergebnis or {}).get("hinweis")
+    else:
+        ebene_neubau["grund"] = "Keine G1-Geometrie vorhanden."
+
+    # --- Zulaessige Gesamtentwicklung aus der Ausnuetzungsziffer ---------
+    az_gf = (g1_ergebnis or {}).get("zulaessige_geschossflaeche_az_m2")
+    if az_gf is None and einzel:
+        kandidaten = einzel.get("geschossflaeche_kandidaten") or {}
+        az_gf = kandidaten.get("ausnuetzung_az")
+
+    # --- Zusaetzliches Entwicklungspotenzial ----------------------------
+    # Nur dort, wo Bestand UND zulaessige Gesamtentwicklung belastbar sind.
+    if az_gf is not None and bestand_gf is not None:
+        differenz = round(az_gf - bestand_gf, 1)
+        ebene_zusatz = {
+            "status": "bestimmbar",
+            "zusaetzliche_geschossflaeche_m2": differenz,
+            "rechnung": (f"{az_gf:,.1f} m2 zulaessig (Ausnuetzungsziffer) - "
+                         f"{bestand_gf:,.1f} m2 bestehend"),
+        }
+        if differenz < 0:
+            # Ein ueberbautes Grundstueck ist kein Rechenfehler -- in alten
+            # Ortskernen ist es die Regel. Was es NICHT heisst: dass
+            # abgebrochen werden muesste.
+            ebene_zusatz["hinweis"] = (
+                f"Der Bestand ueberschreitet die heute zulaessige Geschossflaeche um "
+                f"{abs(differenz):,.0f} m2. Zusaetzliches Potenzial nach heutiger "
+                "Ausnuetzungsziffer gibt es damit nicht. Daraus folgt weder ein "
+                "Rueckbaubedarf noch, dass der Bestand unzulaessig waere -- die "
+                "Bestandessituation ist zu pruefen.")
+    else:
+        fehlt = []
+        if az_gf is None:
+            fehlt.append("die zulaessige Gesamtgeschossflaeche (keine belastbare "
+                         "Ausnuetzungsziffer)")
+        if bestand_gf is None:
+            fehlt.append("die bestehende Geschossflaeche (Geschosszahl oder Grundflaeche "
+                         "im Register unvollstaendig)")
+        ebene_zusatz = {
+            "status": "nicht_bestimmbar",
+            "grund": ("Zusaetzliches Potenzial ist die Differenz zweier Groessen. Hier fehlt "
+                      + " und ".join(fehlt) + " -- eine Differenz waere dann eine Annahme."),
+        }
+
+    # --- Bestandessituation: Feststellung, keine rechtliche Einordnung ---
+    obere_huelle = None
+    if einzel.get("baubereich_koordinaten"):
+        obere_huelle = einzel["baubereich_koordinaten"]
+    else:
+        # Bei einer Bandbreite gilt die GROSSZUEGIGSTE Huelle: nur was auch
+        # dort nicht hineinpasst, laesst sich mit den heutigen Abstaenden
+        # sicher nicht erklaeren.
+        oben = ((g1_ergebnis or {}).get("szenarien") or {}).get(
+            bandbreite.get("obergrenze_szenario") or "")
+        if oben:
+            obere_huelle = oben.get("baubereich_koordinaten")
+
+    vergleich = vergleiche_bestand_mit_baubereich(grundrisse, obere_huelle)
+    bestandssituation = {"vergleichbar": vergleich is not None}
+    if vergleich:
+        bestandssituation.update(vergleich)
+        if vergleich["anteil_ausserhalb"] > 0.05:
+            bestandssituation["hinweis"] = (
+                f"Der Bestand liegt zu {vergleich['anteil_ausserhalb']:.0%} ausserhalb der "
+                "heute modellierten Abstandsgeometrie. Er laesst sich damit nicht aus den "
+                "geltenden Abstaenden erklaeren -- Bestandessituation und allfaelliger "
+                "Bestandesschutz sind zu pruefen. Daraus folgt NICHT, dass nur die heutige "
+                "Neubaugeometrie zulaessig waere.")
+            bestandssituation["pruefen"] = True
+        else:
+            bestandssituation["hinweis"] = (
+                "Der Bestand liegt im Wesentlichen innerhalb der heute modellierten "
+                "Abstandsgeometrie.")
+            bestandssituation["pruefen"] = False
+
+    return {
+        "bestand": ebene_bestand,
+        "neubau_nach_heutiger_geometrie": ebene_neubau,
+        "zulaessige_gesamtentwicklung_gf_m2": az_gf,
+        "zusaetzliches_potenzial": ebene_zusatz,
+        "bestandssituation": bestandssituation,
+    }
+
+
 def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict) -> dict:
     """Zonenzuordnung, G1, SIA 416, Flaechen, Szenarien, Quellen.
 
@@ -1181,6 +1345,10 @@ def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict) -> d
         "entwicklungsszenarien": ENTWICKLUNGSSZENARIEN_INFO,
         "modul2_bzo_analyse": modul2_result,
         "modul3_financial": None,
+        # Bestand, Neubaugeometrie und zusaetzliches Potenzial sind drei
+        # verschiedene Groessen. G1 liefert nur die mittlere.
+        "bestand_und_neubaugeometrie": _bestand_und_neubaugeometrie(
+            modul1_result, g1_ergebnis),
     }
 
 

@@ -112,6 +112,71 @@ def _grenzabstand_bandbreite_pro_kante(zone: dict[str, Any], anzahl_kanten: int)
     return szenarien
 
 
+# Ab welchem Verhaeltnis die Untergrenze als zusammengefallen GILT. Beide
+# Werte steuern ausschliesslich den ERKLAERTEXT -- gerechnet wird damit
+# nichts, und die Entscheidung, keinen Einzelwert auszugeben, haengt nicht
+# daran, sondern allein an der Unentscheidbarkeit der Zuordnung.
+ENTARTET_ANTEIL = 0.02
+ENTARTET_M2 = 15.0
+
+
+def _nachbarkanten(kantenklassifikation: dict[str, Any]) -> list[int]:
+    return [i for i, k in enumerate(kantenklassifikation.get("kanten") or [])
+            if k.get("art") == ART_NACHBARPARZELLE and k.get("relevant", True)]
+
+
+def nachbarabstand_unentscheidbar(
+    zone: dict[str, Any], kantenklassifikation: Optional[dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    """Laesst sich bestimmen, welche Nachbarseite den grossen Abstand traegt?
+
+    Nein -- und das ist keine Luecke in den Daten, sondern eine Eigenschaft
+    der Sache: der grosse Grenzabstand gilt in aller Regel fuer EINE Seite
+    (die Hauptwohnseite), die uebrigen tragen den kleinen. Welche das ist,
+    entscheidet die Fassadenorientierung des Gebaeudes -- und das Gebaeude
+    ist noch nicht entworfen.
+
+    Bisher hat die Verdrahtung deshalb auf ALLEN Nachbarkanten den grossen
+    Abstand angesetzt. Das ist nicht der wahrscheinliche Fall, sondern die
+    strengste denkbare Anordnung: eine UNTERGRENZE, die als Einzelwert
+    ausgegeben wurde.
+
+    Live sichtbar geworden an Buhofstrasse 55, Rheineck (Parzelle 160,
+    289 m2): die beiden Nachbarkanten liegen sich ueber die 16 m schmale
+    Seite gegenueber. 16 - 8 - 8 = 0 -- die Huelle fiel auf 0.69 m2
+    zusammen, und daraus wurde "Geschossflaeche 1.38 m2". Rechnerisch
+    richtig, als Potenzialaussage unbrauchbar.
+
+    Gibt None zurueck, wenn die Zuordnung eindeutig ist (beide Abstaende
+    gleich, oder gar keine Nachbarkante), sonst die Angaben fuer die
+    Bandbreite.
+    """
+    if kantenklassifikation is None:
+        return None
+    klein = _kennzahl_wert(zone.get("grenzabstand_klein_m"))
+    gross = _kennzahl_wert(zone.get("grenzabstand_gross_m"))
+    if klein is None or gross is None or klein == gross:
+        return None
+    indizes = _nachbarkanten(kantenklassifikation)
+    if not indizes:
+        return None
+    return {"klein": float(klein), "gross": float(gross), "kanten": indizes}
+
+
+def _mit_nachbarabstand(
+    basis: list[float], indizes: list[int], wert: float,
+) -> list[float]:
+    """Dieselben Abstaende, nur an den Nachbarkanten ausgetauscht.
+
+    Die Strassenkanten behalten ihren klassifizierten Strassenabstand -- DIE
+    Zuordnung ist eindeutig (eine Strassenachse fuehrt durch das Polygon
+    hinter der Kante) und darf nicht mit variiert werden.
+    """
+    abstaende = list(basis)
+    for i in indizes:
+        abstaende[i] = wert
+    return abstaende
+
 def _kantenabstaende_aus_klassifikation(
     zone: dict[str, Any],
     klassifikation: dict[str, Any],
@@ -355,6 +420,87 @@ def berechne_g1_fuer_fall(
     bandbreite_szenarien = _grenzabstand_bandbreite_pro_kante(zone, anzahl_kanten)
 
     if kanten_abstaende is not None:
+        # Welche Nachbarseite den grossen Grenzabstand traegt, entscheidet die
+        # Fassadenorientierung des noch nicht entworfenen Gebaeudes. Bisher
+        # wurde dann stillschweigend auf ALLEN Nachbarkanten der grosse
+        # Abstand angesetzt -- das ist die strengste denkbare Anordnung, also
+        # eine Untergrenze, die als Einzelwert ausgegeben wurde. Jetzt wird
+        # sie als das ausgewiesen, was sie ist: der eine Rand einer Bandbreite.
+        offen = nachbarabstand_unentscheidbar(zone, kantenklassifikation)
+        if offen is not None:
+            unten = berechne_potenzial(
+                parzelle_ring, _mit_nachbarabstand(kanten_abstaende, offen["kanten"], offen["gross"]),
+                **gemeinsame_kwargs).to_dict()
+            oben = berechne_potenzial(
+                parzelle_ring, _mit_nachbarabstand(kanten_abstaende, offen["kanten"], offen["klein"]),
+                **gemeinsame_kwargs).to_dict()
+
+            parzflaeche = unten.get("parzellenflaeche_m2") or 0.0
+            entartet = bool(parzflaeche) and (
+                unten.get("baubereich_m2", 0.0) <= ENTARTET_M2
+                and unten.get("baubereich_m2", 0.0) <= ENTARTET_ANTEIL * parzflaeche)
+
+            az = _kennzahl_wert(zone.get("ausnuetzungsziffer_az"))
+            landflaeche = unten.get("anrechenbare_landflaeche_m2")
+
+            antwort = {
+                "modus": "bandbreite_nachbarabstand_nicht_zuordenbar",
+                **basis_info,
+                # KEIN "ergebnis": die nachgelagerte Flaechenkaskade liest
+                # genau dieses Feld und meldet ohne es "nicht bestimmbar" --
+                # statt sich einen der beiden Raender auszusuchen.
+                "baubereich_belastbar": False,
+                "grund_nicht_belastbar": (
+                    "Die zulaessige Abstandszuordnung an den Nachbargrenzen ist ohne "
+                    "konkreten Gebaeudekoerper nicht eindeutig bestimmbar. Eine einzelne "
+                    "Geometrie waere hier eine Annahme und deshalb keine belastbare "
+                    "Potenzialzahl."
+                ),
+                "hinweis": (
+                    f"Der grosse Grenzabstand ({offen['gross']:g} m) gilt in der Regel fuer "
+                    f"EINE Seite, die uebrigen tragen den kleinen ({offen['klein']:g} m). "
+                    "Welche Seite das ist, haengt an der Fassadenorientierung des noch nicht "
+                    "entworfenen Gebaeudes. Die Strassenkanten behalten in beiden Faellen "
+                    "ihren klassifizierten Strassenabstand -- die Zuordnung ist dort "
+                    "eindeutig."
+                ),
+                "szenarien": {"nachbarn_gross": unten, "nachbarn_klein": oben},
+                "bandbreite": {
+                    "untergrenze_szenario": "nachbarn_gross",
+                    "obergrenze_szenario": "nachbarn_klein",
+                    "baubereich_m2": [unten.get("baubereich_m2"), oben.get("baubereich_m2")],
+                    "geschossflaeche_m2": [unten.get("geschossflaeche_m2"),
+                                           oben.get("geschossflaeche_m2")],
+                    "bedeutung": (
+                        "Sensitivitaet der Geometrie, nicht ein baurechtlich bestimmtes "
+                        "Potenzial: die Untergrenze entspricht dem grossen Abstand auf allen "
+                        "Nachbarseiten (strenger als jede zulaessige Anordnung), die "
+                        "Obergrenze dem kleinen auf allen."
+                    ),
+                },
+                "betroffene_nachbarkanten": offen["kanten"],
+            }
+            if az is not None and landflaeche:
+                # Die Ausnuetzungsziffer haengt NICHT an der Abstandszuordnung --
+                # sie bleibt belastbar und wird deshalb getrennt genannt.
+                antwort["zulaessige_geschossflaeche_az_m2"] = round(az * landflaeche, 2)
+                antwort["zulaessige_geschossflaeche_az_rechnung"] = (
+                    f"Ausnuetzungsziffer {az:g} x {landflaeche:,.1f} m2 anrechenbare "
+                    f"Landflaeche")
+            if entartet:
+                antwort["untergrenze_entartet"] = {
+                    "baubereich_m2": unten.get("baubereich_m2"),
+                    "anteil_parzelle": round((unten.get("baubereich_m2") or 0.0) / parzflaeche, 4),
+                    "erklaerung": (
+                        "Bei grossem Abstand auf allen Nachbarseiten faellt die Huelle "
+                        "praktisch zusammen -- die Parzelle ist an der schmalsten Stelle "
+                        "schmaler als zwei gegenueberliegende grosse Grenzabstaende "
+                        "zusammen. Das ist kein Befund ueber das Grundstueck, sondern "
+                        "die Folge der strengsten Annahme."
+                    ),
+                }
+            return antwort
+
         ergebnis = berechne_potenzial(parzelle_ring, kanten_abstaende, **gemeinsame_kwargs)
         kontrolle = {
             name: berechne_potenzial(parzelle_ring, kanten, **gemeinsame_kwargs).to_dict()
