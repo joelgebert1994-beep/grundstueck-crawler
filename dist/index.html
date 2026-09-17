@@ -611,6 +611,13 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .dzustand.aus { color: #8c1f36; background: #fde8ec; border-radius: 6px; padding: 6px 9px; }
 .dzustand.halb { color: #8a5a12; background: #fff4e0; border-radius: 6px; padding: 6px 9px; }
 .dzustand.entw { color: var(--ink-3); }
+.zugangsform { margin-top: 8px; font-size: 11.5px; color: var(--ink-2);
+  background: var(--warn-soft); border-radius: 6px; padding: 8px 10px; }
+.zugangsform code { font-family: var(--mono); font-size: 11px; }
+.zugangszeile { display: flex; gap: 6px; margin-top: 6px; }
+.zugangszeile input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+.zugangszeile button { padding: 6px 12px; font-size: 12px; }
 
 .d3steuer { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
   margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--line);
@@ -720,6 +727,7 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
       </div>
       <div class="suggest" id="suggest"></div>
       <div class="dzustand" id="dienstzustand"></div>
+      <div id="zugangsfeld"></div>
     </div>
 
     <details class="layercard" id="layercard" open>
@@ -1611,7 +1619,15 @@ var goBtn = document.getElementById("go-btn");
 
 // Beim Laden einmal fragen, ob der Dienst ueberhaupt da ist. Besser jetzt
 // als nach drei Minuten Analyse.
-setTimeout(function () { if (window.pruefeBackend) pruefeBackend(); }, 300);
+setTimeout(function () {
+  if (window.pruefeBackend) pruefeBackend();
+  // Ein Aufruf, der den Schluessel VERLANGT: /health ist offen und
+  // merkt deshalb nie, dass einer fehlt. Hinter dem Cloudflare-Proxy
+  // faellt dieser Griff nicht auf -- dort setzt der Proxy die
+  // Kopfzeile und der Aufruf gelingt. apiAbruf zeigt bei 401 selbst
+  // die Abfrage an.
+  apiAbruf("/api/projekte");
+}, 300);
 var gewaehlteAdresse = null, sucheTimer = null;
 
 inputEl.addEventListener("input", function () {
@@ -1675,8 +1691,75 @@ var inner = document.getElementById("dossier-inner");
    eine Betriebsstoerung zu einem Befund ueber ein Grundstueck.
    ==================================================================== */
 
+/* --- Zugangsschluessel ------------------------------------------------
+   Steht der Cloudflare-Proxy davor, setzt DIESER die Kopfzeile, und die
+   Oberflaeche braucht den Schluessel nie zu kennen. Ruft man den Dienst
+   direkt auf -- lokal auf 127.0.0.1:8787 --, gibt es keinen Proxy: dann
+   muss die Oberflaeche ihn selbst mitschicken.
+
+   Er liegt im localStorage genau dieses Browsers und geht nur als
+   Kopfzeile an genau diesen Dienst zurueck. Die Pruefung im Backend
+   bleibt unveraendert -- der oeffentliche Endpunkt verlangt den
+   Schluessel weiterhin von jedem Aufrufer. */
+var SCHLUESSEL_ORT = "gebimo.zugangsschluessel";
+function zugangsSchluessel() {
+  try { return localStorage.getItem(SCHLUESSEL_ORT) || ""; } catch (e) { return ""; }
+}
+function merkeZugangsSchluessel(wert) {
+  try {
+    if (wert) localStorage.setItem(SCHLUESSEL_ORT, wert);
+    else localStorage.removeItem(SCHLUESSEL_ORT);
+  } catch (e) { /* privates Fenster o.ae. -- dann eben nur fuer diese Seite */ }
+}
+
+/* Die Abfrage erscheint erst, wenn der Dienst tatsaechlich 401 sagt.
+   Hinter dem Proxy passiert das nie. */
+function frageZugangsSchluessel() {
+  var ziel = document.getElementById("zugangsfeld");
+  if (!ziel || ziel.querySelector("form")) return;
+  ziel.innerHTML =
+    '<form class="zugangsform">' +
+      "<div>Dieser Dienst verlangt einen Zugangsschl\u00fcssel. Er steht in " +
+      "<code>.env.lokal</code> unter <code>ZUGANGSSCHLUESSEL</code>.</div>" +
+      '<div class="zugangszeile">' +
+        '<input type="password" id="zugang-eingabe" autocomplete="off" ' +
+        'placeholder="Schl\u00fcssel einf\u00fcgen">' +
+        '<button class="btn" type="submit">Merken</button>' +
+      "</div>" +
+    "</form>";
+  ziel.querySelector("form").onsubmit = function (e) {
+    e.preventDefault();
+    var wert = (document.getElementById("zugang-eingabe").value || "").trim();
+    if (!wert) return;
+    merkeZugangsSchluessel(wert);
+    ziel.innerHTML = "";
+    pruefeBackend();
+    // Der fehlgeschlagene Aufruf wird nicht heimlich wiederholt -- der
+    // Benutzer soll sehen, dass er ausgeloest wird.
+    var zeile = document.getElementById("dienstzustand");
+    if (zeile) {
+      zeile.className = "dzustand entw";
+      zeile.innerHTML = "Schl\u00fcssel gemerkt. Bitte den Aufruf wiederholen.";
+    }
+  };
+}
+
 function apiAbruf(pfad, optionen) {
-  return fetch(pfad, optionen).then(function (r) {
+  // Die meisten Aufrufe sind GET und geben gar keine Optionen mit --
+  // deshalb ueberall ueber "vorgabe" gehen und nie ueber "optionen".
+  var vorgabe = optionen || {};
+  var o = vorgabe;
+  var schluessel = zugangsSchluessel();
+  if (schluessel) {
+    // Kopie statt Mutation: der Aufrufer hat sein Objekt oft als Literal
+    // gebaut und rechnet nicht damit, dass es sich aendert.
+    o = { method: vorgabe.method, body: vorgabe.body, headers: {} };
+    Object.keys(vorgabe.headers || {}).forEach(function (k) {
+      o.headers[k] = vorgabe.headers[k];
+    });
+    o.headers["X-Gebimo-Schluessel"] = schluessel;
+  }
+  return fetch(pfad, o).then(function (r) {
     var typ = r.headers.get("Content-Type") || "";
     if (typ.indexOf("application/json") < 0) {
       // Kein JSON heisst: da antwortet etwas anderes als unser Dienst --
@@ -1689,6 +1772,9 @@ function apiAbruf(pfad, optionen) {
     }
     return r.json().then(function (d) {
       if (d && d.technisch) {
+        // Kein gueltiger Schluessel: das ist keine Stoerung, sondern eine
+        // fehlende Angabe -- also danach fragen statt einen Fehler zu melden.
+        if (r.status === 401) frageZugangsSchluessel();
         return { ok: false, technisch: true, art: d.art || "backend_offline",
                  status: r.status, fehler: d.fehler };
       }
@@ -1996,6 +2082,8 @@ function renderFehler(msg, art, unterart) {
         "Das ist eine Einstellung der Seite, kein Problem des Grundst\u00fccks.",
       backend_offline: "Der Dienst l\u00e4uft gerade nicht oder startet noch. " +
         "In einer Minute noch einmal versuchen.",
+      kein_zugang: "Dieser Dienst verlangt einen Zugangsschl\u00fcssel. Das Feld daf\u00fcr " +
+        "steht oben bei der Adresssuche \u2014 der Schl\u00fcssel selbst in .env.lokal.",
       netzwerk: "Keine Verbindung. Internetverbindung pr\u00fcfen und noch einmal versuchen.",
       zeitueberschreitung: "Die Auswertung der Bau- und Nutzungsordnung dauert " +
         "\u00fcblicherweise 1\u20133 Minuten. Dauerte es l\u00e4nger, war der Dienst " +
@@ -2004,7 +2092,8 @@ function renderFehler(msg, art, unterart) {
 
     parkeKarte();
   inner.innerHTML =
-      '<div class="empty"><h2>Analyse-Server nicht erreichbar</h2>' +
+      '<div class="empty"><h2>' + (unterart === "kein_zugang"
+        ? "Zugangsschl\u00fcssel fehlt" : "Analyse-Server nicht erreichbar") + "</h2>" +
       '<div class="note warn">' + esc(msg) + "</div>" +
       '<p style="font-size:12.5px;color:var(--ink-2);margin-top:14px">' + esc(rat) + "</p>" +
       '<p style="font-size:12.5px;color:var(--ink-3);margin-top:10px">' +
