@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import sys
@@ -71,6 +72,14 @@ MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB roh -- bleibt nach Base64 (~+33%) sich
 DEFAULT_TIMEOUT = 60
 GEMINI_MAX_RETRIES = 3
 GEMINI_RETRY_BASE_DELAY_S = 8  # kostenloses Tier hat niedrige Requests/Minute -- 429 ist erwartbar, kein Fehler
+
+
+# Von Hand gepflegte Fassung der Auswertung. Sie wird erhoeht, wenn eine
+# gespeicherte Auswertung BEWUSST verworfen werden soll, obwohl Prompt,
+# Schema und Modell unveraendert sind -- etwa weil sich herausstellt, dass
+# die Ergebnisse fachlich nicht taugten. Ohne diesen Griff muesste man den
+# Prompt kosmetisch aendern, nur um den Zwischenspeicher zu leeren.
+AUSWERTUNG_VERSION = 1
 
 
 class Modul2Error(Exception):
@@ -601,6 +610,43 @@ def _analyze_bzo_documents_claude(
 
 
 # ---------------------------------------------------------------------------
+# Fingerabdruck der Auswertung
+# ---------------------------------------------------------------------------
+
+def modul2_fingerabdruck(backend: Optional[str] = None) -> str:
+    """Was bestimmt, WAS bei einer Auswertung herauskommt.
+
+    Bewusst nicht der Quellcode dieses Moduls und erst recht nicht der der
+    ganzen Engine. Zwischen Modellantwort und Rueckgabewert passiert hier
+    keine Nachbearbeitung -- das JSON des Modells geht durch, nur `_meta`
+    kommt dazu. Der Ausgabevertrag haengt deshalb an genau vier Dingen:
+
+      * der Systemanweisung an das Modell
+      * dem erzwungenen Ausgabeschema
+      * dem Modell selbst
+      * der von Hand gepflegten AUSWERTUNG_VERSION
+
+    Was hier NICHT hineingehoert und frueher (ueber den Fingerabdruck der
+    gesamten Engine) trotzdem jede gespeicherte Auswertung entwertete: die
+    Oberflaeche, die Karte, Modul 1, G1, SIA 416, Markt, Wirtschaftlichkeit.
+    Keines davon aendert, was das Modell aus den PDF liest.
+
+    Ein Kommentar oder ein Docstring in diesem Modul aendert den Abdruck
+    ebenfalls nicht -- ein Satz im Prompt sehr wohl.
+    """
+    gewaehlt = backend or DEFAULT_BACKEND
+    bestandteile = {
+        "system_prompt": SYSTEM_PROMPT,
+        "schema": BZO_ANALYSIS_SCHEMA,
+        "backend": gewaehlt,
+        "modell": GEMINI_MODEL if gewaehlt == "gemini" else CLAUDE_MODEL,
+        "auswertung_version": AUSWERTUNG_VERSION,
+    }
+    roh = json.dumps(bestandteile, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(roh.encode("utf-8")).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher: waehlt zwischen Gemini (Standard) und Claude
 # ---------------------------------------------------------------------------
 
@@ -640,11 +686,53 @@ def analyze_bzo_document(
     return analyze_bzo_documents([pdf_bytes], gemeinde=gemeinde, kanton=kanton, max_tokens=max_tokens, backend=backend)
 
 
+def hole_dokumente(urls: list[str]) -> dict[str, Any]:
+    """Laedt die Dokumente und bildet ihren Inhalts-Fingerabdruck.
+
+    Getrennt von der Auswertung, weil der Zwischenspeicher die Hashes
+    BRAUCHT, bevor er entscheiden kann, ob er auswerten muss. Gemessen an
+    den fuenf Rheineck-Dokumenten (8.1 MB): 1.26 s -- rund ein Prozent des
+    Gemini-Aufrufs. Damit ist der Inhalts-Hash das richtige Mittel und
+    nicht ETag, Abrufdatum oder blosse URL-Gleichheit: oereblex behaelt bei
+    einer Revision die URL, und "Last-Modified" liefern beide Quellen gar
+    nicht.
+
+    Ein nicht ladbarer Link bricht nichts ab -- er wird uebersprungen und
+    ausgewiesen. Der Fingerabdruck bildet deshalb ab, was TATSAECHLICH
+    ausgewertet wurde, nicht was ausgewaehlt war: laedt ein zuvor
+    uebersprungenes Dokument spaeter doch, aendert sich der Satz, und die
+    Auswertung wird zu Recht wiederholt.
+    """
+    geladen = []
+    uebersprungen = []
+    for url in urls:
+        try:
+            daten = download_pdf(url)
+        except Modul2Error as exc:
+            uebersprungen.append({"url": url, "grund": str(exc)})
+            continue
+        except requests.exceptions.RequestException as exc:
+            # Netz-/HTTP-Fehler beim einzelnen Dokument -- z.B. eine
+            # Gemeinde-Website, die den Abruf sperrt (live beobachtet:
+            # Berlingen TG, HTTP 403 auch mit Browser-User-Agent).
+            # raise_for_status() wirft HTTPError, nicht Modul2Error.
+            uebersprungen.append({"url": url, "grund": f"{type(exc).__name__}: {exc}"})
+            continue
+        geladen.append({
+            "url": url,
+            "daten": daten,
+            "sha256": hashlib.sha256(daten).hexdigest(),
+            "bytes": len(daten),
+        })
+    return {"geladen": geladen, "uebersprungen": uebersprungen}
+
+
 def analyze_bzo_from_urls(
     urls: list[str],
     gemeinde: Optional[str] = None,
     kanton: Optional[str] = None,
     backend: Optional[str] = None,
+    dokumente: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Laedt mehrere PDFs von URLs herunter und analysiert sie gemeinsam.
 
@@ -654,32 +742,29 @@ def analyze_bzo_from_urls(
     nicht zum Absturz bringen: fehlschlagende URLs werden uebersprungen und
     unter '_meta.uebersprungene_dokumente' transparent ausgewiesen. Nur wenn
     KEINE der URLs ein PDF liefert, wird abgebrochen.
-    """
-    pdf_documents = []
-    skipped = []
-    for url in urls:
-        try:
-            pdf_documents.append(download_pdf(url))
-        except Modul2Error as exc:
-            skipped.append({"url": url, "grund": str(exc)})
-        except requests.exceptions.RequestException as exc:
-            # Netz-/HTTP-Fehler beim einzelnen Dokument -- z.B. eine
-            # Gemeinde-Website, die den Abruf sperrt (live beobachtet:
-            # Berlingen TG, HTTP 403 auch mit Browser-User-Agent). Frueher
-            # riss das die gesamte Analyse mit, obwohl der Docstring oben
-            # bereits das Ueberspringen vorsah: raise_for_status() wirft
-            # HTTPError, nicht Modul2Error.
-            skipped.append({"url": url, "grund": f"{type(exc).__name__}: {exc}"})
 
-    if not pdf_documents:
+    `dokumente` nimmt ein bereits geholtes Ergebnis von hole_dokumente()
+    entgegen -- der Zwischenspeicher hat die Dateien dann schon geladen, um
+    ihre Hashes zu bilden, und sie ein zweites Mal zu holen waere nur
+    langsamer.
+    """
+    if dokumente is None:
+        dokumente = hole_dokumente(urls)
+    geladen = dokumente.get("geladen") or []
+    skipped = dokumente.get("uebersprungen") or []
+
+    if not geladen:
         raise Modul2Error(
             f"Keine der {len(urls)} URLs lieferte ein ladbares PDF. "
             f"Details: {skipped}"
         )
 
-    result = analyze_bzo_documents(pdf_documents, gemeinde=gemeinde, kanton=kanton, backend=backend)
+    result = analyze_bzo_documents([d["daten"] for d in geladen],
+                                   gemeinde=gemeinde, kanton=kanton, backend=backend)
     result["_meta"]["source_urls"] = urls
     result["_meta"]["uebersprungene_dokumente"] = skipped
+    result["_meta"]["ausgewertete_dokumente"] = [
+        {"url": d["url"], "sha256": d["sha256"], "bytes": d["bytes"]} for d in geladen]
     return result
 
 
@@ -711,6 +796,7 @@ def analyze_from_oereb_result(
     kanton: Optional[str] = None,
     max_documents: int = 5,
     backend: Optional[str] = None,
+    dokumente: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Orchestrierungs-Helfer: nimmt direkt den 'oereb'-Teil aus Modul 1s
     run_modul1()-Ergebnis entgegen, waehlt die wahrscheinlichsten BZO-/
@@ -733,7 +819,8 @@ def analyze_from_oereb_result(
     chosen = waehle_bzo_dokumente(oereb_result, max_documents=max_documents)
     urls = [p["url"] for p in chosen]
 
-    result = analyze_bzo_from_urls(urls, gemeinde=gemeinde, kanton=kanton, backend=backend)
+    result = analyze_bzo_from_urls(urls, gemeinde=gemeinde, kanton=kanton, backend=backend,
+                                   dokumente=dokumente)
     result["_meta"]["source_dokumente"] = [{"titel": p["titel"], "url": p["url"]} for p in chosen]
     return result
 

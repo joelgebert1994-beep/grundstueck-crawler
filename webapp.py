@@ -459,50 +459,112 @@ def _bzo_zwischenspeicher():
 
     Gemessen entfallen 87 % der Analysezeit (109 von 126 s) auf das Lesen der
     Bau- und Nutzungsordnung durch das Sprachmodell. Sie gilt fuer die ganze
-    GEMEINDE; der bisherige Zwischenspeicher griff aber ueber den EGRID und
-    half deshalb nur demselben Grundstueck. Das zweite Grundstueck in Buchs
-    liess dieselben fuenf PDF erneut lesen.
+    GEMEINDE, nicht fuer die Parzelle.
+
+    Die Reihenfolge ist entscheidend und kehrt die frueher uebliche um:
+    ERST die Dokumente holen und ihren Inhalt hashen, DANN nachschlagen.
+    Gemessen an den fuenf Rheineck-Dokumenten kostet das 1.26 s -- rund ein
+    Prozent des Gemini-Aufrufs. Dafuer ist ein Treffer danach eine
+    Tatsachenaussage ("dieselben Papiere, dieselbe Auswertung") statt einer
+    Vermutung ueber gleich gebliebene URLs.
+
+    Der Schluessel haengt seit 17.09.2026 NICHT mehr am Fingerabdruck der
+    gesamten Engine. Eine Aenderung an Oberflaeche, Karte, Modul 1, G1,
+    SIA 416, Markt oder Wirtschaftlichkeit laesst eine gespeicherte
+    Auswertung deshalb gueltig -- keines davon aendert, was das Modell aus
+    den PDF liest.
 
     Faellt die Datenschicht aus, wird einfach gerechnet -- ein defekter
     Zwischenspeicher darf das Werkzeug nicht unbenutzbar machen.
     """
     from potenzial_engine.modul2_bzo_analysis import (
         analyze_from_oereb_result,
+        hole_dokumente,
+        modul2_fingerabdruck,
         waehle_bzo_dokumente,
     )
 
     def lade(oereb, gemeinde=None, kanton=None):
         kern_db, _ = _kern_projekt()
         speicher = None
-        schluessel = None
-        dokumente = []
+        con = None
         if kern_db is not None:
             try:
                 from kern import bzo_speicher
-
-                dokumente = waehle_bzo_dokumente(oereb)
-                schluessel = bzo_speicher.fingerabdruck(
-                    gemeinde, kanton, [d.get("url") for d in dokumente])
                 con = kern_db.verbinde()
-                treffer = bzo_speicher.hole(con, schluessel, ENGINE_VERSION)
-                if treffer is not None:
-                    return treffer
-                speicher = (bzo_speicher, con)
+                speicher = bzo_speicher
             except Exception:  # noqa: BLE001 -- nie am Zwischenspeicher scheitern
                 traceback.print_exc()
                 speicher = None
+                con = None
 
-        ergebnis = analyze_from_oereb_result(
-            oereb, gemeinde=gemeinde, kanton=kanton, backend="gemini")
-        ergebnis["_zwischenspeicher"] = {"aus_zwischenspeicher": False,
-                                         "gerechnet_am": _jetzt_iso()}
-        if speicher and schluessel:
+        gewaehlt = waehle_bzo_dokumente(oereb)
+        urls = [d.get("url") for d in gewaehlt if d.get("url")]
+
+        # --- Dokumente holen und hashen ---------------------------------
+        try:
+            geholt = hole_dokumente(urls)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            geholt = {"geladen": [], "uebersprungen": [
+                {"url": u, "grund": "Abruf fehlgeschlagen"} for u in urls]}
+
+        # --- Kein Dokument erreichbar: Rueckfall auf den Bestand ---------
+        #
+        # Ohne Dokumente gibt es keinen Inhalts-Hash und damit keinen
+        # ordentlichen Schluessel. Eine vorhandene Auswertung deswegen
+        # wegzuwerfen waere falsch: sie ist nicht schlechter geworden,
+        # nur ungeprueft. Sie wird verwendet UND als ungeprueft
+        # gekennzeichnet -- erfunden wird nichts.
+        if not geholt["geladen"]:
+            if speicher is not None and con is not None:
+                try:
+                    treffer = speicher.hole_letzte_fuer_gemeinde(con, gemeinde, kanton)
+                    if treffer is not None:
+                        return treffer
+                except Exception:  # noqa: BLE001
+                    traceback.print_exc()
+            # Kein Bestand und keine Dokumente: das ist ein Fehler, und er
+            # wird als solcher weitergereicht. Kein Ersatzwert.
+            from potenzial_engine.modul2_bzo_analysis import Modul2Error
+            raise Modul2Error(
+                "Keines der " + str(len(urls)) + " Reglementsdokumente war abrufbar, "
+                "und es liegt keine gespeicherte Auswertung fuer diese Gemeinde vor. "
+                "Details: " + repr(geholt["uebersprungen"][:3]))
+
+        dokumente = [{"url": d["url"], "sha256": d["sha256"], "bytes": d["bytes"]}
+                     for d in geholt["geladen"]]
+        modul2_version = modul2_fingerabdruck()
+        schluessel = None
+
+        # --- Nachschlagen ------------------------------------------------
+        if speicher is not None and con is not None:
             try:
-                speicher[0].lege_ab(
-                    speicher[1], schluessel, ENGINE_VERSION,
+                schluessel = speicher.fingerabdruck(
+                    gemeinde, kanton, dokumente, modul2_version)
+                treffer = speicher.hole(con, schluessel)
+                if treffer is not None:
+                    return treffer
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                schluessel = None
+
+        # --- Auswerten ---------------------------------------------------
+        # Die Dokumente sind bereits geladen und werden durchgereicht --
+        # sie ein zweites Mal zu holen waere nur langsamer.
+        ergebnis = analyze_from_oereb_result(
+            oereb, gemeinde=gemeinde, kanton=kanton, backend="gemini",
+            dokumente=geholt)
+        ergebnis["_zwischenspeicher"] = {"aus_zwischenspeicher": False,
+                                         "gerechnet_am": _jetzt_iso(),
+                                         "modul2_version": modul2_version,
+                                         "dokumente": dokumente}
+        if speicher is not None and con is not None and schluessel:
+            try:
+                speicher.lege_ab(
+                    con, schluessel,
                     gemeinde=gemeinde, kanton=kanton,
-                    dokumente=[{"titel": d.get("titel"), "url": d.get("url")}
-                               for d in dokumente],
+                    dokumente=dokumente, modul2_version=modul2_version,
                     ergebnis=ergebnis)
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
