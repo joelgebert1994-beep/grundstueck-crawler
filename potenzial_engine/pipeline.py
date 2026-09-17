@@ -1152,25 +1152,48 @@ def _bestand_und_neubaugeometrie(
     if gebaeude and all(g for g in geschosse) and all(f for f in flaechen):
         bestand_gf = round(sum(f * g for f, g in zip(flaechen, geschosse)), 1)
 
+    # Die bestehende Geschossflaeche ist NIE gemessen: das Gebaeude- und
+    # Wohnungsregister fuehrt keine Geschossflaeche. Was hier steht, ist
+    # Grundflaeche mal Geschosszahl -- eine Ableitung aus zwei Registerwerten.
+    # Sie als "Bestand: 354 m2 GF" auszugeben, taeuschte eine Genauigkeit vor,
+    # die die Daten nicht hergeben: Untergeschosse, Dachgeschosse,
+    # unterschiedlich grosse Geschosse und Anbauten sind darin nicht
+    # abgebildet.
     ebene_bestand = {
         "gebaeude": len(gebaeude),
-        "grundflaeche_gwr_m2": bestand.get("bebaute_flaeche_gwr_m2"),
-        "grundriss_flaeche_m2": bestand.get("bebaute_flaeche_grundriss_m2"),
-        "geschosse": [g for g in geschosse if g],
-        "geschossflaeche_m2": bestand_gf,
-        "geschossflaeche_rechnung": (
-            None if bestand_gf is None else
-            " + ".join(f"{f:,.0f} m2 x {g} Geschosse" for f, g in zip(flaechen, geschosse))),
-        "geschossflaeche_grund": (
-            None if bestand_gf is not None else
-            "Das Gebaeuderegister fuehrt fuer diese Parzelle keine vollstaendige "
-            "Geschosszahl oder Grundflaeche -- die bestehende Geschossflaeche ist "
-            "daraus nicht bestimmbar."),
-        "geschossflaeche_naeherung": (
-            None if bestand_gf is None else
-            "Genaehert als Grundflaeche x Geschosszahl -- das Register fuehrt keine "
-            "Geschossflaeche."),
-        "quelle": "Gebaeude- und Wohnungsregister (GWR) und amtliche Vermessung",
+        "grundflaeche": {
+            "wert_m2": bestand.get("bebaute_flaeche_gwr_m2"),
+            "quelle": "Gebaeude- und Wohnungsregister (GWR)",
+            "status": "gemessen" if bestand.get("bebaute_flaeche_gwr_m2") else "nicht_verfuegbar",
+        },
+        "grundriss_kataster": {
+            "wert_m2": bestand.get("bebaute_flaeche_grundriss_m2"),
+            "quelle": "amtliche Vermessung (Gebaeudepolygon)",
+            "hinweis": (
+                "Das Katasterpolygon kann mehr umfassen als dieses eine Gebaeude -- "
+                "bei zusammengebauten Haeusern deckt es die ganze Zeile."),
+        },
+        "geschosse": {
+            "wert": [g for g in geschosse if g] or None,
+            "quelle": "Gebaeude- und Wohnungsregister (GWR)",
+            "status": "gemessen" if all(g for g in geschosse) and gebaeude else "unvollstaendig",
+        },
+        "geschossflaeche_abgeleitet": {
+            "wert_m2": bestand_gf,
+            "status": "abgeleitet" if bestand_gf is not None else "nicht_bestimmbar",
+            "rechnung": (
+                None if bestand_gf is None else
+                " + ".join(f"{f:,.0f} m2 x {g} Geschosse" for f, g in zip(flaechen, geschosse))),
+            "herleitung": (
+                "Grundflaeche x Geschosszahl. NAEHERUNGSWERT -- das Register fuehrt "
+                "keine Geschossflaeche. Unter- und Dachgeschosse, unterschiedlich "
+                "grosse Geschosse und Anbauten sind darin nicht abgebildet."),
+            "grund": (
+                None if bestand_gf is not None else
+                "Das Gebaeuderegister fuehrt fuer diese Parzelle keine vollstaendige "
+                "Geschosszahl oder Grundflaeche -- auch eine Naeherung ist daraus "
+                "nicht ableitbar."),
+        },
     }
 
     # --- Neubau nach heutiger Geometrie ---------------------------------
@@ -1199,44 +1222,70 @@ def _bestand_und_neubaugeometrie(
     else:
         ebene_neubau["grund"] = "Keine G1-Geometrie vorhanden."
 
-    # --- Zulaessige Gesamtentwicklung aus der Ausnuetzungsziffer ---------
-    az_gf = (g1_ergebnis or {}).get("zulaessige_geschossflaeche_az_m2")
+    # --- Geschossflaeche nach der aktuellen Ausnuetzungsziffer -----------
+    # Bewusst NICHT "zulaessige Gesamtentwicklung". Dieser Wert sagt, welche
+    # Geschossflaeche die heutige Ausnuetzungsziffer auf diese Landflaeche
+    # rechnet -- mehr nicht. Er beruecksichtigt weder Abstaende noch
+    # Sonderregelungen, Bonusregelungen oder den Bestand.
+    az_gf = (g1_ergebnis or {}).get("gf_nach_ausnuetzungsziffer_m2")
     if az_gf is None and einzel:
         kandidaten = einzel.get("geschossflaeche_kandidaten") or {}
         az_gf = kandidaten.get("ausnuetzung_az")
+    rechtsrahmen = {
+        "gf_nach_ausnuetzungsziffer_m2": az_gf,
+        "rechnung": (g1_ergebnis or {}).get("gf_nach_ausnuetzungsziffer_rechnung"),
+        "bedeutung": (
+            "Theoretischer Wert der aktuellen Zonengrundlage: Ausnuetzungsziffer mal "
+            "anrechenbare Landflaeche. Keine Aussage darueber, was auf diesem "
+            "Grundstueck insgesamt zulaessig oder baulich realisierbar ist."),
+    }
 
     # --- Zusaetzliches Entwicklungspotenzial ----------------------------
-    # Nur dort, wo Bestand UND zulaessige Gesamtentwicklung belastbar sind.
-    if az_gf is not None and bestand_gf is not None:
-        differenz = round(az_gf - bestand_gf, 1)
+    # Die Differenz aus theoretischem Zonenwert und abgeleitetem Bestand ist
+    # KEIN Potenzial. Sie verrechnet zwei Groessen verschiedener Art:
+    #
+    #   * der Zonenwert ist theoretisch und kennt weder Abstaende noch
+    #     Sonderregelungen
+    #   * die Bestands-GF ist aus zwei Registerwerten abgeleitet, nicht
+    #     gemessen
+    #
+    # Waere die Differenz negativ, entstuende daraus scheinbar ein
+    # Rueckbaubefund -- fuer einen Altbau im Ortskern die Regel und trotzdem
+    # falsch. Die Bestandessituation und die Abstands-/Geometriefrage sind
+    # getrennt vom theoretischen Neubauwert zu beurteilen.
+    hindernisse: list[str] = []
+    if az_gf is None:
+        hindernisse.append(
+            "Es gibt keine belastbare Ausnuetzungsziffer, also auch keinen "
+            "theoretischen Zonenwert.")
+    if not ebene_neubau.get("belastbar"):
+        hindernisse.append(
+            "Die Neubaugeometrie unter den heutigen Abstaenden ist nicht belastbar "
+            "bestimmbar -- ohne sie ist offen, was von einem theoretischen Wert "
+            "baulich uebrig bliebe.")
+    if gebaeude and bestand_gf is None:
+        hindernisse.append(
+            "Die bestehende Geschossflaeche ist aus dem Register nicht ableitbar.")
+    elif gebaeude:
+        hindernisse.append(
+            "Der Bestand ist mit rund " + f"{bestand_gf:,.0f}" + " m2 nur GENAEHERT "
+            "bekannt (Grundflaeche x Geschosszahl). Eine Differenz aus einem "
+            "theoretischen Zonenwert und einer Naeherung waere keine Potenzialzahl.")
+
+    if hindernisse:
+        ebene_zusatz = {
+            "status": "nicht_abschliessend_bestimmbar",
+            "grund": ("Bestandessituation und Abstands-/Geometriefrage muessen getrennt "
+                      "vom theoretischen Neubauwert beurteilt werden."),
+            "offene_punkte": hindernisse,
+        }
+    else:
+        # Kein Bestand, belastbare Geometrie, belastbare Ziffer: dann ist das
+        # zusaetzliche Potenzial schlicht das Potenzial.
         ebene_zusatz = {
             "status": "bestimmbar",
-            "zusaetzliche_geschossflaeche_m2": differenz,
-            "rechnung": (f"{az_gf:,.1f} m2 zulaessig (Ausnuetzungsziffer) - "
-                         f"{bestand_gf:,.1f} m2 bestehend"),
-        }
-        if differenz < 0:
-            # Ein ueberbautes Grundstueck ist kein Rechenfehler -- in alten
-            # Ortskernen ist es die Regel. Was es NICHT heisst: dass
-            # abgebrochen werden muesste.
-            ebene_zusatz["hinweis"] = (
-                f"Der Bestand ueberschreitet die heute zulaessige Geschossflaeche um "
-                f"{abs(differenz):,.0f} m2. Zusaetzliches Potenzial nach heutiger "
-                "Ausnuetzungsziffer gibt es damit nicht. Daraus folgt weder ein "
-                "Rueckbaubedarf noch, dass der Bestand unzulaessig waere -- die "
-                "Bestandessituation ist zu pruefen.")
-    else:
-        fehlt = []
-        if az_gf is None:
-            fehlt.append("die zulaessige Gesamtgeschossflaeche (keine belastbare "
-                         "Ausnuetzungsziffer)")
-        if bestand_gf is None:
-            fehlt.append("die bestehende Geschossflaeche (Geschosszahl oder Grundflaeche "
-                         "im Register unvollstaendig)")
-        ebene_zusatz = {
-            "status": "nicht_bestimmbar",
-            "grund": ("Zusaetzliches Potenzial ist die Differenz zweier Groessen. Hier fehlt "
-                      + " und ".join(fehlt) + " -- eine Differenz waere dann eine Annahme."),
+            "zusaetzliche_geschossflaeche_m2": az_gf,
+            "rechnung": f"{az_gf:,.1f} m2 nach Ausnuetzungsziffer, kein Gebaeude verzeichnet",
         }
 
     # --- Bestandessituation: Feststellung, keine rechtliche Einordnung ---
@@ -1273,7 +1322,7 @@ def _bestand_und_neubaugeometrie(
     return {
         "bestand": ebene_bestand,
         "neubau_nach_heutiger_geometrie": ebene_neubau,
-        "zulaessige_gesamtentwicklung_gf_m2": az_gf,
+        "heutiger_rechtsrahmen": rechtsrahmen,
         "zusaetzliches_potenzial": ebene_zusatz,
         "bestandssituation": bestandssituation,
     }

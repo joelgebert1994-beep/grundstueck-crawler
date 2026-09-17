@@ -482,11 +482,22 @@ def berechne_g1_fuer_fall(
             }
             if az is not None and landflaeche:
                 # Die Ausnuetzungsziffer haengt NICHT an der Abstandszuordnung --
-                # sie bleibt belastbar und wird deshalb getrennt genannt.
-                antwort["zulaessige_geschossflaeche_az_m2"] = round(az * landflaeche, 2)
-                antwort["zulaessige_geschossflaeche_az_rechnung"] = (
+                # sie bleibt rechenbar und wird deshalb getrennt genannt.
+                #
+                # Bewusst NICHT "zulaessige Gesamtentwicklung": das waere eine
+                # Aussage darueber, was auf diesem Grundstueck insgesamt
+                # zulaessig ist, und die trifft dieser Wert nicht. Er sagt nur,
+                # welche Geschossflaeche die heutige Ausnuetzungsziffer auf
+                # diese Flaeche rechnet -- ohne Abstaende, ohne Bestand, ohne
+                # Sonderregelungen.
+                antwort["gf_nach_ausnuetzungsziffer_m2"] = round(az * landflaeche, 2)
+                antwort["gf_nach_ausnuetzungsziffer_rechnung"] = (
                     f"Ausnuetzungsziffer {az:g} x {landflaeche:,.1f} m2 anrechenbare "
                     f"Landflaeche")
+                antwort["gf_nach_ausnuetzungsziffer_bedeutung"] = (
+                    "Theoretischer Wert der aktuellen Zonengrundlage. Weder eine "
+                    "Aussage ueber den Bestand noch ueber das, was baulich "
+                    "realisierbar ist.")
             if entartet:
                 antwort["untergrenze_entartet"] = {
                     "baubereich_m2": unten.get("baubereich_m2"),

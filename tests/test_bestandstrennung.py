@@ -159,10 +159,16 @@ def test_bandbreite_und_az() -> None:
     pruefe("nicht ein baurechtlich bestimmtes Potenzial" in b["bedeutung"],
            "die Bandbreite wird als Sensitivitaet gekennzeichnet, nicht als Potenzial")
 
-    pruefe(abs(g1["zulaessige_geschossflaeche_az_m2"] - 130.1) < 0.2,
-           f"die Ausnuetzungsziffer bleibt belastbar: {g1.get('zulaessige_geschossflaeche_az_m2')} m2")
-    pruefe("0.45" in (g1.get("zulaessige_geschossflaeche_az_rechnung") or ""),
+    pruefe(abs(g1["gf_nach_ausnuetzungsziffer_m2"] - 130.1) < 0.2,
+           f"die Ausnuetzungsziffer bleibt rechenbar: {g1.get('gf_nach_ausnuetzungsziffer_m2')} m2")
+    pruefe("0.45" in (g1.get("gf_nach_ausnuetzungsziffer_rechnung") or ""),
            "mit nachvollziehbarer Rechnung")
+    pruefe("Theoretischer Wert" in (g1.get("gf_nach_ausnuetzungsziffer_bedeutung") or ""),
+           "und ausdruecklich als theoretischer Wert der Zonengrundlage benannt")
+    pruefe("zulaessige_geschossflaeche_az_m2" not in g1
+           and "zulaessige_gesamtentwicklung_gf_m2" not in g1,
+           "der Begriff 'zulaessige Gesamtentwicklung' kommt nicht mehr vor -- er "
+           "behauptete mehr, als die Ausnuetzungsziffer hergibt")
 
     entartet = g1.get("untergrenze_entartet")
     pruefe(entartet is not None, "die zusammengefallene Untergrenze wird benannt")
@@ -182,10 +188,22 @@ def test_drei_ebenen_getrennt() -> None:
     d = _bestand_und_neubaugeometrie(m1, g1)
 
     bestand = d["bestand"]
-    pruefe(bestand["geschossflaeche_m2"] == 354.0,
-           f"Bestand: 118 m2 x 3 Geschosse = 354 m2 ({bestand['geschossflaeche_m2']})")
-    pruefe(bestand["grundriss_flaeche_m2"] == 248.2 and bestand["grundflaeche_gwr_m2"] == 118.0,
-           "beide Flaechenquellen werden ausgewiesen -- sie widersprechen sich hier um Faktor 2")
+    pruefe(bestand["grundflaeche"]["wert_m2"] == 118.0
+           and bestand["grundflaeche"]["status"] == "gemessen",
+           "Bestandsgrundflaeche 118 m2, als gemessener Registerwert gefuehrt")
+    pruefe(bestand["geschosse"]["wert"] == [3]
+           and bestand["geschosse"]["status"] == "gemessen",
+           "Geschosszahl 3, ebenfalls aus dem Register")
+    pruefe(bestand["grundriss_kataster"]["wert_m2"] == 248.2,
+           "der abweichende Katasterwert steht daneben, nicht statt dessen")
+
+    gf = bestand["geschossflaeche_abgeleitet"]
+    pruefe(gf["wert_m2"] == 354.0 and gf["status"] == "abgeleitet",
+           f"die Bestands-GF ist ABGELEITET, nicht gemessen ({gf['status']})")
+    pruefe("NAEHERUNGSWERT" in gf["herleitung"] and "118 m2 x 3" in gf["rechnung"],
+           "Herleitung und Rechnung stehen dabei")
+    pruefe("geschossflaeche_m2" not in bestand,
+           "es gibt kein Feld, das die Naeherung wie einen gemessenen Wert aussehen laesst")
 
     neubau = d["neubau_nach_heutiger_geometrie"]
     pruefe(neubau["belastbar"] is False, "Neubaugeometrie: nicht belastbar")
@@ -196,16 +214,28 @@ def test_drei_ebenen_getrennt() -> None:
     pruefe(neubau.get("geschossflaeche_m2") is None,
            "aber KEINE einzelne Geschossflaeche")
 
+    rahmen = d["heutiger_rechtsrahmen"]
+    pruefe(abs(rahmen["gf_nach_ausnuetzungsziffer_m2"] - 130.1) < 0.2,
+           "der heutige Rechtsrahmen nennt 130.1 m2 nach Ausnuetzungsziffer")
+    pruefe("Theoretischer Wert" in rahmen["bedeutung"],
+           "als theoretischer Wert, nicht als zulaessige Gesamtentwicklung")
+
     zusatz = d["zusaetzliches_potenzial"]
-    pruefe(zusatz["status"] == "bestimmbar", "zusaetzliches Potenzial ist hier bestimmbar")
-    pruefe(zusatz["zusaetzliche_geschossflaeche_m2"] == -223.9,
-           f"130.1 zulaessig - 354.0 bestehend = -223.9 ({zusatz['zusaetzliche_geschossflaeche_m2']})")
-    pruefe("weder ein Rueckbaubedarf" in (zusatz.get("hinweis") or ""),
-           "und die negative Differenz wird nicht zu einer Forderung umgedeutet")
+    pruefe(zusatz["status"] == "nicht_abschliessend_bestimmbar",
+           f"zusaetzliches Potenzial: nicht abschliessend bestimmbar ({zusatz['status']})")
+    pruefe("zusaetzliche_geschossflaeche_m2" not in zusatz,
+           "KEINE Differenz aus theoretischem Zonenwert und genaehertem Bestand -- "
+           "die -223.9 m2 waeren ein scheinbarer Rueckbaubefund")
+    pruefe("getrennt vom theoretischen Neubauwert" in zusatz["grund"],
+           "mit der Begruendung im Klartext")
+    pruefe(any("GENAEHERT" in p for p in zusatz["offene_punkte"]),
+           "die Naeherung der Bestands-GF steht als offener Punkt")
+    pruefe(any("nicht belastbar bestimmbar" in p for p in zusatz["offene_punkte"]),
+           "die offene Geometrie ebenso")
 
     # Die Verwechslung, um die es geht: Neubaugeometrie ist nicht der Bestand.
     pruefe(neubau.get("bandbreite_geschossflaeche_m2", [None])[0]
-           != bestand["geschossflaeche_m2"],
+           != gf["wert_m2"],
            "Neubaugeometrie und Bestand sind getrennte Groessen")
     print()
 
@@ -252,6 +282,34 @@ def test_eindeutiger_fall_bleibt_einzelwert() -> None:
     print()
 
 
+def test_ohne_bestand_und_mit_klarer_geometrie() -> None:
+    """Die Gegenprobe: wo nichts steht und die Geometrie eindeutig ist, gibt
+    es sehr wohl eine Zahl. Die neue Zurueckhaltung darf nicht dazu fuehren,
+    dass die Engine gar nichts mehr sagt."""
+    print("=== Ohne Bestand und mit eindeutiger Geometrie: eine Zahl ===")
+    m1 = rheineck_modul1()
+    m1["bestand"] = {"gefunden": False, "gebaeude": [], "anzahl_gebaeude": 0}
+    zone = dict(RHEINECK_ZONE, grenzabstand_gross_m={"wert": 4.0, "confidence": "hoch"})
+
+    g1 = berechne_g1_fuer_fall(m1, zone, kantenklassifikation=RHEINECK_KANTEN)
+    d = _bestand_und_neubaugeometrie(m1, g1)
+
+    pruefe(d["neubau_nach_heutiger_geometrie"]["belastbar"] is True,
+           "eindeutige Abstaende: die Neubaugeometrie ist belastbar")
+    zusatz = d["zusaetzliches_potenzial"]
+    pruefe(zusatz["status"] == "bestimmbar",
+           f"und ohne Bestand ist das zusaetzliche Potenzial bestimmbar ({zusatz['status']})")
+    pruefe(abs(zusatz["zusaetzliche_geschossflaeche_m2"] - 130.1) < 0.2,
+           f"es entspricht dem Wert nach Ausnuetzungsziffer "
+           f"({zusatz.get('zusaetzliche_geschossflaeche_m2')} m2)")
+    pruefe("kein Gebaeude verzeichnet" in zusatz["rechnung"],
+           "und die Rechnung sagt, warum nichts abzuziehen ist")
+
+    pruefe(d["bestand"]["geschossflaeche_abgeleitet"]["status"] == "nicht_bestimmbar",
+           "ohne Gebaeude gibt es auch keine abgeleitete Bestandsflaeche")
+    print()
+
+
 def main() -> None:
     test_unentscheidbarkeit()
     test_kein_scheinpraeziser_einzelwert()
@@ -259,6 +317,7 @@ def main() -> None:
     test_drei_ebenen_getrennt()
     test_bestandessituation_ohne_rechtsfolge()
     test_eindeutiger_fall_bleibt_einzelwert()
+    test_ohne_bestand_und_mit_klarer_geometrie()
 
     print("=" * 70)
     if FEHLER:
