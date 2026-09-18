@@ -2253,16 +2253,24 @@ function zeichneErgebnisAufKarte(erg) {
             ? "<br>begrenzt durch " + esc(klartext(e.fussabdruck_limitiert_durch)) : "") + "<br>" +
           "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²</span>";
       }
-      // Beide Raender trugen je ein dauerhaftes Etikett. Da sie fast
-      // deckungsgleich liegen, standen die beiden Beschriftungen
-      // uebereinander und waren nicht mehr zu lesen. Jetzt traegt nur die
-      // aeussere Flaeche ein dauerhaftes Etikett, und es beschreibt das
-      // PAAR -- eine Spanne, nicht einen Baukoerper. Der einzelne Rand
-      // steht beim Ueberfahren und im Popup.
+      // Jede Anordnung trug ein dauerhaftes Etikett. Da sie fast
+      // deckungsgleich liegen, standen die Beschriftungen uebereinander --
+      // und im eindeutigen Fall stand zweimal "Bebaubare Fläche" da, als
+      // gaebe es zwei Baukoerper. Genau EIN dauerhaftes Etikett:
+      //
+      //   Spanne     -> die aeussere Flaeche, beschriftet mit der SPANNE
+      //   eindeutig  -> die ausgewiesene (strengste) Anordnung
+      //
+      // Alle uebrigen stehen ohne festes Etikett daneben; ihr Name
+      // erscheint beim Ueberfahren und im Popup.
+      var vertreter = ((g1.eindeutigkeit || {}).vertreter_anordnung) || null;
       var istOben = randfall && name === obenName;
+      var istVertreter = !randfall && (!vertreter || name === vertreter || !name);
       var etikett, dauerhaft, stil;
       if (!randfall) {
-        etikett = "Bebaubare Fläche"; dauerhaft = true; stil = STIL.baubereich;
+        etikett = "Bebaubare Fläche"; dauerhaft = istVertreter;
+        stil = istVertreter ? STIL.baubereich : STIL.randfallOben;
+        if (!istVertreter) etikett = bezeichnung;
       } else if (istOben) {
         etikett = spannentext; dauerhaft = true; stil = STIL.randfallOben;
       } else {
@@ -2645,21 +2653,37 @@ function secUebersicht(erg, m1, zz) {
       'tats\u00e4chlich gebaut werden kann, wird im Reiter <b>Potenzial</b> gepr\u00fcft.</div>'
     : '<div class="note warn">' + esc(regelGrund) + "</div>";
 
-  /* --- Was ist tatsaechlich moeglich? -------------------------------- */
-  // Hier steht nur das Urteil. Die G1-Kaskade, die Sensitivitaetsbandbreite
-  // und die Randfaelle gehoeren in den Potenzialreiter -- vorne gelesen
-  // wirkt ein Rechenrand wie ein Ergebnis.
-  var zp = (erg.bestand_und_neubaugeometrie || {}).zusaetzliches_potenzial;
+  /* --- Was ist tatsaechlich moeglich? --------------------------------
+     Hier steht nur das Urteil; die Herleitung gehoert in den Potenzial-
+     reiter. Beide lesen dafuer DIESELBE Auskunft (potenzialKurz) -- sonst
+     sagt die Uebersicht "nicht bestimmbar", waehrend der Reiter daneben
+     einen eindeutigen Wert zeigt. Genau das ist an Bahnhofstrasse 4,
+     Rheineck passiert. */
+  var kurz = potenzialKurz(erg);
   var moeglich;
-  if (!zp) {
+  if (kurz.art === "laeuft") {
     moeglich = uAntwort("", '<p class="atext">Wird ermittelt.</p>');
-  } else if (zp.status === "bestimmbar") {
+  } else if (kurz.art === "zusatz") {
     moeglich = uAntwort("gut",
-      '<div class="akopf"><span class="gross">' +
-        fmt(zp.zusaetzliche_geschossflaeche_m2, 1) + ' m\u00b2</span>' +
+      '<div class="akopf"><span class="gross">' + fmt(kurz.wert, 1) + ' m\u00b2</span>' +
         '<span class="alab">zus\u00e4tzliche Geschossfl\u00e4che</span></div>' +
-      (zp.rechnung ? '<p class="ahinweis">' + esc(lesbar(zp.rechnung)) + "</p>" : "") +
+      (kurz.rechnung ? '<p class="ahinweis">' + esc(lesbar(kurz.rechnung)) + "</p>" : "") +
       '<div class="afuss">' + reiterLink("potenzial", "Herleitung im Reiter Potenzial") + "</div>");
+  } else if (kurz.art === "eindeutig") {
+    moeglich = uAntwort("gut",
+      '<div class="akopf"><span class="gross">' + fmt(kurz.wert, 0) + ' m\u00b2</span>' +
+        '<span class="alab">Geschossfl\u00e4che Neubau \u2014 eindeutig bestimmbar</span></div>' +
+      '<p class="ahinweis">Alle ' + kurz.anzahl + ' zul\u00e4ssigen Abstandsvarianten ergeben ' +
+      'dasselbe Ergebnis; begrenzend ist ' + esc(bindendText(kurz.bindend)) + '.</p>' +
+      '<div class="afuss">' + reiterLink("potenzial", "Herleitung im Reiter Potenzial") + "</div>");
+  } else if (kurz.art === "spanne") {
+    moeglich = uAntwort("",
+      '<div class="akopf"><span class="gross">' + fmt(kurz.spanne[0], 0) + "\u2013" +
+        fmt(kurz.spanne[1], 0) + ' m\u00b2</span>' +
+        '<span class="alab">Geschossfl\u00e4che Neubau \u2014 je nach Ausrichtung</span></div>' +
+      '<p class="ahinweis">Welche Seite den grossen Grenzabstand tr\u00e4gt, entscheidet der ' +
+      'Geb\u00e4udeentwurf. Alle ' + kurz.anzahl + ' zul\u00e4ssigen Anordnungen sind gerechnet.</p>' +
+      '<div class="afuss">' + reiterLink("potenzial", "Einzelwerte im Reiter Potenzial") + "</div>");
   } else {
     moeglich = uAntwort("offen",
       '<div class="akopf"><span class="gross klein">Potenzial derzeit nicht abschliessend ' +
@@ -3895,6 +3919,37 @@ function bindendText(schluessel) {
   return BINDEND_TEXT[schluessel] || klartext(schluessel);
 }
 
+/* Die EINE Auskunft darueber, was das Potenzial hergibt.
+
+   Uebersicht und Potenzialreiter lesen beide hier -- sonst driften sie
+   auseinander. Live gesehen an Bahnhofstrasse 4, Rheineck: der Reiter
+   zeigte "378 m2, eindeutig bestimmbar", die Uebersicht daneben "nicht
+   abschliessend bestimmbar", weil sie nur das ZUSAETZLICHE Potenzial las
+   und den eindeutigen Neubauwert gar nicht kannte. */
+function potenzialKurz(erg) {
+  var bnb = (erg || {}).bestand_und_neubaugeometrie || {};
+  var zp = bnb.zusaetzliches_potenzial;
+  var g1 = (erg || {}).g1_ergebnis || {};
+  var ein = g1.eindeutigkeit;
+  var bb = g1.bandbreite || {};
+  var anzahl = alsListe(g1.anordnungen).length;
+
+  if (!zp && !ein) return { art: "laeuft" };
+  if (zp && zp.status === "bestimmbar") {
+    return { art: "zusatz", wert: zp.zusaetzliche_geschossflaeche_m2,
+             rechnung: zp.rechnung, zp: zp };
+  }
+  if (ein && ein.geschossflaeche_eindeutig) {
+    return { art: "eindeutig", wert: ein.geschossflaeche_m2,
+             bindend: ein.bindend, anzahl: anzahl, zp: zp };
+  }
+  var spanne = bb.geschossflaeche_m2 || [];
+  if (spanne.length === 2 && !leer(spanne[0]) && spanne[0] !== spanne[1]) {
+    return { art: "spanne", spanne: spanne, anzahl: anzahl, zp: zp };
+  }
+  return { art: "offen", zp: zp };
+}
+
 /* Das Urteil zuerst: was ist moeglich, und wenn nichts Belastbares --
    warum nicht. Erst danach die drei Ebenen, erst darunter die Herleitung.
    Umgekehrt gelesen wirkt jeder Zwischenwert wie ein Ergebnis. */
@@ -3905,12 +3960,13 @@ function potenzialUrteil(erg) {
   var ein = g1.eindeutigkeit;
   var bb = g1.bandbreite || {};
   var anzahl = alsListe(g1.anordnungen).length;
+  var kurz = potenzialKurz(erg);
 
-  if (!zp && !ein) {
+  if (kurz.art === "laeuft") {
     return '<div class="urteil"><h4>Wird ermittelt</h4>' +
       '<div class="ulab">Die Geometrieberechnung l\u00e4uft noch.</div></div>';
   }
-  if (zp && zp.status === "bestimmbar") {
+  if (kurz.art === "zusatz") {
     return '<div class="urteil gut"><h4>' + fmt(zp.zusaetzliche_geschossflaeche_m2, 1) +
       ' <span class="unit">m\u00b2</span></h4>' +
       '<div class="ulab">zus\u00e4tzliche Geschossfl\u00e4che</div>' +
@@ -3930,7 +3986,7 @@ function potenzialUrteil(erg) {
   // Eindeutig: alle zulaessigen Abstandsanordnungen fuehren auf denselben
   // Wert. Dann gibt es hier nichts zu verschweigen -- die Frage nach der
   // Fassadenorientierung aendert am Ergebnis nichts.
-  if (ein && ein.geschossflaeche_eindeutig) {
+  if (kurz.art === "eindeutig") {
     return '<div class="urteil gut"><h4>' + fmt(ein.geschossflaeche_m2, 0) +
       ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
       '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 ' +
@@ -3953,7 +4009,7 @@ function potenzialUrteil(erg) {
       'als die dort vorgeschriebenen Abst\u00e4nde zusammen. Welche Ausrichtung gew\u00e4hlt ' +
       'wird, entscheidet der Entwurf.</p>'
     : "";
-  if (spanne.length === 2 && !leer(spanne[0]) && spanne[0] !== spanne[1]) {
+  if (kurz.art === "spanne") {
     return '<div class="urteil"><h4>' + fmt(spanne[0], 0) + "\u2013" + fmt(spanne[1], 0) +
       ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
       '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 je nach Ausrichtung</div>' +
