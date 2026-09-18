@@ -26,8 +26,25 @@ const WEITERGEREICHTE_HEADER = [
   "cache-control",
 ];
 
+// Secrets kommen als Text an, und wie dieser Text gesetzt wurde, sieht man
+// ihm nicht an. `wrangler ... secret put` liest von der Standardeingabe --
+// wer den Wert aus PowerShell hineinleitet, schickt ein CRLF mit, und das
+// steht dann IM Secret.
+//
+// Beim Ziel-URL faellt das nicht auf: der URL-Parser entfernt Zeilenumbrueche.
+// Beim Kopfzeilenwert schon -- workerd lehnt CR/LF darin ab (Header-Injection),
+// `fetch` wirft, und der catch weiter unten macht daraus "Der Analyse-Server
+// ist gerade nicht erreichbar". Am 18.09.2026 hat genau das zwei Stunden lang
+// wie ein Ausfall der Plattform ausgesehen: die Seite lief, der Dienst lief,
+// der Tunnel lief -- nur der Proxy scheiterte an einem unsichtbaren Zeichen.
+//
+// Deshalb: beide Werte trimmen, statt sich auf die Eingabe zu verlassen.
+function sauber(wert) {
+  return String(wert || "").trim();
+}
+
 export async function onRequest({ request, env, params }) {
-  const backendUrl = (env.BACKEND_URL || "").replace(/\/+$/, "");
+  const backendUrl = sauber(env.BACKEND_URL).replace(/\/+$/, "");
   if (!backendUrl) {
     return fehler(
       "nicht_konfiguriert",
@@ -48,8 +65,9 @@ export async function onRequest({ request, env, params }) {
   // /analyze aufrufen -- und jeder Aufruf kostet zwei Minuten Rechenzeit und
   // einen LLM-Aufruf aus unserem Kontingent. Der Schluessel steht in den
   // Pages-Umgebungsvariablen, nie im Code.
-  if (env.BACKEND_SCHLUESSEL) {
-    init.headers["X-Gebimo-Schluessel"] = env.BACKEND_SCHLUESSEL;
+  const schluessel = sauber(env.BACKEND_SCHLUESSEL);
+  if (schluessel) {
+    init.headers["X-Gebimo-Schluessel"] = schluessel;
   }
 
   if (request.method !== "GET" && request.method !== "HEAD") {

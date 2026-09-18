@@ -18,7 +18,41 @@
 | Secrets | `GEMINI_API_KEY` als Umgebungsvariable | nie im Repo, `.gitignore` deckt `.env` ab |
 | Health-Check | `GET /health` | unterscheidet *erreichbar* von *einsatzbereit* |
 
-### HTTP 530 am Original-Link: Ursache und Handgriff
+### HTTP 502 am Original-Link: ein unsichtbares Zeichen im Secret
+
+Am 18.09.2026 antwortete `/api/*` zwei Stunden lang mit **502
+`backend_offline`**, obwohl Seite, Dienst und Tunnel einzeln geprüft alle
+liefen. Auch ein Gegentest mit `BACKEND_URL=https://example.com` scheiterte
+— es sah nach einem Ausfall der Plattform aus.
+
+Die Ursache war ein **CRLF im Secret**. `wrangler pages secret put` liest von
+der Standardeingabe; wird der Wert aus PowerShell hineingeleitet
+
+```powershell
+"https://…" | npx wrangler pages secret put BACKEND_URL   # hängt CRLF an
+```
+
+steht der Zeilenumbruch mit im Secret. Beim Ziel-URL fällt das nicht auf —
+der URL-Parser entfernt Zeilenumbrüche. Beim **Kopfzeilenwert** schon:
+workerd lehnt CR/LF darin ab, `fetch` wirft, und der Proxy meldet
+wahrheitsgemäss „nicht erreichbar".
+
+**Richtig setzen** (ohne Zeilenumbruch):
+
+```bash
+printf '%s' "https://…" | npx wrangler pages secret put BACKEND_URL --project-name=grundstueck-crawler
+```
+
+Der Proxy trimmt beide Werte inzwischen selbst. Die Regel bleibt trotzdem:
+Secrets nie aus einer PowerShell-Pipeline setzen.
+
+**Unterscheidungshilfe:** 530/1016 = der Hostname löst nicht auf (toter
+Tunnel). 502 `backend_offline` = der Worker erreichte das Ziel nicht — Ziel
+tot ODER etwas an der Anfrage ist ungültig.
+
+---
+
+## HTTP 530 am Original-Link: Ursache und Handgriff
 
 **Am 17.09.2026 beobachtet.** `https://grundstueck-crawler.pages.dev` lieferte
 die Seite (HTTP 200), aber jede Analyse scheiterte mit **HTTP 530, Fehlercode
