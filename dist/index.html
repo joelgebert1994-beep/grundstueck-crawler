@@ -1001,7 +1001,8 @@ Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), fu
 function benenneBaubereichEbene(randfall) {
   var opt = document.getElementById("opt-baubereich");
   if (!opt) return;
-  var text = randfall ? "Bebaubare Fläche — Randfälle" : "Bebaubare Fläche";
+  var text = randfall ? "Bebaubare Fläche — zulässige Anordnungen"
+                      : "Bebaubare Fläche";
   // Der Beschriftungstext ist der letzte Textknoten im Label.
   for (var i = opt.childNodes.length - 1; i >= 0; i--) {
     var kn = opt.childNodes[i];
@@ -2117,13 +2118,25 @@ function renderFehler(msg, art, unterart) {
 /* ===================== Karte befuellen ===================== */
 var SZENARIO_G1_LABEL = {
   alle_kanten_klein: "kleiner Grenzabstand an allen Kanten",
-  alle_kanten_gross: "grosser Grenzabstand an allen Kanten",
-  // Die beiden Raender der Nachbarabstands-Sensitivitaet. Bewusst nicht
-  // "Bestfall/schlechtester Fall": beides sind Rechenraender und keiner
-  // von beiden ist eine zulaessige Anordnung.
-  nachbarn_gross: "grosser Abstand auf allen Nachbarseiten",
-  nachbarn_klein: "kleiner Abstand auf allen Nachbarseiten"
+  alle_kanten_gross: "grosser Grenzabstand an allen Kanten"
 };
+
+/* Die zulaessigen Abstandsanordnungen heissen intern "hauptseite_kante_3".
+   Die lesbare Fassung liefert die Engine als "beschreibung" mit -- sie wird
+   beim Rendern eingesammelt, damit jede Stelle im Dossier, auf der Karte und
+   im Bericht denselben Namen benutzt. */
+var ANORDNUNG_TEXT = {};
+function merkeAnordnungen(erg) {
+  ANORDNUNG_TEXT = {};
+  alsListe(((erg || {}).g1_ergebnis || {}).anordnungen).forEach(function (a) {
+    if (a && a.name) ANORDNUNG_TEXT[a.name] = a.beschreibung || a.name;
+  });
+}
+function anordnungsName(name) {
+  // Die Engine schreibt ASCII-Umschrift ("uebrigen") -- lesbar() ist die
+  // Anzeigeschicht dafuer, hier wie ueberall sonst.
+  return lesbar(ANORDNUNG_TEXT[name] || SZENARIO_G1_LABEL[name] || name);
+}
 function zeichneErgebnisAufKarte(erg) {
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
   var m1 = erg.modul1_geodaten || {};
@@ -2191,16 +2204,17 @@ function zeichneErgebnisAufKarte(erg) {
   var anzB = 0;
   var g1 = erg.g1_ergebnis;
   if (g1) {
+    // Mehrere Anordnungen heisst nicht mehr "Randfall": jede von ihnen ist
+    // baurechtlich zulaessig. Gezeigt wird die Spanne, die sie aufspannen.
     var randfall = String(g1.modus || "").indexOf("bandbreite_") === 0;
     var bandbreite = g1.bandbreite || {};
     var obenName = bandbreite.obergrenze_szenario;
     var flaechen = bandbreite.baubereich_m2 || [];
-    // "Randfälle 0.7–96.4 m²" sagt in vier Worten, worum es geht: eine
-    // Spanne. Zwei getrennte Etiketten sagten stattdessen zweimal
-    // "Fläche" -- und sahen aus wie zwei Baukoerper.
+    // Eine Spanne in vier Worten. Ein Etikett je Anordnung stuende
+    // uebereinander und saehe aus wie mehrere Baukoerper.
     var spannentext = (flaechen.length === 2 && !leer(flaechen[0]))
-      ? "Randfälle " + fmt(flaechen[0], 1) + "–" + fmt(flaechen[1], 1) + " m² · keine belastbare Fläche"
-      : "Randfälle · keine belastbare Fläche";
+      ? "Zulässige Anordnungen " + fmt(flaechen[0], 1) + "–" + fmt(flaechen[1], 1) + " m²"
+      : "Zulässige Anordnungen";
     var einzel = g1.szenarien ? Object.keys(g1.szenarien).map(function (k) { return [k, g1.szenarien[k]]; })
                               : (g1.ergebnis ? [["", g1.ergebnis]] : []);
     // Faellt die Obergrenze aus (aelterer Bandbreiten-Modus ohne das
@@ -2216,18 +2230,20 @@ function zeichneErgebnisAufKarte(erg) {
     einzel.forEach(function (paar) {
       var name = paar[0], e = paar[1];
       if (!e || !e.baubereich_koordinaten) return;
-      var bezeichnung = SZENARIO_G1_LABEL[name] || name;
+      var bezeichnung = anordnungsName(name);
       var popupB;
       if (randfall) {
-        popupB = "<b>Randfall — keine belastbare Fläche</b><span class=\"m\">" +
+        popupB = "<b>Zulässige Abstandsanordnung</b><span class=\"m\">" +
           esc(bezeichnung) + "<br><br>" +
-          "Einer von zwei Rechenrändern einer Sensitivität, nicht ein zulässiger " +
-          "Baukörper. Welche Nachbarseite den grossen Grenzabstand trägt, ist ohne " +
-          "Gebäudeentwurf nicht bestimmbar — deshalb wird beides gerechnet und keines " +
-          "als Ergebnis ausgegeben.<br><br>" +
-          "Fläche dieses Randes " + fmt(e.baubereich_m2, 1) + " m²<br>" +
-          "rechnerische Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²<br><br>" +
-          "Die Einordnung steht im Reiter Potenzial unter „Herleitung“.</span>";
+          "Eine von " + einzel.length + " Anordnungen, die die Bau- und Nutzungsordnung " +
+          "zulässt. Welche davon gilt, entscheidet die Fassadenorientierung des noch " +
+          "nicht entworfenen Gebäudes — deshalb werden alle gerechnet und keine " +
+          "als DAS Ergebnis ausgegeben.<br><br>" +
+          "Baubereich " + fmt(e.baubereich_m2, 1) + " m²<br>" +
+          "Geschossfläche " + fmt(e.geschossflaeche_m2, 1) + " m²" +
+          (e.geschossflaeche_limitiert_durch
+            ? "<br>begrenzt durch " + esc(klartext(e.geschossflaeche_limitiert_durch)) : "") +
+          "<br><br>Die Einordnung steht im Reiter Potenzial unter „Herleitung“.</span>";
       } else {
         popupB = "<b>Bebaubare Fläche</b><span class=\"m\">" +
           (name ? esc(bezeichnung) + "<br>" : "") +
@@ -2250,13 +2266,13 @@ function zeichneErgebnisAufKarte(erg) {
       } else if (istOben) {
         etikett = spannentext; dauerhaft = true; stil = STIL.randfallOben;
       } else {
-        etikett = "Randfall (Untergrenze): " + bezeichnung; dauerhaft = false;
+        etikett = bezeichnung; dauerhaft = false;
         stil = STIL.randfallUnten;
       }
       anzB += zeichnePolygone(gruppen.baubereich, e.baubereich_koordinaten,
         stil, popupB, "sec-potenzial", etikett, dauerhaft,
         dauerhaft && randfall
-          // Die Randfall-Huelle liegt in der Parzelle -- ohne Versatz
+          // Die Huelle liegt in der Parzelle -- ohne Versatz
           // steht ihr Etikett auf dem der Parzelle.
           ? { direction: "center", offset: [0, 24] }
           : { direction: dauerhaft ? "center" : "bottom" }).length;
@@ -2714,6 +2730,7 @@ function secKarte() {
 }
 
 function renderDossier(erg) {
+  merkeAnordnungen(erg);
   var m1 = erg.modul1_geodaten || {};
   var zz = erg.zonen_zuordnung || {};
   parkeKarte();
@@ -3737,7 +3754,7 @@ function ebeneZusatz(z) {
     // Grund und offene Punkte stehen im Urteil ganz oben. Sie hier ein
     // zweites Mal auszurollen machte aus der Ebene eine Textwand.
     inhalt = '<div class="eleit offen">Nicht abschliessend bestimmbar</div>' +
-      '<div class="enote">Die Begr\u00fcndung steht oben unter \u201eWarum?\u201c.</div>';
+      '<div class="enote">Die Einordnung steht oben im Urteil.</div>';
   }
   return '<div class="ebene' + (z && z.status === "bestimmbar" ? " gut" : " offen") + '">' +
     ebeneKopf(3, "Zusätzliches Potenzial", "Was ist zusätzlich möglich?") + inhalt + "</div>";
@@ -3749,6 +3766,29 @@ function detailBlock(titel, inhalt, fallback) {
   return '<details class="more"><summary>' + esc(titel) + "</summary><div>" +
     (inhalt || '<div class="note">' + esc(fallback || "Für diesen Fall nicht vorhanden.") + "</div>") +
     "</div></details>";
+}
+
+/* Die zulaessigen Abstandsanordnungen als Tabelle: eine Zeile je Anordnung,
+   mit dem, was das Ergebnis dort jeweils begrenzt. Das ist die Antwort auf
+   "warum steht hier eine Spanne und kein Wert" -- und im eindeutigen Fall
+   der Beleg, dass die Frage nach der Ausrichtung nichts aendert. */
+function anordnungsTabelle(g1) {
+  var a = alsListe((g1 || {}).anordnungen);
+  if (!a.length) return "";
+  var ein = (g1 || {}).eindeutigkeit;
+  return '<h4 class="subhead">Die ' + a.length + ' zulässigen Abstandsanordnungen</h4>' +
+    ((g1 || {}).regel ? '<div class="note">' + esc(lesbar(g1.regel)) + "</div>" : "") +
+    '<div class="scroller"><table class="src"><thead><tr><th>Anordnung</th>' +
+    '<th>Baubereich</th><th>Geschossfläche</th><th>begrenzt durch</th></tr></thead><tbody>' +
+    a.map(function (x) {
+      var vertreter = ein && ein.vertreter_anordnung === x.name;
+      return "<tr><td>" + esc(lesbar(x.beschreibung || x.name)) +
+        (vertreter ? ' <span class="badge ok">ausgewiesen</span>' : "") + "</td>" +
+        "<td>" + (leer(x.baubereich_m2) ? "&ndash;" : fmt(x.baubereich_m2, 1) + " m²") + "</td>" +
+        "<td><b>" + (leer(x.geschossflaeche_m2) ? "&ndash;" : fmt(x.geschossflaeche_m2, 1) + " m²") + "</b></td>" +
+        "<td>" + esc(bindendText(x.geschossflaeche_limitiert_durch)) + "</td></tr>";
+    }).join("") + "</tbody></table></div>" +
+    (ein && ein.erklaerung ? '<div class="note ok">' + esc(lesbar(ein.erklaerung)) + "</div>" : "");
 }
 
 /* Die Herleitung: G1-Kaskade, Sensitivitaetsbandbreite, Bestandessituation.
@@ -3780,28 +3820,30 @@ function g1Herleitung(erg) {
           esc(lesbar(g1.grund_nicht_belastbar) || "") + "</div>" +
         (g1.hinweis ? '<div class="note">' + esc(lesbar(g1.hinweis)) + "</div>" : "") +
         (leer((bb.baubereich_m2 || [])[0]) ? "" :
-          '<h4 class="subhead">Sensitivität der Geometrie</h4>' +
+          '<h4 class="subhead">Spanne über die zulässigen Anordnungen</h4>' +
           kvRows([
             ["Baubereich", fmt(bb.baubereich_m2[0], 1) + " – " + fmt(bb.baubereich_m2[1], 1) + " m²"],
             ["Geschossfläche", leer((bb.geschossflaeche_m2 || [])[0]) ? null
               : fmt(bb.geschossflaeche_m2[0], 1) + " – " + fmt(bb.geschossflaeche_m2[1], 1) + " m²"]
           ]) +
           (bb.bedeutung ? '<div class="note">' + esc(lesbar(bb.bedeutung)) + "</div>" : "")) +
-        (g1.untergrenze_entartet
-          ? '<div class="note warn"><b>Zur Untergrenze:</b> ' + esc(lesbar(g1.untergrenze_entartet.erklaerung)) + "</div>"
+        (g1.alle_anordnungen_entartet
+          ? '<div class="note warn"><b>In jeder Anordnung:</b> ' +
+            esc(lesbar(g1.alle_anordnungen_entartet.erklaerung)) + "</div>"
           : "") +
         (alsListe(g1.betroffene_nachbarkanten).length
           ? '<div class="note">Betroffen sind die Nachbargrenzen ' +
             esc(alsListe(g1.betroffene_nachbarkanten).join(", ")) + ".</div>"
           : "")
       : "") +
+    anordnungsTabelle(g1) +
     (neubau.bedeutung ? '<div class="note"><b>Was G1 rechnet:</b> ' + esc(lesbar(neubau.bedeutung)) + "</div>" : "") +
     paare.map(function (paar) {
       var name = paar[0], e = paar[1];
       if (!e || !Object.keys(e).length) return "";
       return '<div class="card"><div class="cardhead"><h4>' +
-        (name ? esc(SZENARIO_G1_LABEL[name] || name) : "Baubereich") + "</h4>" +
-        (bandbreite ? '<span class="badge warn">Randfall</span>' : "") + "</div>" +
+        (name ? esc(anordnungsName(name)) : "Baubereich") + "</h4>" +
+        (bandbreite ? '<span class="badge mute">eine von mehreren</span>' : "") + "</div>" +
         g1Tabelle(e) + "</div>";
     }).join("") +
     (function () {
@@ -3812,7 +3854,7 @@ function g1Herleitung(erg) {
         '<div class="scroller"><table class="src"><thead><tr><th>Szenario</th><th>Baubereich</th><th>Fussabdruck</th><th>Geschossfläche</th></tr></thead><tbody>' +
         Object.keys(kb).map(function (n) {
           var e = kb[n] || {};
-          return "<tr><td>" + esc(SZENARIO_G1_LABEL[n] || n) + "</td>" +
+          return "<tr><td>" + esc(anordnungsName(n)) + "</td>" +
             "<td>" + (leer(e.baubereich_m2) ? "&ndash;" : fmt(e.baubereich_m2, 1) + " m²") + "</td>" +
             "<td>" + (leer(e.fussabdruck_m2) ? "&ndash;" : fmt(e.fussabdruck_m2, 1) + " m²") + "</td>" +
             "<td>" + (leer(e.geschossflaeche_m2) ? "&ndash;" : fmt(e.geschossflaeche_m2, 1) + " m²") + "</td></tr>";
@@ -3841,27 +3883,91 @@ function bestandssituationBlock(bs) {
     (bs.hinweis ? '<div class="note' + (bs.pruefen ? " warn" : "") + '">' + esc(lesbar(bs.hinweis)) + "</div>" : "");
 }
 
+/* Welche Groesse das Ergebnis begrenzt -- Geometrie, Ausnuetzungsziffer,
+   Geschosszahl. Die Engine liefert den Schluessel, hier steht der Satz. */
+var BINDEND_TEXT = {
+  fussabdruck_x_geschosse: "die Geometrie (Baubereich \u00d7 Geschosszahl)",
+  ausnuetzung_az: "die Ausn\u00fctzungsziffer",
+  ausnuetzung_agfz: "die anrechenbare Geschossfl\u00e4chenziffer",
+  baumasse: "die Baumassenziffer"
+};
+function bindendText(schluessel) {
+  return BINDEND_TEXT[schluessel] || klartext(schluessel);
+}
+
 /* Das Urteil zuerst: was ist moeglich, und wenn nichts Belastbares --
    warum nicht. Erst danach die drei Ebenen, erst darunter die Herleitung.
    Umgekehrt gelesen wirkt jeder Zwischenwert wie ein Ergebnis. */
 function potenzialUrteil(erg) {
-  var zp = (erg.bestand_und_neubaugeometrie || {}).zusaetzliches_potenzial;
-  if (!zp) {
+  var bnb = erg.bestand_und_neubaugeometrie || {};
+  var zp = bnb.zusaetzliches_potenzial;
+  var g1 = erg.g1_ergebnis || {};
+  var ein = g1.eindeutigkeit;
+  var bb = g1.bandbreite || {};
+  var anzahl = alsListe(g1.anordnungen).length;
+
+  if (!zp && !ein) {
     return '<div class="urteil"><h4>Wird ermittelt</h4>' +
       '<div class="ulab">Die Geometrieberechnung l\u00e4uft noch.</div></div>';
   }
-  if (zp.status === "bestimmbar") {
+  if (zp && zp.status === "bestimmbar") {
     return '<div class="urteil gut"><h4>' + fmt(zp.zusaetzliche_geschossflaeche_m2, 1) +
       ' <span class="unit">m\u00b2</span></h4>' +
       '<div class="ulab">zus\u00e4tzliche Geschossfl\u00e4che</div>' +
       (zp.rechnung ? '<div class="uwarum">Rechnung</div><p class="atext">' +
         esc(lesbar(zp.rechnung)) + "</p>" : "") + "</div>";
   }
-  var offen = alsListe(zp.offene_punkte);
+
+  var offen = alsListe((zp || {}).offene_punkte);
+  var grundBlock =
+    '<div class="uwarum">Zum zus\u00e4tzlichen Potenzial gegen\u00fcber dem Bestand</div>' +
+    '<p class="atext">' + esc(lesbar((zp || {}).grund ||
+      "Der Vergleich mit dem Bestand ist offen.")) + "</p>" +
+    (offen.length ? '<ul class="plain">' + offen.map(function (x) {
+      return "<li>" + esc(lesbar(x)) + "</li>";
+    }).join("") + "</ul>" : "");
+
+  // Eindeutig: alle zulaessigen Abstandsanordnungen fuehren auf denselben
+  // Wert. Dann gibt es hier nichts zu verschweigen -- die Frage nach der
+  // Fassadenorientierung aendert am Ergebnis nichts.
+  if (ein && ein.geschossflaeche_eindeutig) {
+    return '<div class="urteil gut"><h4>' + fmt(ein.geschossflaeche_m2, 0) +
+      ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
+      '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 ' +
+      '<b>eindeutig bestimmbar</b></div>' +
+      '<p class="atext">Alle ' + anzahl + ' baurechtlich zul\u00e4ssigen Abstandsvarianten ' +
+      'ergeben dasselbe Ergebnis. Begrenzend ist ' + esc(bindendText(ein.bindend)) + '.</p>' +
+      grundBlock + "</div>";
+  }
+
+  // Echte Spanne -- aber ausschliesslich ueber zulaessige Anordnungen.
+  var spanne = bb.geschossflaeche_m2 || [];
+  // Eine Null am unteren Rand ist echt, liest sich aber wie "kein
+  // Potenzial". Sie bedeutet: in dieser Ausrichtung bleibt nichts uebrig.
+  var leerAnzahl = alsListe(g1.anordnungen).filter(function (a) {
+    return !leer(a.baubereich_m2) && a.baubereich_m2 <= 0.01;
+  }).length;
+  var leerText = (leerAnzahl > 0 && leerAnzahl < anzahl)
+    ? '<p class="ahinweis">In ' + leerAnzahl + ' der ' + anzahl + ' Anordnungen bleibt ' +
+      'keine Fl\u00e4che \u00fcbrig: die Parzelle ist an der schmalsten Stelle schmaler ' +
+      'als die dort vorgeschriebenen Abst\u00e4nde zusammen. Welche Ausrichtung gew\u00e4hlt ' +
+      'wird, entscheidet der Entwurf.</p>'
+    : "";
+  if (spanne.length === 2 && !leer(spanne[0]) && spanne[0] !== spanne[1]) {
+    return '<div class="urteil"><h4>' + fmt(spanne[0], 0) + "\u2013" + fmt(spanne[1], 0) +
+      ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
+      '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 je nach Ausrichtung</div>' +
+      '<p class="atext">Jeder Rand ist baurechtlich zul\u00e4ssig. Welcher gilt, ' +
+      'entscheidet, welche Seite den grossen Grenzabstand tr\u00e4gt \u2014 also die ' +
+      'Fassadenorientierung des noch nicht entworfenen Geb\u00e4udes. Gerechnet wurden alle ' +
+      anzahl + ' zul\u00e4ssigen Anordnungen; die Einzelwerte stehen unter \u201eHerleitung\u201c.</p>' +
+      leerText + grundBlock + "</div>";
+  }
+
   return '<div class="urteil"><h4>Nicht abschliessend bestimmbar</h4>' +
     '<div class="ulab">kein belastbarer Einzelwert f\u00fcr das zus\u00e4tzliche Potenzial</div>' +
     '<div class="uwarum">Warum?</div>' +
-    '<p class="atext">' + esc(lesbar(zp.grund ||
+    '<p class="atext">' + esc(lesbar((zp || {}).grund ||
       "Die Abstandsgeometrie bzw. die Bestandessituation l\u00e4sst keinen belastbaren " +
       "Einzelwert zu.")) + "</p>" +
     (offen.length ? '<ul class="plain">' + offen.map(function (x) {
@@ -4036,7 +4142,7 @@ function hoehenBlock(h) {
  * Alle vier Funktionen liefern "" wenn es nichts zu zeigen gibt; der
  * Detailbereich zeigt dann seinen eigenen Grund an, statt leer zu sein. */
 function flTeile(f) {
-  // Bei einer Bandbreite gibt es je Randfall eine vollstaendige Kaskade.
+  // Bei einer Bandbreite gibt es je zulaessiger Anordnung eine vollstaendige Kaskade.
   if (!f || f.status === "nicht_bestimmbar") return [];
   if (f.status === "bandbreite") {
     return Object.keys(f.szenarien || {}).map(function (n) { return [n, f.szenarien[n]]; });
@@ -4045,11 +4151,11 @@ function flTeile(f) {
 }
 function flUeberschrift(name) {
   if (!name) return "";
-  // Die Kaskade wird je Rand einmal gerechnet. Ohne das Wort "Randfall"
+  // Die Kaskade wird je Anordnung einmal gerechnet. Ohne das Wort "Anordnung"
   // liest sich jede dieser Tabellen wie ein Ergebnis.
-  var randfall = /^(nachbarn_|alle_kanten_)/.test(name);
-  return '<h4 class="subhead">' + (randfall ? "Randfall: " : "") +
-    esc(SZENARIO_G1_LABEL[name] || name) + "</h4>";
+  var mehrere = /^(hauptseite_|nachbarn_|alle_kanten_)/.test(name);
+  return '<h4 class="subhead">' + (mehrere ? "Anordnung: " : "") +
+    esc(anordnungsName(name)) + "</h4>";
 }
 function flNichtBestimmbar(f) {
   if (!f) return "";

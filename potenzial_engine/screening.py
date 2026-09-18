@@ -15,7 +15,7 @@ der Ausnutzungsreserve in Quadratmetern Geschossflaeche.
     Reserve = zulaessige Geschossflaeche - bestehende Geschossflaeche
 
 Beide Summanden stammen aus amtlichen Daten: die zulaessige aus der
-Ausnuetzungsziffer der Zone (Modul 2, einmal je Gemeinde) mal der
+Ausnuetzungsziffer der Zone (Modul 2, je Dokumentensatz -- siehe unten) mal der
 Parzellenflaeche, die bestehende aus dem Gebaeude- und Wohnungsregister.
 
 Die Einstufung ist deshalb bewusst strukturell und ohne erfundene Schwellen:
@@ -47,10 +47,35 @@ Die drei Stufen
     Stufe 3   die vollstaendige Einzelanalyse -- unveraendert die
               bestehende, auf Knopfdruck fuer einzelne Parzellen.
 
-Die teure Reglementsauswertung (Modul 2, LLM) laeuft EINMAL JE GEMEINDE,
-nicht je Parzelle: dieselbe Bau- und Nutzungsordnung gilt fuer alle
-Parzellen darin. Das ist der Grund, warum ein Gebietsscreening ueberhaupt
-bezahlbar ist.
+Was die Reglementsauswertung wirklich kostet
+---------------------------------------------
+Frueher stand hier: die teure Reglementsauswertung (Modul 2, LLM) laeuft
+"einmal je Gemeinde, nicht je Parzelle". Das ist als GARANTIE falsch, und
+zwar messbar.
+
+Der Zwischenspeicher haengt am tatsaechlich ausgewerteten DOKUMENTENSATZ
+(kern/bzo_speicher.py: Gemeinde + Kanton + SHA-256 je Dokument +
+Modul-2-Fassung). Der OEREB-Auszug liefert die Rechtsvorschriften aber
+PARZELLENSPEZIFISCH -- zwei Parzellen derselben Gemeinde koennen
+verschiedene Dokumente nennen. Gemessen am 17.09.2026 in Aarau:
+
+    Bahnhofstrasse 1  ->  oereblex 10652, 7121, 7805, 12654 + GS 3784
+    Zelglistrasse 1   ->  oereblex 7125, 7807, 12654        + GS 3784, 3985
+
+Zwei von fuenf Dokumenten sind dieselben. Der Fingerabdruck unterscheidet
+sich damit, und die zweite Parzelle loest eine neue Auswertung aus.
+
+Es gilt also:
+
+    gleicher Dokumentensatz + gleiche Modul-2-Fassung  ->  wiederverwendbar
+    anderer Dokumentensatz                             ->  neue Auswertung
+
+Das ist kein Fehler des Zwischenspeichers -- er darf zwei verschiedene
+Dokumentensaetze nicht als denselben behandeln. Es heisst nur: wie teuer
+ein Gebietsscreening wird, haengt daran, wie einheitlich die Gemeinde ihre
+Rechtsvorschriften im OEREB-Kataster fuehrt. In Rheineck nennen alle
+geprueften Parzellen denselben Satz und teilen sich eine Auswertung; in
+Aarau nicht.
 """
 from __future__ import annotations
 

@@ -24,6 +24,7 @@ CLI: python test_baubereich.py
 
 from __future__ import annotations
 
+import math
 import sys
 
 from shapely.geometry import Polygon
@@ -81,13 +82,30 @@ def test_t2_l_form_konkav() -> None:
     pruefe(not baubereich.is_empty, "Baubereich nicht leer")
     pruefe(baubereich.is_valid, "Baubereich ist ein valides Polygon")
 
-    # Unabhaengige Gegenprobe wie bei T1: bei EINHEITLICHEM Abstand und einer
-    # rechtwinklig-konkaven Parzelle (90 Grad Reflex-Ecke) entspricht der
-    # Halbebenen-Schnitt weiterhin exakt einem negativen Mitre-Buffer.
-    ref = Polygon(l_form).buffer(-2, join_style=2)
+    # Unabhaengige Gegenprobe wie bei T1: bei EINHEITLICHEM Abstand ist der
+    # Baubereich per Definition die Erosion um diesen Abstand, also
+    # buffer(-d) mit RUNDEN Ecken.
+    #
+    # Frueher stand hier join_style=2 (Mitre) -- und das war falsch. An der
+    # Reflex-Ecke (10,10) ist der naechste Randpunkt die Ecke selbst; zulaessig
+    # ist deshalb alles ausserhalb des Viertelkreises mit Radius 2 um sie. Die
+    # Mitre-Ecke bei (8,8) verbot zusaetzlich das Quadrat [8,10]x[8,10] ohne
+    # diesen Viertelkreis:
+    #
+    #     4 m2 (Quadrat) - pi m2 (Viertelkreis) = 0.8584 m2
+    #
+    # 156.00 + 0.8584 = 156.8584 m2. Ein Baukoerper mit einer Ecke bei
+    # (8.5, 8.5) haelt 2.12 m Abstand zur Parzellengrenze und war damit
+    # immer zulaessig -- die Mitre-Gegenprobe verbot ihn.
+    ref = Polygon(l_form).buffer(-2, quad_segs=64)
     pruefe(
-        nahe(baubereich.area, ref.area, toleranz=0.5),
+        nahe(baubereich.area, ref.area, toleranz=0.01),
         f"Flaeche {baubereich.area:.2f} m2 deckt sich mit unabhaengiger buffer(-2)-Gegenprobe ({ref.area:.2f} m2)",
+    )
+    pruefe(
+        nahe(baubereich.area, 156.0 + (4.0 - math.pi), toleranz=0.01),
+        f"Flaeche {baubereich.area:.4f} m2 entspricht dem analytisch exakten Wert "
+        f"{156.0 + (4.0 - math.pi):.4f} m2 (Mitre-Wert + Quadrat - Viertelkreis)",
     )
     # Konkave Ecke (10,10) muss weiterhin nach innen (Richtung Parzelleninneres)
     # eingezogen sein, nicht nach aussen ausgebeult -- Test der korrekten

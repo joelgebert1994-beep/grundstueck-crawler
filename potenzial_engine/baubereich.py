@@ -20,26 +20,61 @@ Gewaesserraum-/Waldgrenzen-WFS) ist bewusst NICHT Teil dieses Moduls -- das
 ist ein separater Beschaffungsschritt (G2), der die hier erwarteten
 Roh-Koordinatenlisten liefert.
 
-Wichtig -- kein globaler Buffer: Ein einfacher `polygon.buffer(-d)` waere
-fuer UNGLEICHE Grenzabstaende pro Kante (z.B. Kernzone: Strassenseite anders
-als Nachbarseite) nicht moeglich (buffer() kennt nur einen einzigen,
-einheitlichen Abstand). Stattdessen wird pro Kante eine nach innen versetzte
-Stuetzgerade bestimmt und jeder neue Eckpunkt als Schnittpunkt der beiden
-BENACHBARTEN Versatzgeraden konstruiert (Mitre-Konstruktion, siehe
-`_line_intersection`/`berechne_baubereich_polygon`).
+Wie der Baubereich definiert ist
+--------------------------------
+Ein Grenzabstand ist eine ABSTANDSBEDINGUNG, keine Konstruktionsvorschrift:
 
-ACHTUNG -- bewusst NICHT per sequenziellem Halbebenen-Schnitt ueber die volle
-Polygonflaeche implementiert: eine fruehere Version dieses Moduls schnitt die
-Restflaeche nacheinander mit der Halbebene JEDER Kante (begrenzt durch deren
-volle Gerade). Das ist fuer KONVEXE Polygone identisch zur Mitre-Konstruktion,
-erodiert aber KONKAVE Polygone falsch, weil die unendliche Stuetzgerade einer
-Kante auch weit entfernte, mit dieser Kante gar nicht benachbarte Teile des
-Polygons abschneidet (am Reflex-Eckfall des L-Form-Testfalls T2 live
-nachgewiesen: 36 m2 statt korrekt 156 m2, gegengeprueft mit einer von der
-eigenen Implementierung unabhaengigen shapely-`buffer(-d)`-Berechnung fuer den
-Fall gleicher Abstaende auf allen Kanten). Die Mitre-Konstruktion bezieht pro
-Eckpunkt nur die ZWEI angrenzenden Kanten ein und ist deshalb auch fuer
-konkave Parzellen korrekt.
+    Der Baubereich ist die Menge aller Punkte der Parzelle, die von der
+    Kante i mindestens kanten_abstaende[i] Meter entfernt sind -- und
+    zwar fuer JEDE Kante i gleichzeitig.
+
+Genau so wird hier gerechnet: je Kante die Menge der zu nahen Punkte (der
+Puffer um die KANTENSTRECKE, nicht um ihre unendliche Gerade), diese
+Mengen vereinigt, von der Parzelle abgezogen.
+
+Drei Eigenschaften folgen unmittelbar aus dieser Definition, und alle drei
+sind fachlich zwingend:
+
+  * MONOTON. Ein groesserer Abstand kann den Baubereich nur verkleinern,
+    nie vergroessern.
+  * KOLLABIERT SAUBER. Erschoepfen die Abstaende die Parzelle, ist das
+    Ergebnis leer -- und nicht eine Restflaeche mit positivem Inhalt.
+  * KORREKT FUER KONKAVE PARZELLEN. Gepuffert wird die Strecke, nicht die
+    Gerade; eine weit entfernte Kante schneidet deshalb nichts ab, was
+    gar nicht zu ihr gehoert.
+
+Warum nicht `polygon.buffer(-d)`: der kennt nur EINEN einheitlichen
+Abstand und bildet kantenspezifische Grenzabstaende (Strassenseite anders
+als Nachbarseite) nicht ab. Fuer den Sonderfall gleicher Abstaende auf
+allen Kanten ist das Ergebnis hier mit `buffer(-d)` identisch -- das
+prueft tests/test_baubereich.py als unabhaengige Gegenrechnung.
+
+Historie -- zwei Verfahren, die beide falsch waren
+---------------------------------------------------
+1. Sequenzieller HALBEBENEN-SCHNITT ueber die volle Polygonflaeche. Fuer
+   konvexe Polygone richtig, fuer konkave falsch: die unendliche
+   Stuetzgerade einer Kante schneidet auch weit entfernte, mit dieser
+   Kante gar nicht benachbarte Teile ab (am L-Form-Testfall T2
+   nachgewiesen: 36 m2 statt korrekt 156 m2).
+
+2. MITRE-KONSTRUKTION: jede Kantengerade nach innen versetzen, jeden
+   neuen Eckpunkt als Schnittpunkt der beiden benachbarten Versatzgeraden.
+   Richtig, solange der versetzte Ring sich nicht selbst schneidet -- und
+   genau das tut er, sobald ein Abstand den Innenradius der Parzelle
+   ueberschreitet. Der Ring stuelpt sich um, `buffer(0)` reparierte die
+   Selbstueberschneidung zu einem GUELTIGEN Polygon, und
+   `intersection(parzelle)` liess davon eine Restflaeche mit positivem
+   Inhalt uebrig. Gemessen an Buhofstrasse 20, Rheineck (Parzelle 693,
+   299.5 m2, gleicher Abstand auf allen vier Kanten):
+
+       4 m -> 58.52 m2      7 m -> 38.21 m2   <-- waechst wieder
+       5 m -> 18.28 m2      8 m -> 54.45 m2
+       6 m -> 13.97 m2     10 m -> 62.94 m2
+
+   Der Baubereich wuchs also, je weiter man vom Rand wegrueckte. Daher
+   auch die beiden sichtbaren Folgefehler: die "0.7 m2" an Buhofstrasse 55
+   waren der Ausklang eines Kollapses, und an Buhofstrasse 20 lag die
+   gemeldete Untergrenze (78.95 m2) ueber der Obergrenze (61.63 m2).
 """
 
 from __future__ import annotations
@@ -48,20 +83,17 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
-from shapely.geometry import MultiPolygon, Point, Polygon
+from shapely.geometry import LineString, MultiPolygon, Polygon
 from shapely.ops import unary_union
 
 Koordinate = tuple[float, float]
 Ring = list[Koordinate]
 
-# Epsilon fuer den Innenseiten-Test einer Kante (Meter). Ein Punkt wird knapp
-# neben dem Kantenmittelpunkt in beide moeglichen Normalenrichtungen gesetzt;
-# welcher davon effektiv IM Parzellenpolygon liegt, bestimmt die
-# Innenrichtung. Funktioniert unabhaengig von der Ringorientierung
-# (CW/CCW) und unabhaengig von Konvexitaet/Konkavitaet, da real gegen das
-# Polygon getestet wird (nicht nur gegen eine Interior-Point-Heuristik, die
-# bei stark konkaven Parzellen die falsche Seite waehlen kann).
-_EDGE_NORMAL_EPS_M = 0.01
+# Aufloesung der Rundung an den Enden eines Kantenpuffers (Viertelkreis-
+# Segmente). Die Rundungen liegen fast immer ausserhalb der Parzelle und
+# wirken sich kaum aus; 32 statt der shapely-Vorgabe 8 haelt den Fehler
+# auch dort im Millimeterbereich, wo sie hineinragen.
+_PUFFER_SEGMENTE = 32
 
 
 def _schliesse_ring_nicht(ring: Ring) -> Ring:
@@ -71,53 +103,18 @@ def _schliesse_ring_nicht(ring: Ring) -> Ring:
     return r
 
 
-def _edge_inward_normal(parzelle: Polygon, p1: Koordinate, p2: Koordinate) -> Koordinate:
-    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
-    laenge = math.hypot(dx, dy)
-    if laenge == 0:
-        raise ValueError(f"Entartete Kante (Laenge 0) im Parzellenpolygon bei {p1}.")
-    ux, uy = dx / laenge, dy / laenge
-    mx, my = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
-    n1 = (-uy, ux)
-    n2 = (uy, -ux)
-    eps = min(_EDGE_NORMAL_EPS_M, laenge * 0.1)
-    test1 = Point(mx + n1[0] * eps, my + n1[1] * eps)
-    if parzelle.contains(test1):
-        return n1
-    return n2
-
-
-def _line_intersection(
-    p1: Koordinate, d1: Koordinate, p2: Koordinate, d2: Koordinate
-) -> Optional[Koordinate]:
-    """Schnittpunkt zweier Geraden (Punkt + Richtungsvektor). None bei
-    (nahezu) parallelen Geraden."""
-    x1, y1 = p1
-    dx1, dy1 = d1
-    x2, y2 = p2
-    dx2, dy2 = d2
-    denom = dx1 * dy2 - dy1 * dx2
-    if abs(denom) < 1e-9:
-        return None
-    t = ((x2 - x1) * dy2 - (y2 - y1) * dx2) / denom
-    return (x1 + dx1 * t, y1 + dy1 * t)
-
-
 def berechne_baubereich_polygon(
     parzelle_koordinaten: Ring, kanten_abstaende: list[float]
 ) -> tuple[Polygon, list[dict]]:
-    """Baubereich = Parzelle, jede Kante um ihren individuellen Grenzabstand
-    nach innen versetzt, per Mitre-Konstruktion (siehe Modul-Docstring fuer
-    die Begruendung, warum kein sequenzieller Halbebenen-Schnitt verwendet
-    wird).
+    """Baubereich = alle Punkte der Parzelle, die von JEDER Kante mindestens
+    deren Grenzabstand entfernt sind (siehe Modul-Docstring).
 
     `kanten_abstaende[i]` ist der Grenzabstand (in Metern) fuer die Kante von
     `parzelle_koordinaten[i]` nach `parzelle_koordinaten[(i+1) % n]`. Ein Wert
-    von 0 oder None laesst diese Kante an ihrer Original-Position (keine
-    Einschraenkung durch diese Kante). Muss genau einen Wert pro Kante
-    enthalten (die Zuordnung, welche Kante Strassen-/Nachbar-/Grenzabstand
-    bekommt, ist Aufgabe des Aufrufers -- reine Geometrie kennt diese
-    Unterscheidung nicht).
+    von 0 oder None laesst diese Kante ohne Einschraenkung. Muss genau einen
+    Wert pro Kante enthalten (die Zuordnung, welche Kante Strassen-/Nachbar-/
+    Grenzabstand bekommt, ist Aufgabe des Aufrufers -- reine Geometrie kennt
+    diese Unterscheidung nicht).
     """
     ring = _schliesse_ring_nicht(parzelle_koordinaten)
     n = len(ring)
@@ -131,48 +128,33 @@ def berechne_baubereich_polygon(
     if not parzelle.is_valid:
         parzelle = parzelle.buffer(0)
 
+    sperrflaechen = []
     kanten_info = []
     for i in range(n):
         p1, p2 = ring[i], ring[(i + 1) % n]
-        dx, dy = p2[0] - p1[0], p2[1] - p1[1]
-        laenge = math.hypot(dx, dy)
-        if laenge == 0:
+        if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) == 0:
             raise ValueError(f"Entartete Kante (Laenge 0) im Parzellenpolygon bei {p1}.")
-        richtung = (dx / laenge, dy / laenge)
         distanz = kanten_abstaende[i] or 0.0
+        kanten_info.append({"p1": p1, "p2": p2, "distanz": distanz})
         if distanz > 0:
-            normal = _edge_inward_normal(parzelle, p1, p2)
-        else:
-            normal = (0.0, 0.0)
-        offset_punkt = (p1[0] + normal[0] * distanz, p1[1] + normal[1] * distanz)
-        kanten_info.append(
-            {"p1": p1, "p2": p2, "richtung": richtung, "offset_punkt": offset_punkt, "distanz": distanz}
-        )
+            # Der Puffer um die STRECKE, nicht um ihre Gerade: das ist genau
+            # die Menge der Punkte, die dieser Kante zu nah sind. Eine weit
+            # entfernte Kante schneidet so nichts ab, was nicht zu ihr gehoert
+            # -- der Grund, warum konkave Parzellen hier korrekt erodieren.
+            sperrflaechen.append(
+                LineString([p1, p2]).buffer(distanz, quad_segs=_PUFFER_SEGMENTE)
+            )
 
-    neue_ring = []
-    for i in range(n):
-        vorherige = kanten_info[i - 1]  # Kante, die bei ring[i] endet
-        aktuelle = kanten_info[i]  # Kante, die bei ring[i] beginnt
-        schnitt = _line_intersection(
-            vorherige["offset_punkt"], vorherige["richtung"],
-            aktuelle["offset_punkt"], aktuelle["richtung"],
-        )
-        if schnitt is None:
-            # (nahezu) parallele Nachbarkanten an dieser Ecke (entartet/
-            # kollinear) -- Fallback auf den Versatzpunkt der Folgekante,
-            # statt eine unendliche/undefinierte Mitre-Spitze zu erzeugen.
-            schnitt = aktuelle["offset_punkt"]
-        neue_ring.append(schnitt)
+    if sperrflaechen:
+        baubereich = parzelle.difference(unary_union(sperrflaechen))
+    else:
+        baubereich = parzelle
 
-    baubereich = Polygon(neue_ring)
-    if not baubereich.is_valid:
-        # Bei starker Erosion an einer Reflex-Ecke kann der mitre-konstruierte
-        # Ring sich selbst schneiden (die Kerbe "kollabiert"). buffer(0) loest
-        # das nach der ueblichen GEOS-Selbstueberschneidungs-Reparatur auf.
-        baubereich = baubereich.buffer(0)
-    # Sicherheitsnetz: Baubereich darf die Originalparzelle nie verlassen
-    # (kann bei sehr spitzen/stumpfen Mitre-Ecken theoretisch passieren).
-    baubereich = baubereich.intersection(parzelle)
+    # difference() liefert bei erschoepfenden Abstaenden eine leere Geometrie
+    # -- und genau das ist richtig. Es gibt hier bewusst KEINE Reparatur, die
+    # aus einem Kollaps wieder eine Flaeche macht.
+    if baubereich.is_empty:
+        baubereich = Polygon()
 
     protokoll = [
         {

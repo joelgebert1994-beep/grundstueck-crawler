@@ -1,0 +1,207 @@
+{
+ "_beschreibung": "Vier echte Parzellen aus Rheineck SG, LV95 (EPSG:2056). Kontur und Kantenklassifikation stammen aus der amtlichen Vermessung bzw. aus Modul 1, die Zonenkennzahlen aus der Bau- und Nutzungsordnung der Stadt Rheineck (Art. 8 BauR). Abgerufen 2026-09-17.",
+ "_warum": "Damit die Abstandsgeometrie an realen Konturen geprueft werden kann und nicht nur an Rechtecken: die Fehler, um die es hier geht, treten erst auf, wenn eine Parzelle schmal, schief oder mehr als vierkantig ist.",
+ "buhofstrasse_55": {
+  "adresse": "Buhofstrasse 55, 9424 Rheineck",
+  "parzelle": "160",
+  "flaeche_m2": 289.1,
+  "ring": [
+   [
+    2761214.8,
+    1259841.5
+   ],
+   [
+    2761230.6,
+    1259842.8
+   ],
+   [
+    2761231.8,
+    1259824.6
+   ],
+   [
+    2761215.8,
+    1259823.5
+   ],
+   [
+    2761214.8,
+    1259841.5
+   ]
+  ],
+  "kanten_arten": [
+   "strasse",
+   "nachbarparzelle",
+   "strasse",
+   "nachbarparzelle"
+  ],
+  "zone": {
+   "zonenbezeichnung": "Wohnzone, 2 Vollgeschosse (W2)",
+   "grenzabstand_klein_m": 4,
+   "grenzabstand_gross_m": 8,
+   "strassenabstand_m": 3,
+   "vollgeschosse_max": 2,
+   "gebaeudehoehe_m": 7,
+   "ausnuetzungsziffer_az": 0.45
+  }
+ },
+ "buhofstrasse_20": {
+  "adresse": "Buhofstrasse 20, 9424 Rheineck",
+  "parzelle": "693",
+  "flaeche_m2": 299.5,
+  "ring": [
+   [
+    2761640.8,
+    1259911.7
+   ],
+   [
+    2761651.8,
+    1259912.4
+   ],
+   [
+    2761653.5,
+    1259885.4
+   ],
+   [
+    2761642.4,
+    1259884.7
+   ],
+   [
+    2761640.8,
+    1259911.7
+   ]
+  ],
+  "kanten_arten": [
+   "nachbarparzelle",
+   "nachbarparzelle",
+   "strasse",
+   "nachbarparzelle"
+  ],
+  "zone": {
+   "zonenbezeichnung": "Wohnzone, 2 Vollgeschosse (W2)",
+   "grenzabstand_klein_m": 4,
+   "grenzabstand_gross_m": 8,
+   "strassenabstand_m": 3,
+   "vollgeschosse_max": 2,
+   "gebaeudehoehe_m": 7,
+   "ausnuetzungsziffer_az": 0.45
+  }
+ },
+ "feldlistrasse_1": {
+  "adresse": "Feldlistrasse 1, 9424 Rheineck",
+  "parzelle": "349",
+  "flaeche_m2": 436.6,
+  "ring": [
+   [
+    2761729.2,
+    1259487.9
+   ],
+   [
+    2761758.5,
+    1259493.7
+   ],
+   [
+    2761760.9,
+    1259483.0
+   ],
+   [
+    2761756.4,
+    1259481.6
+   ],
+   [
+    2761757.2,
+    1259478.1
+   ],
+   [
+    2761732.9,
+    1259472.7
+   ],
+   [
+    2761732.6,
+    1259474.0
+   ],
+   [
+    2761729.2,
+    1259487.9
+   ]
+  ],
+  "kanten_arten": [
+   "strasse",
+   "nachbarparzelle",
+   "strasse",
+   "strasse",
+   "nachbarparzelle",
+   "nicht_relevant",
+   "nachbarparzelle"
+  ],
+  "zone": {
+   "zonenbezeichnung": "Wohnzone, 2 Vollgeschosse (W2)",
+   "grenzabstand_klein_m": 4,
+   "grenzabstand_gross_m": 8,
+   "strassenabstand_m": 3,
+   "vollgeschosse_max": 2,
+   "gebaeudehoehe_m": 7,
+   "ausnuetzungsziffer_az": 0.45
+  }
+ },
+ "bahnhofstrasse_4": {
+  "adresse": "Bahnhofstrasse 4, 9424 Rheineck",
+  "parzelle": "633",
+  "flaeche_m2": 504.6,
+  "ring": [
+   [
+    2762016.3,
+    1259863.6
+   ],
+   [
+    2762042.1,
+    1259876.6
+   ],
+   [
+    2762042.1,
+    1259869.7
+   ],
+   [
+    2762050.6,
+    1259858.4
+   ],
+   [
+    2762032.0,
+    1259849.0
+   ],
+   [
+    2762027.2,
+    1259850.6
+   ],
+   [
+    2762024.5,
+    1259855.4
+   ],
+   [
+    2762021.1,
+    1259853.8
+   ],
+   [
+    2762016.3,
+    1259863.6
+   ]
+  ],
+  "kanten_arten": [
+   "strasse",
+   "strasse",
+   "strasse",
+   "nachbarparzelle",
+   "strasse",
+   "strasse",
+   "strasse",
+   "strasse"
+  ],
+  "zone": {
+   "zonenbezeichnung": "Wohn-Gewerbezone, 3 Vollgeschosse (WG3)",
+   "grenzabstand_klein_m": 5,
+   "grenzabstand_gross_m": 10,
+   "strassenabstand_m": 3,
+   "vollgeschosse_max": 3,
+   "gebaeudehoehe_m": 10,
+   "ausnuetzungsziffer_az": 0.75
+  }
+ }
+}

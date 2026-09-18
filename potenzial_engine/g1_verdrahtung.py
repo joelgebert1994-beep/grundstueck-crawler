@@ -163,6 +163,70 @@ def nachbarabstand_unentscheidbar(
     return {"klein": float(klein), "gross": float(gross), "kanten": indizes}
 
 
+def zulaessige_anordnungen(
+    basis: list[float],
+    offen: dict[str, Any],
+    kantenklassifikation: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Die Anordnungen, die die Regel ueberhaupt zulaesst.
+
+    Die Regel (siehe `nachbarabstand_unentscheidbar`): der grosse
+    Grenzabstand gilt fuer EINE Seite -- die Hauptwohnseite --, die uebrigen
+    tragen den kleinen. Daraus folgt eine endliche Liste:
+
+        * fuer jede Nachbarkante k: gross auf k, klein auf allen anderen
+          Nachbarkanten
+        * die Hauptwohnseite zeigt zur Strasse: klein auf ALLEN Nachbarkanten
+
+    Der zweite Fall entfaellt, wenn es gar keine andere Kantenart gibt --
+    dann muss die Hauptwohnseite an einer Nachbargrenze liegen.
+
+    Was hier BEWUSST NICHT vorkommt: "gross auf allen Nachbarseiten". Das
+    ist keine Anordnung, die jemand bauen duerfte, sondern die Ueberlagerung
+    aller Einzelfaelle. Sie stand frueher als Untergrenze der ausgewiesenen
+    Bandbreite -- an Buhofstrasse 55, Rheineck erzeugte sie den Wert
+    0.69 m2, waehrend die beiden tatsaechlich zulaessigen Anordnungen
+    47.74 und 47.95 m2 ergeben.
+
+    Die Strassenkanten behalten in JEDER Anordnung ihren klassifizierten
+    Strassenabstand -- dort ist die Zuordnung eindeutig.
+    """
+    nachbarn = offen["kanten"]
+    klein, gross = offen["klein"], offen["gross"]
+    alle_klein = _mit_nachbarabstand(basis, nachbarn, klein)
+
+    anordnungen: list[dict[str, Any]] = []
+    for k in nachbarn:
+        abstaende = list(alle_klein)
+        abstaende[k] = gross
+        anordnungen.append({
+            "name": f"hauptseite_kante_{k}",
+            "kante": k,
+            "beschreibung": (
+                f"grosser Grenzabstand ({gross:g} m) an Kante {k}, "
+                f"kleiner ({klein:g} m) an den uebrigen Nachbarseiten"
+            ),
+            "abstaende": abstaende,
+        })
+
+    arten = {
+        (k.get("art") or "")
+        for k in (kantenklassifikation.get("kanten") or [])
+        if k.get("relevant", True)
+    }
+    if arten - {ART_NACHBARPARZELLE}:
+        anordnungen.append({
+            "name": "hauptseite_an_strasse",
+            "kante": None,
+            "beschreibung": (
+                f"Hauptwohnseite zur Strasse: kleiner Grenzabstand ({klein:g} m) an "
+                "allen Nachbarseiten, Strassenkanten mit ihrem Strassenabstand"
+            ),
+            "abstaende": alle_klein,
+        })
+    return anordnungen
+
+
 def _mit_nachbarabstand(
     basis: list[float], indizes: list[int], wert: float,
 ) -> list[float]:
@@ -428,68 +492,133 @@ def berechne_g1_fuer_fall(
         # sie als das ausgewiesen, was sie ist: der eine Rand einer Bandbreite.
         offen = nachbarabstand_unentscheidbar(zone, kantenklassifikation)
         if offen is not None:
-            unten = berechne_potenzial(
-                parzelle_ring, _mit_nachbarabstand(kanten_abstaende, offen["kanten"], offen["gross"]),
-                **gemeinsame_kwargs).to_dict()
-            oben = berechne_potenzial(
-                parzelle_ring, _mit_nachbarabstand(kanten_abstaende, offen["kanten"], offen["klein"]),
-                **gemeinsame_kwargs).to_dict()
+            # Alle Anordnungen durchrechnen, die die Regel zulaesst -- und nur
+            # diese. Die frueher ausgewiesene Untergrenze ("gross auf allen
+            # Nachbarseiten") ist keine zulaessige Anordnung und taucht hier
+            # deshalb nicht mehr auf.
+            anordnungen = zulaessige_anordnungen(kanten_abstaende, offen, kantenklassifikation)
+            for a in anordnungen:
+                a["ergebnis"] = berechne_potenzial(
+                    parzelle_ring, a["abstaende"], **gemeinsame_kwargs).to_dict()
 
-            parzflaeche = unten.get("parzellenflaeche_m2") or 0.0
-            entartet = bool(parzflaeche) and (
-                unten.get("baubereich_m2", 0.0) <= ENTARTET_M2
-                and unten.get("baubereich_m2", 0.0) <= ENTARTET_ANTEIL * parzflaeche)
+            szenarien = {a["name"]: a["ergebnis"] for a in anordnungen}
+            gf_werte = [a["ergebnis"].get("geschossflaeche_m2") for a in anordnungen]
+            bau_werte = [a["ergebnis"].get("baubereich_m2") for a in anordnungen]
+
+            # Eindeutig heisst: JEDE zulaessige Anordnung fuehrt auf denselben
+            # Wert. Keine Toleranz, keine Mittelung -- verglichen werden die
+            # bereits auf zwei Stellen gerundeten Ergebnisse der Kaskade.
+            gf_eindeutig = (
+                len(anordnungen) > 0
+                and all(w is not None for w in gf_werte)
+                and len({round(w, 2) for w in gf_werte}) == 1
+            )
+            bindend = {a["ergebnis"].get("geschossflaeche_limitiert_durch") for a in anordnungen}
+
+            # Der Modusname traegt die Unterscheidung, auf die sich der Rest
+            # der Kette verlaesst: alles, was mit "bandbreite_" beginnt,
+            # liefert Szenarien statt eines Ergebnisses (pipeline.py,
+            # Oberflaeche). Er wird unten gesetzt, sobald feststeht, ob die
+            # Anordnungen auf denselben Wert fuehren.
+            antwort: dict[str, Any] = {
+                "modus": "bandbreite_zulaessige_anordnungen",
+                **basis_info,
+                "betroffene_nachbarkanten": offen["kanten"],
+                "anordnungen": [
+                    {"name": a["name"], "kante": a["kante"], "beschreibung": a["beschreibung"],
+                     "baubereich_m2": a["ergebnis"].get("baubereich_m2"),
+                     "geschossflaeche_m2": a["ergebnis"].get("geschossflaeche_m2"),
+                     "geschossflaeche_limitiert_durch": a["ergebnis"].get("geschossflaeche_limitiert_durch")}
+                    for a in anordnungen
+                ],
+                "szenarien": szenarien,
+                "regel": (
+                    f"Der grosse Grenzabstand ({offen['gross']:g} m) gilt fuer EINE Seite "
+                    f"(die Hauptwohnseite), die uebrigen tragen den kleinen "
+                    f"({offen['klein']:g} m). Welche Seite das ist, entscheidet die "
+                    "Fassadenorientierung des noch nicht entworfenen Gebaeudes -- deshalb "
+                    f"werden alle {len(anordnungen)} zulaessigen Anordnungen gerechnet."
+                ),
+            }
+
+            if gf_eindeutig:
+                # Alle zulaessigen Anordnungen fuehren auf dieselbe
+                # Geschossflaeche. Dann gibt es hier nichts zu verschweigen.
+                #
+                # Als Vertreter wird die STRENGSTE zulaessige Anordnung
+                # genommen (kleinster Baubereich): so stammt jede weitere
+                # Zahl -- Fussabdruck, Geschosszahl, Kontur -- aus EINER real
+                # zulaessigen Anordnung und nicht aus einer Mischung.
+                vertreter = min(anordnungen, key=lambda a: a["ergebnis"].get("baubereich_m2") or 0.0)
+                antwort["modus"] = "zulaessige_anordnungen_eindeutig"
+                antwort["ergebnis"] = vertreter["ergebnis"]
+                antwort["baubereich_belastbar"] = True
+                antwort["eindeutigkeit"] = {
+                    "geschossflaeche_eindeutig": True,
+                    "geschossflaeche_m2": round(gf_werte[0], 2),
+                    "bindend": bindend.pop() if len(bindend) == 1 else "gemischt",
+                    "vertreter_anordnung": vertreter["name"],
+                    "baubereich_spanne_m2": [min(bau_werte), max(bau_werte)],
+                    "erklaerung": (
+                        f"Alle {len(anordnungen)} zulaessigen Abstandsanordnungen ergeben "
+                        f"dieselbe Geschossflaeche ({round(gf_werte[0], 2):g} m2). Die Frage, "
+                        "welche Seite den grossen Grenzabstand traegt, aendert am Ergebnis "
+                        "nichts -- sie muss deshalb auch nicht beantwortet werden. Der "
+                        "Baubereich selbst unterscheidet sich; ausgewiesen ist die "
+                        "strengste zulaessige Anordnung."
+                    ),
+                }
+                return antwort
+
+            # Nicht eindeutig: eine Bandbreite -- aber ausschliesslich ueber
+            # zulaessige Anordnungen.
+            unten = min(anordnungen, key=lambda a: a["ergebnis"].get("geschossflaeche_m2") or 0.0)
+            oben = max(anordnungen, key=lambda a: a["ergebnis"].get("geschossflaeche_m2") or 0.0)
+            antwort["baubereich_belastbar"] = False
+            antwort["grund_nicht_belastbar"] = (
+                "Welche Seite den grossen Grenzabstand traegt, entscheidet die "
+                "Fassadenorientierung des noch nicht entworfenen Gebaeudes. Die "
+                "zulaessigen Anordnungen fuehren hier zu unterschiedlichen Ergebnissen; "
+                "eine einzelne davon herauszugreifen waere eine Annahme."
+            )
+            antwort["bandbreite"] = {
+                "untergrenze_szenario": unten["name"],
+                "obergrenze_szenario": oben["name"],
+                "baubereich_m2": [min(bau_werte), max(bau_werte)],
+                "geschossflaeche_m2": [unten["ergebnis"].get("geschossflaeche_m2"),
+                                       oben["ergebnis"].get("geschossflaeche_m2")],
+                "bedeutung": (
+                    f"Spanne ueber die {len(anordnungen)} baurechtlich zulaessigen "
+                    "Abstandsanordnungen. Jeder Rand ist real zulaessig -- das "
+                    "Ergebnis liegt nicht 'irgendwo dazwischen', sondern IST einer "
+                    "dieser Werte, je nachdem wie das Gebaeude ausgerichtet wird."
+                ),
+            }
+
+            parzflaeche = (anordnungen[0]["ergebnis"].get("parzellenflaeche_m2") or 0.0)
+            if parzflaeche and all(
+                (b or 0.0) <= ENTARTET_M2 and (b or 0.0) <= ENTARTET_ANTEIL * parzflaeche
+                for b in bau_werte
+            ):
+                antwort["alle_anordnungen_entartet"] = {
+                    "baubereich_spanne_m2": [min(bau_werte), max(bau_werte)],
+                    "erklaerung": (
+                        "In JEDER zulaessigen Anordnung faellt die Huelle praktisch "
+                        "zusammen: die Parzelle ist an der schmalsten Stelle schmaler als "
+                        "die vorgeschriebenen Abstaende zusammen. Das ist ein Befund ueber "
+                        "das Grundstueck, keine Folge einer strengen Annahme."
+                    ),
+                }
 
             az = _kennzahl_wert(zone.get("ausnuetzungsziffer_az"))
-            landflaeche = unten.get("anrechenbare_landflaeche_m2")
-
-            antwort = {
-                "modus": "bandbreite_nachbarabstand_nicht_zuordenbar",
-                **basis_info,
-                # KEIN "ergebnis": die nachgelagerte Flaechenkaskade liest
-                # genau dieses Feld und meldet ohne es "nicht bestimmbar" --
-                # statt sich einen der beiden Raender auszusuchen.
-                "baubereich_belastbar": False,
-                "grund_nicht_belastbar": (
-                    "Die zulaessige Abstandszuordnung an den Nachbargrenzen ist ohne "
-                    "konkreten Gebaeudekoerper nicht eindeutig bestimmbar. Eine einzelne "
-                    "Geometrie waere hier eine Annahme und deshalb keine belastbare "
-                    "Potenzialzahl."
-                ),
-                "hinweis": (
-                    f"Der grosse Grenzabstand ({offen['gross']:g} m) gilt in der Regel fuer "
-                    f"EINE Seite, die uebrigen tragen den kleinen ({offen['klein']:g} m). "
-                    "Welche Seite das ist, haengt an der Fassadenorientierung des noch nicht "
-                    "entworfenen Gebaeudes. Die Strassenkanten behalten in beiden Faellen "
-                    "ihren klassifizierten Strassenabstand -- die Zuordnung ist dort "
-                    "eindeutig."
-                ),
-                "szenarien": {"nachbarn_gross": unten, "nachbarn_klein": oben},
-                "bandbreite": {
-                    "untergrenze_szenario": "nachbarn_gross",
-                    "obergrenze_szenario": "nachbarn_klein",
-                    "baubereich_m2": [unten.get("baubereich_m2"), oben.get("baubereich_m2")],
-                    "geschossflaeche_m2": [unten.get("geschossflaeche_m2"),
-                                           oben.get("geschossflaeche_m2")],
-                    "bedeutung": (
-                        "Sensitivitaet der Geometrie, nicht ein baurechtlich bestimmtes "
-                        "Potenzial: die Untergrenze entspricht dem grossen Abstand auf allen "
-                        "Nachbarseiten (strenger als jede zulaessige Anordnung), die "
-                        "Obergrenze dem kleinen auf allen."
-                    ),
-                },
-                "betroffene_nachbarkanten": offen["kanten"],
-            }
+            landflaeche = anordnungen[0]["ergebnis"].get("anrechenbare_landflaeche_m2")
             if az is not None and landflaeche:
                 # Die Ausnuetzungsziffer haengt NICHT an der Abstandszuordnung --
                 # sie bleibt rechenbar und wird deshalb getrennt genannt.
                 #
                 # Bewusst NICHT "zulaessige Gesamtentwicklung": das waere eine
                 # Aussage darueber, was auf diesem Grundstueck insgesamt
-                # zulaessig ist, und die trifft dieser Wert nicht. Er sagt nur,
-                # welche Geschossflaeche die heutige Ausnuetzungsziffer auf
-                # diese Flaeche rechnet -- ohne Abstaende, ohne Bestand, ohne
-                # Sonderregelungen.
+                # zulaessig ist, und die trifft dieser Wert nicht.
                 antwort["gf_nach_ausnuetzungsziffer_m2"] = round(az * landflaeche, 2)
                 antwort["gf_nach_ausnuetzungsziffer_rechnung"] = (
                     f"Ausnuetzungsziffer {az:g} x {landflaeche:,.1f} m2 anrechenbare "
@@ -498,18 +627,6 @@ def berechne_g1_fuer_fall(
                     "Theoretischer Wert der aktuellen Zonengrundlage. Weder eine "
                     "Aussage ueber den Bestand noch ueber das, was baulich "
                     "realisierbar ist.")
-            if entartet:
-                antwort["untergrenze_entartet"] = {
-                    "baubereich_m2": unten.get("baubereich_m2"),
-                    "anteil_parzelle": round((unten.get("baubereich_m2") or 0.0) / parzflaeche, 4),
-                    "erklaerung": (
-                        "Bei grossem Abstand auf allen Nachbarseiten faellt die Huelle "
-                        "praktisch zusammen -- die Parzelle ist an der schmalsten Stelle "
-                        "schmaler als zwei gegenueberliegende grosse Grenzabstaende "
-                        "zusammen. Das ist kein Befund ueber das Grundstueck, sondern "
-                        "die Folge der strengsten Annahme."
-                    ),
-                }
             return antwort
 
         ergebnis = berechne_potenzial(parzelle_ring, kanten_abstaende, **gemeinsame_kwargs)

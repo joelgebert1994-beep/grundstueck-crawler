@@ -319,14 +319,48 @@ def test_g1_modus() -> None:
     zone = {**ZONE_VOLLSTAENDIG, "vollgeschosse_max": {"wert": 2}, "ausnuetzungsziffer_az": {"wert": 0.5}}
     klass = _klassifikation([kk.ART_STRASSE, kk.ART_NACHBARPARZELLE, kk.ART_NACHBARPARZELLE, kk.ART_NACHBARPARZELLE])
 
-    # Unterscheiden sich kleiner und grosser Grenzabstand, ist die Zuordnung an
-    # den Nachbarkanten offen -- dann gibt es bewusst KEIN Einzelergebnis mehr
-    # (siehe tests/test_bestandstrennung.py, Fall Rheineck).
+    # Unterscheiden sich kleiner und grosser Grenzabstand, ist offen, WELCHE
+    # Nachbarseite den grossen traegt. Daraus folgt aber nicht automatisch ein
+    # offenes Ergebnis: hier deckelt die Ausnuetzungsziffer (0.5 x 400 m2 =
+    # 200 m2) jede der vier zulaessigen Anordnungen, der kleinste Baubereich
+    # liefert 124 m2 x 2 Geschosse = 248 m2 > 200 m2. Die Frage nach der
+    # Fassadenorientierung aendert am Ergebnis also nichts und muss deshalb
+    # auch nicht beantwortet werden.
+    #
+    # Frueher stand hier die Erwartung "klein != gross -> immer Bandbreite".
+    # Das war die zu konservative Regel, die an Bahnhofstrasse 4, Rheineck
+    # ein bestimmbares Potenzial (378.49 m2 GF) verschwieg.
     r_offen = berechne_g1_fuer_fall(_modul1_double(), zone, kantenklassifikation=klass)
-    pruefe(r_offen["modus"] == "bandbreite_nachbarabstand_nicht_zuordenbar",
-           f"klein != gross: Bandbreite statt Einzelwert ({r_offen['modus']})")
+    pruefe(r_offen["modus"] == "zulaessige_anordnungen_eindeutig",
+           f"alle zulaessigen Anordnungen gleich -> Einzelwert ({r_offen['modus']})")
+    pruefe(r_offen.get("baubereich_belastbar") is True, "und der gilt als belastbar")
+    ein = r_offen.get("eindeutigkeit") or {}
+    pruefe(abs((ein.get("geschossflaeche_m2") or 0.0) - 200.0) < 0.01,
+           f"Geschossflaeche = {ein.get('geschossflaeche_m2')} m2 (AZ 0.5 x 400 m2)")
+    pruefe(ein.get("bindend") == "ausnuetzung_az",
+           f"bindend ist die Ausnuetzungsziffer ({ein.get('bindend')})")
+    pruefe(len(r_offen.get("anordnungen") or []) == 4,
+           f"vier zulaessige Anordnungen geprueft (3 Nachbarkanten + Hauptseite "
+           f"zur Strasse), gefunden {len(r_offen.get('anordnungen') or [])}")
+    namen = {a["name"] for a in r_offen.get("anordnungen") or []}
+    pruefe(not any("gross" in n and "kante" not in n for n in namen if n != "hauptseite_an_strasse"),
+           "keine Kunstfigur 'grosser Abstand auf allen Nachbarseiten' unter den Anordnungen")
     pruefe(len(r_offen.get("kantenprotokoll") or []) == 4,
            "das Kantenprotokoll bleibt auch dann erhalten")
+
+    # Bindet die Geometrie statt der Ausnuetzungsziffer, unterscheiden sich die
+    # Anordnungen tatsaechlich -- dann bleibt es bei der Bandbreite. Ohne AZ
+    # ist der Deckel weg, und 124.8 / 124.0 / 124.0 / 148.8 m2 Baubereich
+    # ergeben verschiedene Geschossflaechen.
+    zone_ohne_az = {**zone, "ausnuetzungsziffer_az": {"wert": None, "confidence": "nicht_bestimmbar"}}
+    r_spanne = berechne_g1_fuer_fall(_modul1_double(), zone_ohne_az, kantenklassifikation=klass)
+    pruefe(r_spanne["modus"] == "bandbreite_zulaessige_anordnungen",
+           f"unterschiedliche Ergebnisse -> Bandbreite ({r_spanne['modus']})")
+    pruefe(r_spanne.get("baubereich_belastbar") is False and "ergebnis" not in r_spanne,
+           "und dann bewusst kein Einzelergebnis")
+    spanne = (r_spanne.get("bandbreite") or {}).get("geschossflaeche_m2") or []
+    pruefe(len(spanne) == 2 and spanne[0] < spanne[1],
+           f"Untergrenze liegt unter der Obergrenze ({spanne})")
 
     # Sind beide Grenzabstaende gleich, ist nichts zu entscheiden: kantenweise.
     zone_eindeutig = {**zone, "grenzabstand_gross_m": zone["grenzabstand_klein_m"]}

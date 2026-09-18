@@ -24,6 +24,7 @@ WURZEL = Path(__file__).resolve().parent.parent
 # (Modulname, braucht_netz)
 SUITEN: list[tuple[str, bool]] = [
     ("tests.test_baubereich", False),
+    ("tests.test_abstandsgeometrie", False),
     ("tests.test_sia416_flaechen", False),
     ("tests.test_quellen", True),
     ("tests.test_entwicklungsszenarien", False),
