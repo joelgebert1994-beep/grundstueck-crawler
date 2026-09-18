@@ -31,11 +31,15 @@ CLI: python -m tests.test_reglement_zwischenspeicher
 from __future__ import annotations
 
 import hashlib
+import inspect
 import sys
 import tempfile
 from pathlib import Path
 
 from potenzial_engine import modul2_bzo_analysis as m2
+from potenzial_engine.modul2_bzo_analysis import (
+    _ZONE_KENNZAHL_FELDER, _ergaenze_pruefung, pruefe_auswertung,
+)
 
 FEHLER: list[str] = []
 
@@ -345,6 +349,115 @@ def test_dokumente_nicht_erreichbar() -> None:
     print()
 
 
+# --- Plausibilitaet der Modellantwort ---------------------------------------
+#
+# Anlass: Rheineck, 18.09.2026. Aus denselben fuenf PDF (gleicher SHA-256),
+# mit demselben Prompt und demselben Modell kam an einem Tag
+# "strassenabstand_m: 3 m, confidence hoch, zwei Bedingungen" und am naechsten
+# "wert null, nicht_bestimmbar" -- mit den drei Zahlen im Freitextfeld
+# 'unklarheit': "Staatsstrassen 4 m, Gemeindestrassen 3 m, Wege 2 m". Die
+# Werte waren gefunden, sie standen nur im falschen Feld. Die schwaechere
+# Antwort landete im Zwischenspeicher und galt danach als Tatsache.
+#
+# Gegen die Nichtreproduzierbarkeit hilft kein Prompt allein -- die Antwort
+# muss geprueft werden, bevor sie abgelegt wird.
+
+def _zone(**felder: dict) -> dict:
+    """Eine Zone mit allen Kennzahlfeldern, standardmaessig sauber gefuellt."""
+    leer = {"wert": None, "einheit": None, "quelle_dokument": "BauR",
+            "artikel_referenz": None, "zitat": None,
+            "confidence": "nicht_bestimmbar", "bedingungen": [], "unklarheit": None}
+    zone = {"zonenbezeichnung": "Wohnzone W2"}
+    for feld in _ZONE_KENNZAHL_FELDER:
+        zone[feld] = dict(leer)
+    zone.update(felder)
+    return zone
+
+
+def test_plausibilitaet_mass_im_freitext() -> None:
+    """Der Rheineck-Fall: Zahl in 'unklarheit', 'wert' leer."""
+    print("\n[Plausibilitaet] Mass im Freitext, Wert leer")
+    zone = _zone(strassenabstand_m={
+        "wert": None, "einheit": None, "quelle_dokument": "BauR Rheineck",
+        "artikel_referenz": "Art. 20", "zitat": None,
+        "confidence": "nicht_bestimmbar", "bedingungen": [],
+        "unklarheit": ("Strassenabstand ist in Art. 20 nach Strassentyp "
+                       "(Staatsstrassen 4 m, Gemeindestrassen 3 m, Wege 2 m) geregelt."),
+    })
+    befunde = pruefe_auswertung({"erkannte_zonen": [zone]})
+    treffer = [b for b in befunde if b["feld"] == "strassenabstand_m"]
+    pruefe(len(treffer) == 1, "genau ein Befund zum Strassenabstand")
+    pruefe(bool(treffer) and treffer[0]["art"] == "mass_im_freitext",
+           "als 'mass_im_freitext' eingeordnet")
+
+
+def test_plausibilitaet_kein_regelfall() -> None:
+    """Bedingungen erfasst, aber kein Regelfall gewaehlt."""
+    print("\n[Plausibilitaet] Bedingungen ohne Regelfall")
+    zone = _zone(strassenabstand_m={
+        "wert": None, "einheit": "m", "quelle_dokument": "BauR",
+        "artikel_referenz": "Art. 20", "zitat": None,
+        "confidence": "nicht_bestimmbar",
+        "bedingungen": [
+            {"bedingung_text": "an Staatsstrassen", "wert_unter_bedingung": 4,
+             "artikel_referenz": "Art. 20"},
+            {"bedingung_text": "an Wegen", "wert_unter_bedingung": 2,
+             "artikel_referenz": "Art. 20"},
+        ],
+        "unklarheit": None,
+    })
+    befunde = pruefe_auswertung({"erkannte_zonen": [zone]})
+    treffer = [b for b in befunde if b["feld"] == "strassenabstand_m"]
+    pruefe(len(treffer) == 1, "der fehlende Regelfall wird gemeldet")
+    pruefe(bool(treffer) and treffer[0]["art"] == "kein_regelfall",
+           "als 'kein_regelfall' eingeordnet")
+
+
+def test_plausibilitaet_schweigt_bei_gueltiger_antwort() -> None:
+    """Die Antwort vom 17.09. -- Regelfall gesetzt, Ausnahmen daneben."""
+    print("\n[Plausibilitaet] vollstaendige Antwort erzeugt keinen Befund")
+    zone = _zone(strassenabstand_m={
+        "wert": 3, "einheit": "m", "quelle_dokument": "BauR Rheineck",
+        "artikel_referenz": "Art. 20 BauR", "zitat": "an Gemeindestrassen 3 m",
+        "confidence": "hoch",
+        "bedingungen": [
+            {"bedingung_text": "an Staatsstrassen", "wert_unter_bedingung": 4,
+             "artikel_referenz": "Art. 20 BauR"},
+        ],
+        "unklarheit": None,
+    })
+    befunde = pruefe_auswertung({"erkannte_zonen": [zone]})
+    pruefe(not [b for b in befunde if b["feld"] == "strassenabstand_m"],
+           "kein Befund, wenn Regelfall und Bedingungen richtig getrennt sind")
+
+
+def test_plausibilitaet_haengt_an_der_antwort() -> None:
+    """Der Befund steht IM Ergebnis -- sonst wird er nicht gelesen."""
+    print("\n[Plausibilitaet] Befund wird an die Antwort gehaengt")
+    zone = _zone(strassenabstand_m={
+        "wert": None, "einheit": None, "quelle_dokument": "BauR",
+        "artikel_referenz": "Art. 20", "zitat": None,
+        "confidence": "nicht_bestimmbar", "bedingungen": [],
+        "unklarheit": "an Gemeindestrassen 3 m",
+    })
+    antwort = _ergaenze_pruefung({"erkannte_zonen": [zone],
+                                  "unklarheiten_und_pruefhinweise": []})
+    p = (antwort.get("_meta") or {}).get("plausibilitaet") or {}
+    pruefe(p.get("geprueft") is True, "_meta.plausibilitaet.geprueft gesetzt")
+    pruefe(p.get("vollstaendig") is False, "als unvollstaendig markiert")
+    pruefe(len(antwort["unklarheiten_und_pruefhinweise"]) == 1,
+           "der Hinweis steht auch dort, wo ein Mensch hinsieht")
+
+
+def test_meta_traegt_auswertungslogik() -> None:
+    """Womit wurde ausgewertet? Muss am Ergebnis haengen, nicht nur im Hash."""
+    print("\n[Plausibilitaet] Herkunft der Auswertungslogik")
+    quelle = inspect.getsource(m2)
+    for feld in ('"auswertung_version": AUSWERTUNG_VERSION',
+                 '"modul2_version": modul2_fingerabdruck('):
+        pruefe(feld in quelle, f"_meta traegt {feld.split(chr(34))[1]}")
+
+
 def main() -> None:
     test_zweiter_lauf_trifft()
     test_engine_aenderung_laesst_gueltig()
@@ -354,6 +467,11 @@ def main() -> None:
     test_gemini_weg_mit_bestand()
     test_gemini_weg_ohne_bestand()
     test_dokumente_nicht_erreichbar()
+    test_plausibilitaet_mass_im_freitext()
+    test_plausibilitaet_kein_regelfall()
+    test_plausibilitaet_schweigt_bei_gueltiger_antwort()
+    test_plausibilitaet_haengt_an_der_antwort()
+    test_meta_traegt_auswertungslogik()
 
     print("=" * 72)
     if FEHLER:

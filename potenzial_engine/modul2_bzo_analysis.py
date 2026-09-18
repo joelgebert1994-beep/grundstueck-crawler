@@ -55,6 +55,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from typing import Any, Optional
@@ -384,6 +385,20 @@ SYSTEM_PROMPT = (
     "First mind. 2.50 m Rueckversatz 11.50 m'), waehle NICHT einfach den "
     "hoeheren oder tieferen Wert -- der Normalfall gehoert in 'wert', der "
     "bedingte Wert MIT der genauen Bedingung in 'bedingungen'.\n"
+    "- Zaehlt eine Vorschrift NUR Faelle auf, ohne einen davon ausdruecklich "
+    "als Regelfall zu bezeichnen (z.B. 'Strassenabstand: an Staatsstrassen "
+    "4 m, an Gemeindestrassen 3 m, an Wegen 2 m'), ist das KEIN Grund fuer "
+    "'nicht_bestimmbar'. Waehle den allgemeinsten, im Siedlungsgebiet "
+    "haeufigsten Fall als 'wert' -- bei Strassen ist das die Gemeinde-/"
+    "Quartierstrasse, nicht die Staatsstrasse und nicht der Weg -- und lege "
+    "JEDEN uebrigen Fall einzeln in 'bedingungen' ab, mit seiner Bedingung im "
+    "Klartext. Die Confidence richtet sich dann danach, wie eindeutig die "
+    "Aufzaehlung im Dokument steht, nicht danach, dass es mehrere Faelle "
+    "gibt.\n"
+    "- Schreibe NIEMALS ein konkretes Mass nur in 'unklarheit' oder 'zitat', "
+    "waehrend 'wert' null bleibt. Wenn du eine Zahl nennen kannst, gehoert "
+    "sie in 'wert' oder in 'bedingungen'. 'unklarheit' ist fuer das, was du "
+    "NICHT entscheiden konntest -- nicht fuer Werte, die du gefunden hast.\n"
     "- 'confidence' ehrlich einschaetzen: 'hoch' nur bei einem expliziten "
     "Zahlenwert in einer eindeutig dieser Zone zugeordneten Tabelle/einem "
     "Artikel. 'mittel' wenn der Wert abgeleitet/berechnet werden musste oder "
@@ -494,10 +509,15 @@ def _analyze_bzo_documents_gemini(
         "modul": "Modul 2 - BZO-Parsing & Delta-Finder",
         "backend": "gemini",
         "model": GEMINI_MODEL,
+        # Womit wurde ausgewertet? Der Fingerabdruck allein ist 16 Zeichen
+        # Hash -- Monate spaeter sagt er niemandem mehr, welche Logik
+        # dahinterstand. Deshalb beides, lesbar, an jedem Ergebnis.
+        "auswertung_version": AUSWERTUNG_VERSION,
+        "modul2_version": modul2_fingerabdruck("gemini"),
         "input_tokens": getattr(usage, "prompt_token_count", None),
         "output_tokens": getattr(usage, "candidates_token_count", None),
     }
-    return result
+    return _ergaenze_pruefung(result)
 
 
 # ---------------------------------------------------------------------------
@@ -603,15 +623,120 @@ def _analyze_bzo_documents_claude(
         "modul": "Modul 2 - BZO-Parsing & Delta-Finder",
         "backend": "claude",
         "model": CLAUDE_MODEL,
+        # Womit wurde ausgewertet? Der Fingerabdruck allein ist 16 Zeichen
+        # Hash -- Monate spaeter sagt er niemandem mehr, welche Logik
+        # dahinterstand. Deshalb beides, lesbar, an jedem Ergebnis.
+        "auswertung_version": AUSWERTUNG_VERSION,
+        "modul2_version": modul2_fingerabdruck("claude"),
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
     }
-    return result
+    return _ergaenze_pruefung(result)
 
 
 # ---------------------------------------------------------------------------
 # Fingerabdruck der Auswertung
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Plausibilitaetspruefung der Modellantwort
+# ---------------------------------------------------------------------------
+
+# Ein Mass im Fliesstext: "4 m", "3.5 m", "60 %", "0.45".
+_MASS_IM_TEXT = re.compile(r"\d+(?:[.,]\d+)?\s*(?:m2\b|m²|m\b|%)", re.IGNORECASE)
+
+
+def pruefe_auswertung(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Findet Kennzahlen, die sich selbst widersprechen.
+
+    Anlass: Rheineck, 18.09.2026. Das Modell setzte fuer ALLE 13 Zonen
+    `strassenabstand_m.wert = null` mit Confidence 'nicht_bestimmbar' -- und
+    schrieb im selben Objekt ins Freitextfeld `unklarheit`: "Strassenabstand
+    ist in Art. 20 nach Strassentyp (Staatsstrassen 4 m, Gemeindestrassen
+    3 m, Wege 2 m) geregelt". Die Werte waren gefunden. Sie standen nur im
+    falschen Feld.
+
+    Einen Tag zuvor hatte dasselbe Modell aus denselben fuenf PDF (gleicher
+    SHA-256) und mit demselben Prompt 3 m mit Confidence 'hoch' und zwei
+    Bedingungen geliefert. Gleiche Eingabe, zwei Antworten -- deshalb reicht
+    es nicht, den Prompt zu schaerfen; die Antwort muss geprueft werden.
+
+    Was diese Pruefung NICHT tut: sie ergaenzt nichts, sie rechnet nichts um
+    und sie raet keinen Wert. Sie stellt fest, dass eine Antwort in sich
+    nicht stimmig ist -- damit so etwas nicht stillschweigend im
+    Zwischenspeicher landet und Monate spaeter als Tatsache gelesen wird.
+
+    Sie meldet bewusst zu viel statt zu wenig. Beispiel aus demselben
+    Rheineck-Lauf: `gesamthoehe_m.wert` ist null mit der Begruendung "Nur
+    Gebaeudehoehe (7 m) und Firsthoehe (10.5 m) festgelegt". Hier ist null
+    RICHTIG -- das Reglement kennt keine Gesamthoehe, und die beiden Masse
+    gehoeren zu anderen Groessen. Der Befund steht trotzdem, weil sich ohne
+    Lesen des Artikels nicht entscheiden laesst, ob eine Zahl im Freitext
+    zur Kennzahl gehoert oder zu ihrer Nachbarin. Ein Befund heisst
+    "nachsehen", nicht "falsch".
+    """
+    befunde: list[dict[str, Any]] = []
+    for zone in result.get("erkannte_zonen") or []:
+        if not isinstance(zone, dict):
+            continue
+        name = zone.get("zonenbezeichnung") or "Zone ohne Bezeichnung"
+        for feld in _ZONE_KENNZAHL_FELDER:
+            kz = zone.get(feld)
+            if not isinstance(kz, dict) or kz.get("wert") is not None:
+                continue
+
+            # 1. Bedingungen erfasst, aber kein Regelfall gewaehlt. Das
+            #    Datenmodell trennt Regelfall und Ausnahme -- wer nur
+            #    Ausnahmen fuellt, hat die Trennung nicht angewendet.
+            bedingungen = kz.get("bedingungen") or []
+            if bedingungen:
+                befunde.append({
+                    "zone": name, "feld": feld, "art": "kein_regelfall",
+                    "hinweis": (
+                        f"{len(bedingungen)} bedingte Werte erfasst, aber 'wert' ist leer. "
+                        "Einer der Faelle ist der Regelfall und gehoert in 'wert'."),
+                })
+                continue
+
+            # 2. Ein konkretes Mass steht im Freitext, waehrend der Wert
+            #    leer bleibt. Genau der Rheineck-Fall.
+            for textfeld in ("unklarheit", "zitat"):
+                text = kz.get(textfeld)
+                if not text:
+                    continue
+                treffer = _MASS_IM_TEXT.findall(str(text))
+                if treffer:
+                    befunde.append({
+                        "zone": name, "feld": feld, "art": "mass_im_freitext",
+                        "hinweis": (
+                            f"'{textfeld}' nennt ein konkretes Mass, 'wert' ist leer: "
+                            f"{str(text)[:160]}"),
+                    })
+                    break
+    return befunde
+
+
+def _ergaenze_pruefung(result: dict[str, Any]) -> dict[str, Any]:
+    """Haengt die Befunde an die Antwort -- sichtbar, nicht stillschweigend."""
+    befunde = pruefe_auswertung(result)
+    meta = result.setdefault("_meta", {})
+    meta["plausibilitaet"] = {
+        "geprueft": True,
+        "befunde": befunde,
+        "vollstaendig": not befunde,
+    }
+    # Auch dorthin, wo die Oberflaeche und der Mensch ohnehin hinsehen.
+    if befunde:
+        hinweise = result.setdefault("unklarheiten_und_pruefhinweise", [])
+        if isinstance(hinweise, list):
+            betroffen = sorted({b["feld"] for b in befunde})
+            hinweise.append(
+                f"Plausibilitaetspruefung: {len(befunde)} Kennzahl(en) ohne Wert, obwohl die "
+                f"Auswertung dazu konkrete Angaben enthaelt (betroffen: {', '.join(betroffen)}). "
+                "Die Auswertung ist unvollstaendig -- ein erneuter Lauf kann ein anderes "
+                "Ergebnis liefern.")
+    return result
+
 
 def modul2_fingerabdruck(backend: Optional[str] = None) -> str:
     """Was bestimmt, WAS bei einer Auswertung herauskommt.
