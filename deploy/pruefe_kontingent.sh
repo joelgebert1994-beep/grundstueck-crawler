@@ -31,31 +31,62 @@ echo
 echo "Always-Free-Kontingent -- Pruefung dieser VM"
 echo "============================================"
 
-# --- Architektur -----------------------------------------------------
-ARCH=$(uname -m)
-if [ "$ARCH" = "aarch64" ]; then
-	ok "Architektur $ARCH (Ampere A1)"
-else
-	warn "Architektur $ARCH -- Always Free gibt es als A1 (aarch64) und als AMD-Micro. Auf AMD-Micro (1 GB) ist es fuer diesen Dienst zu knapp."
-fi
+# --- Gestalt (Shape) --------------------------------------------------
+# Die Always-Free-Grenzen haengen an der Gestalt, nicht an der Architektur.
+# Es gibt zwei voellig verschiedene Kontingente:
+#
+#   VM.Standard.A1.Flex      aarch64, bis 4 OCPU / 24 GB verteilbar,
+#                            davon 2 OCPU + 12 GB durchgehend gratis
+#   VM.Standard.E2.1.Micro   x86_64, 1/8 OCPU + 1 GB, zwei Stueck gratis
+#
+# Die Gestalt steht im Metadatendienst der Instanz. `uname -m` kann sie
+# nicht unterscheiden, weil beide AMD-Gestalten x86_64 melden.
+GESTALT=$(curl -s -m 3 -H "Authorization: Bearer Oracle" \
+	http://169.254.169.254/opc/v2/instance/shape 2>/dev/null)
+[ -z "$GESTALT" ] && GESTALT="unbekannt ($(uname -m))"
 
-# --- OCPU ------------------------------------------------------------
+SPEICHER_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)
 KERNE=$(nproc)
-# Bei Ampere entspricht 1 OCPU einem Kern (kein SMT).
-if [ "$KERNE" -le 2 ]; then
-	ok "$KERNE OCPU (Grenze: 2 durchgehend)"
-else
-	fehl "$KERNE OCPU -- ueber der Always-Free-Grenze von 2. Kostenpflichtig!"
-fi
 
-# --- Arbeitsspeicher --------------------------------------------------
-MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)
-GB=$((MB / 1024))
-if [ "$GB" -le 12 ]; then
-	ok "${GB} GB RAM (Grenze: 12 durchgehend)"
-else
-	fehl "${GB} GB RAM -- ueber der Always-Free-Grenze von 12. Kostenpflichtig!"
-fi
+# Gemessener Spitzenbedarf einer Analyse plus Grundlast der VM.
+# Quelle: deploy/../docs/einrichtung_oracle.md, Messung vom 18.09.2026.
+BEDARF_MB=176
+GRUNDLAST_MB=330   # Ubuntu minimal + Docker-Daemon + Caddy
+
+case "$GESTALT" in
+	VM.Standard.A1.Flex)
+		ok "Gestalt $GESTALT (Ampere A1)"
+		# Bei Ampere entspricht 1 OCPU einem Kern (kein SMT).
+		if [ "$KERNE" -le 2 ]; then
+			ok "$KERNE OCPU (Grenze: 2 durchgehend gratis)"
+		else
+			fehl "$KERNE OCPU -- ueber der Always-Free-Grenze von 2. Kostenpflichtig!"
+		fi
+		if [ "$SPEICHER_MB" -le 12288 ]; then
+			ok "${SPEICHER_MB} MB RAM (Grenze: 12288 durchgehend gratis)"
+		else
+			fehl "${SPEICHER_MB} MB RAM -- ueber der Always-Free-Grenze von 12288. Kostenpflichtig!"
+		fi
+		;;
+	VM.Standard.E2.1.Micro)
+		ok "Gestalt $GESTALT (AMD Micro, immer gratis, zwei Stueck je Konto)"
+		# E2.1.Micro hat 1/8 OCPU. `nproc` meldet trotzdem 2 -- das sind
+		# Threads, keine OCPU. Hier gibt es nichts zu ueberschreiten: die
+		# Gestalt ist unveraenderlich und per Definition im Kontingent.
+		sage "    " "$KERNE vCPU-Threads auf 1/8 OCPU -- durch die Gestalt fest, nicht regelbar"
+		# Entscheidend ist hier nicht die Grenze, sondern ob es reicht.
+		BRAUCHT=$((BEDARF_MB + GRUNDLAST_MB))
+		if [ "$SPEICHER_MB" -ge "$BRAUCHT" ]; then
+			ok "${SPEICHER_MB} MB RAM -- gemessener Bedarf ${BRAUCHT} MB (Analyse ${BEDARF_MB} + Grundlast ${GRUNDLAST_MB}), reicht"
+		else
+			warn "${SPEICHER_MB} MB RAM -- gemessener Bedarf ${BRAUCHT} MB. Zu knapp; auf A1 wechseln, sobald Kapazitaet frei ist."
+		fi
+		;;
+	*)
+		warn "Gestalt $GESTALT -- nicht als Always-Free-Gestalt erkannt. In der Oracle-Konsole gegenpruefen, ob sie das Etikett 'Always Free eligible' traegt."
+		sage "    " "$KERNE vCPU, ${SPEICHER_MB} MB RAM"
+		;;
+esac
 
 # --- Blockspeicher ----------------------------------------------------
 SUMME=0

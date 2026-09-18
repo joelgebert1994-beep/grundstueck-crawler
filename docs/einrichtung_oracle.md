@@ -257,11 +257,55 @@ sudo systemctl start gebimo
 | Kein Zertifikat, Caddy-Log zeigt Timeout | Port 80/443 zu | Schritt 3 **und** Skript-Schritt 3 prüfen |
 | Kein Zertifikat, DNS stimmt nicht | A-Record fehlt oder Cloudflare-Proxy orange | Wolke auf grau stellen |
 | `"bereit": false`, `llm_schluessel: false` | `GEMINI_API_KEY` leer | `.env` prüfen, `sudo systemctl reload gebimo` |
-| `"bereit": false`, `datenschicht: false` | `/opt/gebimo/daten` nicht schreibbar | `sudo chown -R $USER /opt/gebimo/daten` |
+| `"bereit": false`, `datenschicht: false` | `/opt/gebimo/daten` gehört dem falschen Benutzer | `sudo chown -R 10001:$(id -g) /opt/gebimo/daten` — siehe unten |
 | Seite zeigt „Diese Seite ist nicht berechtigt" | Schlüssel stimmt nicht | Schritt 8, beide Werte vergleichen, neu veröffentlichen |
 | Seite zeigt „Analyse-Server nicht erreichbar" | Dienst aus oder `BACKEND_URL` falsch | `curl https://DOMAIN/health` |
 | Analyse bricht nach ~100 s ab | Caddy-Zeitlimit zu klein | `Caddyfile`, `read_timeout` |
 | Instanz weg | Idle-Rückforderung | PAYG-Upgrade aus Schritt 1 nachholen |
+
+### Zwei Fallen, die beide wie etwas anderes aussehen
+
+Am 18.09.2026 bei der ersten echten Einrichtung aufgetreten. Beide sind
+inzwischen im Skript behoben; sie stehen hier, weil das Symptom jeweils in
+eine falsche Richtung zeigt.
+
+**1. Die Firewall auf der VM, obwohl `ufw` „installiert" ist.**
+Das Ubuntu-Abbild von Oracle liefert `ufw` mit, lässt es aber **inaktiv**
+und filtert über vorinstallierte iptables-Regeln, die alles ausser Port 22
+abweisen. Ein `sudo ufw allow 80/tcp` meldet Erfolg und bewirkt nichts.
+
+Das Symptom — Zeitüberschreitung auf Port 80 von aussen — sieht aus wie eine
+falsch gesetzte Sicherheitsliste in der Oracle-Konsole. Ob die Pakete
+ankommen, zeigt der Zähler der abweisenden Regel:
+
+```bash
+sudo iptables -L INPUT -n -v --line-numbers
+```
+
+Steht dort bei `REJECT ... icmp-host-prohibited` eine Paketzahl über null,
+kommt der Verkehr bis zur VM. Dann ist die Oracle-Seite korrekt und die
+VM-Firewall das Problem.
+
+**2. Das Datenverzeichnis gehört dem Menschen statt dem Dienst.**
+Der Container läuft bewusst unprivilegiert als uid **10001**. Das
+`chown` im Dockerfile wirkt nur im Abbild — sobald `./daten` von der VM
+darübergehängt wird, zählt allein die Eigentümerschaft auf der VM. Gehört
+sie dem einrichtenden Benutzer (uid 1001), hat der Dienst nur Leserecht:
+
+```
+sqlite3.OperationalError: unable to open database file
+```
+
+Der Dienst startet dann trotzdem und antwortet auf `/health` mit `200` —
+nur eben mit `datenschicht: false` und `bereit: false`. Das Speichern eines
+Projekts scheitert erst später, wenn es jemand versucht.
+
+Deshalb gehört das Verzeichnis dem Dienstbenutzer, die Gruppe bleibt beim
+VM-Benutzer, damit Sicherung und Nachsehen ohne `sudo` möglich bleiben:
+
+```bash
+sudo chown -R 10001:$(id -g) /opt/gebimo/daten && sudo chmod 775 /opt/gebimo/daten
+```
 
 ---
 
