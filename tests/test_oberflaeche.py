@@ -230,6 +230,70 @@ def test_markt_und_wirtschaft_getrennt(s: str) -> None:
            "vom Ergebnis fuehrt ein Weg zurueck zu den Annahmen")
 
 
+def test_uebersicht(s: str) -> None:
+    """Die Uebersicht beantwortet EINE Frage: lohnt sich ein zweiter Blick?
+
+    Vier Zahlen, eine Karte, drei kurze Antworten, ein Lageprofil. Was das
+    nicht beantwortet, steht in einem anderen Reiter -- besonders die
+    technischen Kennungen, die dort niemandem helfen.
+    """
+    block = s[s.index("function secUebersicht("):]
+    block = block[: block.index("\nfunction ", 10)]
+    # Geprueft wird der CODE, nicht die Kommentare. Ein Kommentar, der
+    # erklaert, warum etwas NICHT hierhergehoert, darf nicht als Verstoss
+    # gegen genau diese Regel zaehlen.
+    ohne_kommentar = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
+    ohne_kommentar = re.sub(r"^\s*//.*$", "", ohne_kommentar, flags=re.M)
+
+    # 1. Genau vier Kernzahlen, in dieser Reihenfolge.
+    namen = re.findall(r'kz\("([^"]+)"', block)
+    erwartet = ["Grundstück", "Ausnützungsziffer", "Bestand", "Potenzial Neubau"]
+    pruefe(namen == erwartet,
+           f"vier Kernzahlen in der Reihenfolge {erwartet} (gefunden: {namen})")
+    pruefe(block.count(", true)") >= 1 and "haupt" in s,
+           "die Potenzialkachel ist als Hauptkachel ausgezeichnet")
+
+    # 2. Der Potenzialwert kommt aus der GEMEINSAMEN Auskunft, nicht aus
+    #    einem zweiten Zugriff auf das G1-Ergebnis.
+    pruefe("potenzialKurz(erg)" in block,
+           "die Uebersicht liest den Potenzialwert aus potenzialKurz")
+    for feld in ("kurz.wert", "kurz.spanne"):
+        pruefe(feld in block, f"die Potenzialkachel benutzt {feld}")
+    pruefe("g1.ergebnis.geschossflaeche" not in block
+           and "geschossflaeche_m2" not in block,
+           "die Uebersicht greift NICHT direkt auf die Geschossflaeche im "
+           "G1-Ergebnis zu -- das waere eine zweite Quelle")
+
+    # 3. Die Karte hat eine zweite Buehne, und zeigeReiter kennt sie. Eine
+    #    zweite Leaflet-Instanz waeren zwei Wahrheiten ueber eine Parzelle.
+    pruefe('id="uebuehne"' in block, "die Uebersicht hat eine Kartenbuehne")
+    pruefe('"uebersicht" ? "uebuehne"' in s,
+           "zeigeReiter schiebt die Karte auf die Uebersichtsbuehne")
+    pruefe(s.count('id="map"') == 1,
+           f"genau EIN Kartencontainer im Dokument (gefunden: {s.count('id=' + chr(34) + 'map' + chr(34))})")
+    pruefe("kartenBuehneAktuell" in s,
+           "der Rahmen wird nur beim Buehnenwechsel neu gesetzt, nicht bei "
+           "jedem Reiterwechsel -- sonst ist die Zoomstellung jedes Mal weg")
+
+    # 4. Keine technischen Kennungen. Sie beantworten keine Frage, die
+    #    jemand beim Oeffnen eines Dossiers stellt.
+    for begriff in ("EGRID", "LV95", "BFS", "EGID", "Fingerabdruck",
+                    "Flaechenherkunft", "swissALTI3D"):
+        pruefe(begriff not in ohne_kommentar,
+               f"'{begriff}' steht NICHT in der Uebersicht (gehoert nach Daten & Quellen)")
+
+    # 5. Lage-Kurzprofil: das ist Maklerwissen, kein Geodatenkram.
+    for feld in ("oev_naechste_haltestelle", "supermarkt_naechster",
+                 "schule_naechste", "aspect", "slope_deg"):
+        pruefe(feld in block, f"das Lageprofil zeigt {feld}")
+    pruefe("konfidenz" not in block and "t.quelle" not in block,
+           "die Herkunftsangaben (Radon-Rohwert, Topografie-Quelle) bleiben "
+           "in Daten & Quellen")
+
+    # 6. Einschraenkungen als Chips, nicht als Tabelle.
+    pruefe('class="chips"' in block, "die Einschraenkungen stehen als Chips")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -237,7 +301,8 @@ def main() -> int:
     s = lies()
     for fn in (test_reiter, test_karte_ausserhalb_des_dossiers, test_css_variablen,
                test_inhaltsbreite, test_keine_abschnittsnummern,
-               test_bandbreiten_auskunft, test_markt_und_wirtschaft_getrennt):
+               test_bandbreiten_auskunft, test_markt_und_wirtschaft_getrennt,
+               test_uebersicht):
         fn(s)
 
     if _fehler:
