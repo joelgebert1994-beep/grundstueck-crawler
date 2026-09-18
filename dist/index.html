@@ -7433,8 +7433,20 @@ function chf(v, k) {
 function proz(v) { return leer(v) ? "–" : (v * 100).toFixed(1) + " %"; }
 
 
+/* Die Referenzlage kommt ueber ZWEI Wege, die dieselbe Auswertung liefern:
+   /api/entwicklung rechnet sie mit den Szenarien mit, /api/marktdaten
+   liefert sie allein. Beide rufen im Server dieselbe Funktion auf
+   (werte_mit_ausweitung) -- es gibt keine zweite Logik, nur eine zweite
+   Zustellung.
+
+   Der erste Weg braucht einen abgeschlossenen Auftrag. Fehlt die
+   Reglementsauswertung, gibt es den nicht. Und genau dann lag die
+   Auswertung ueber den zweiten Weg schon geladen bereit und wurde nicht
+   angezeigt -- der Marktreiter war leer, obwohl die Zahlen da waren. */
 function wLage(groesse) {
-  return (wErgebnis && wErgebnis.marktlage) ? wErgebnis.marktlage[groesse] : null;
+  var ausRechnung = (wErgebnis && wErgebnis.marktlage) ? wErgebnis.marktlage[groesse] : null;
+  if (ausRechnung) return ausRechnung;
+  return (mktLage || {})[groesse] || null;
 }
 /* ===================== Vergleichsobjekte erfassen =====================
 
@@ -7450,6 +7462,7 @@ function wLage(groesse) {
 
 var mktObjekte = [];          // zuletzt geladene Vergleichsobjekte
 var mktLage = null;           // Urteil der Engine je Marktgroesse
+var mktGebiete = null;        // fuer welches Gebiet je Groesse ausgewertet wurde
 var mktOffen = false;         // Erfassungsbereich aufgeklappt?
 var mktMeldung = "";
 
@@ -7467,8 +7480,11 @@ function mktGebiet() {
 }
 
 // Welches Gebiet wurde fuer diese Marktgroesse tatsaechlich ausgewertet?
+// Zweiter Weg wie bei wLage -- aus demselben Grund.
 function wGebiet(groesse) {
-  return (((wErgebnis || {}).referenzgebiet || {}).je_groesse || {})[groesse] || null;
+  var ausRechnung = (((wErgebnis || {}).referenzgebiet || {}).je_groesse || {})[groesse];
+  if (ausRechnung) return ausRechnung;
+  return ((mktGebiete || {}).je_groesse || {})[groesse] || null;
 }
 
 var mktGeladenFuer = null;
@@ -7483,6 +7499,10 @@ function mktLaden(danach) {
     .then(function (a) {
       mktObjekte = a.ok ? (a.daten.objekte || []) : [];
       mktLage = a.ok ? (a.daten.marktlage || null) : null;
+      // Wurde fuer die Gemeinde oder fuer die weitere Umgebung ausgewertet?
+      // Der Endpunkt sagt es mit; bisher wurde die Antwort verworfen und
+      // eine ausgeweitete Aussage sah aus wie eine oertliche.
+      mktGebiete = a.ok ? (a.daten.referenzgebiet || null) : null;
       if (!a.ok) mktMeldung = a.fehler || "Vergleichsobjekte nicht ladbar.";
       if (danach) danach();
       else mktZeichne();
@@ -8063,7 +8083,14 @@ function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt) {
         (leer(mw.wert) ? "noch nicht gesetzt"
           : chf(mw.wert) + ' <span class="einheit">' + esc(einheit) + "</span>") + "</div>" +
         (leer(mw.wert) && mw.herkunft === "nicht_bestimmbar"
-          ? '<div class="fuss">noch kein gerechneter Wert</div>'
+          // Wer einen Wert eingetippt hat, will wissen, ob er angekommen
+          // ist. "noch kein gerechneter Wert" allein liest sich, als
+          // waere die Eingabe verschwunden.
+          ? '<div class="fuss">' + (leer(feldWert)
+              ? "noch kein gerechneter Wert"
+              : "Ihre Eingabe " + esc(chf(feldWert) + " " + einheit) +
+                " ist gespeichert und wird angewendet, sobald gerechnet werden kann") +
+            "</div>"
           : '<div class="fuss"><span class="badge ' + badge[1] + '">' + esc(badge[0]) +
             "</span></div>") + "</div>" +
       '<label class="wfeld mgrfeld"><span class="wlab">Eigener Wert</span>' +
@@ -8531,19 +8558,24 @@ function wAnnahmenStreifen() {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
   var zeilen = [];
-  var nimm = function (label, mw, einheit) {
-    if (!mw || leer(mw.wert)) {
+  var nimm = function (label, mw, einheit, eigen) {
+    if (mw && !leer(mw.wert)) {
+      zeilen.push([label, chf(mw.wert) + " " + einheit,
+                   HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"]]);
+    } else if (!leer(eigen)) {
+      // Es wird gerade nicht gerechnet -- der eingetippte Wert ist aber da
+      // und wird angewendet, sobald es geht. Ihn als "nicht gesetzt" zu
+      // fuehren waere schlicht falsch: gesetzt ist er.
+      zeilen.push([label, chf(eigen) + " " + einheit, ["vorgemerkt", "warn"]]);
+    } else {
       // Kein Abzeichen: "nicht gesetzt" daneben noch einmal als Marke zu
       // wiederholen fuellt Platz, ohne etwas dazuzusagen.
       zeilen.push([label, "nicht gesetzt", null]);
-    } else {
-      zeilen.push([label, chf(mw.wert) + " " + einheit,
-                   HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"]]);
     }
   };
-  nimm("Verkaufspreis", (e.verkauf || {}).preis, "CHF/m²");
-  nimm("Mietzins", (e.miete || {}).ansatz, "CHF/m²/Jahr");
-  nimm("Bodenpreis", (e.land || {}).bodenpreis, "CHF/m²");
+  nimm("Verkaufspreis", (e.verkauf || {}).preis, "CHF/m²", wEingaben.verkauf_chf_pro_m2);
+  nimm("Mietzins", (e.miete || {}).ansatz, "CHF/m²/Jahr", wEingaben.miete_chf_pro_m2_jahr);
+  nimm("Bodenpreis", (e.land || {}).bodenpreis, "CHF/m²", wEingaben.bodenpreis_chf_pro_m2);
   zeilen.push(["Zielmarge", Math.round((wEingaben.zielmarge || 0) * 100) + " %",
                HERKUNFT_KURZ.benutzerannahme]);
 
@@ -8565,34 +8597,42 @@ function wAnnahmenStreifen() {
 function secWirtschaft(erg) {
   var kopf = '<div class="sechead"><h3>Wirtschaftlichkeit</h3>' +
     '<span class="right"><span class="badge mute">rechnet auf Ihren Annahmen</span></span></div>';
-  // Zwei verschiedene Gruende, warum hier nichts zu rechnen ist. Beide
-  // fuehrten bisher zum vollen Formular mit "CHF -" in jedem Feld: sechs
-  // grosse Kennzahlenkacheln ohne eine einzige Zahl, dazu Wohnungsmix und
-  // Kostenaufstellung. Das sieht aus wie ein Fehler und ist keiner.
-  var grund = null;
-  if ((erg.zonen_zuordnung || {}).status !== "gefunden") {
-    grund = "Ohne eindeutige Zonenzuordnung gibt es keine belastbare Fläche — und damit " +
-      "keine belastbare Wirtschaftlichkeit.";
-  } else if (!szenarienHabenWerte(erg)) {
-    grund = "Die Wirtschaftlichkeit rechnet auf einem Szenario. Solange keines belastbar " +
-      "gerechnet werden kann, gäbe jede Zahl hier eine Genauigkeit vor, die es nicht gibt.";
-  }
-  if (grund) {
-    return '<section class="sec" id="sec-wirtschaft">' + kopf +
-      '<div class="antwort wartet"><div class="akopf">' +
-      '<span class="gross klein">Noch nicht berechenbar</span></div>' +
-      '<p class="atext">' + esc(grund) + "</p></div></section>";
-  }
+  var stand = rechenstand(erg);
+
+  // Frueher ersetzte der Grund den ganzen Reiter: eine Ueberschrift, ein
+  // Satz, darunter eine leere Flaeche. Der Grund erklaert aber, warum
+  // EINE Zahl fehlt -- er ist kein Ersatz fuer Annahmen, Wohnungsmix und
+  // Kostenmodell, die alle unabhaengig vom Baurecht sind und die der
+  // Benutzer genau jetzt setzen will, damit gerechnet werden kann, sobald
+  // die Flaeche da ist.
+  //
+  // Was NICHT gezeigt wird, solange nicht gerechnet werden kann:
+  // Szenarienvergleich, beste Nutzung und Parzellenkombination. Das sind
+  // Ergebnisse, keine Eingaben -- leere Huelsen davon waeren genau die
+  // weissen Flaechen, die hier verschwinden sollen. wVergleichBlock und
+  // hbuBlock geben von sich aus "" zurueck; kombBlock nicht, deshalb
+  // steht es hier ausdruecklich.
+  var ergebnisse = stand.rechenbar
+    ? '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
+      '<div id="w-hbu">' + hbuBlock() + "</div>" +
+      '<div id="w-kombination">' + kombBlock() + "</div>"
+    : '<div class="note">Szenarienvergleich, beste Nutzung und Parzellenkombination ' +
+      'erscheinen, sobald eine belastbare Fläche vorliegt. Sie sind Ergebnisse dieser ' +
+      'Rechnung — leer stehen sie hier nicht.</div>';
+
   return '<section class="sec" id="sec-wirtschaft">' + kopf +
+    rechenstandBand(stand, "Noch nicht berechenbar") +
     '<div id="w-annahmen">' + wAnnahmenStreifen() + "</div>" +
     '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
     '<div id="w-status" class="wstatus"></div>' +
-    '<div class="note">Jede Änderung an einer Annahme rechnet Flächen, Wohnungen, Kosten, ' +
-    'Gewinn, Marge und den maximal tragbaren Landwert neu — die baurechtliche Analyse ' +
-    'wird dabei <b>nicht</b> wiederholt.</div>' +
-    '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
-    '<div id="w-hbu">' + hbuBlock() + "</div>" +
-    '<div id="w-kombination">' + kombBlock() + "</div>" +
+    (stand.rechenbar
+      ? '<div class="note">Jede Änderung an einer Annahme rechnet Flächen, Wohnungen, ' +
+        'Kosten, Gewinn, Marge und den maximal tragbaren Landwert neu — die baurechtliche ' +
+        'Analyse wird dabei <b>nicht</b> wiederholt.</div>'
+      : '<div class="note">Was Sie hier und im Reiter Markt eintragen, bleibt erhalten und ' +
+        'wird angewendet, sobald gerechnet werden kann — die Eingaben gehen nicht ' +
+        'verloren.</div>') +
+    ergebnisse +
     '<div id="w-mix">' + mixBlock() + "</div>" +
     '<div id="w-bkp">' + bkpBlock() + "</div>" +
   "</section>";
@@ -8610,23 +8650,121 @@ function secWirtschaft(erg) {
    in derselben Zeile stehen. Erfunden wird hier nichts: gibt es keine
    Referenz, steht "keine" und nicht ein Platzhalterwert.
 */
+/* Warum kann hier (noch) nicht gerechnet werden?
+
+   EINE Stelle, vier Zustaende. Markt und Wirtschaftlichkeit fragen
+   dieselbe Funktion -- sonst nennen zwei Reiter zwei verschiedene Gruende
+   fuer denselben Sachverhalt, und der Benutzer muss raten, welcher gilt.
+
+   Der Unterschied zwischen den ersten beiden ist kein Wortspiel, sondern
+   ein technischer: fehlt die Reglementsauswertung, steht der Auftrag auf
+   "teilweise" und /api/entwicklung antwortet mit 404. Ist die Zone
+   dagegen zugeordnet, nur nicht eindeutig, laeuft dieselbe Rechnung durch
+   und liefert "nicht bestimmbar". Wer beides gleich behandelt, ruft
+   einmal umsonst an -- und ueberschreibt dabei den fachlichen Grund mit
+   einer technischen Meldung ueber eine abgelaufene Auftragskennung.
+
+   Was hier NICHT steht: eine Aussage darueber, ob es Marktdaten gibt. Die
+   haengen an der Gemeinde, nicht am Baurecht, und werden von
+   /api/marktdaten ganz unabhaengig geliefert. */
+function rechenstand(erg) {
+  erg = erg || {};
+  var zz = erg.zonen_zuordnung;
+
+  // null heisst: die Reglementsauswertung ist noch nicht durch. Das ist
+  // das Teilergebnis nach Modul 1 -- entweder laeuft Modul 2 noch, oder
+  // es ist fehlgeschlagen. Beides sieht hier gleich aus, und beides
+  // heisst dasselbe: die Rechnung ist nicht erreichbar.
+  if (zz === null || zz === undefined) {
+    return {
+      art: "reglement_offen",
+      rechenbar: false,
+      kurz: "Baurecht noch nicht ausgewertet",
+      grund: "Für eine belastbare Wirtschaftlichkeitsrechnung fehlt die baurechtlich " +
+             "belastbare Projektfläche. Die Bau- und Nutzungsordnung dieser Gemeinde " +
+             "ist noch nicht ausgewertet — ohne sie gibt es weder Zone noch Kennzahlen " +
+             "und damit keine Fläche, auf die ein Preis je m² angewendet werden könnte.",
+      weg: "Über „neu rechnen“ oben lässt sich allein die Reglementsauswertung nachholen. " +
+           "Die amtlichen Daten — Parzelle, Fläche, Gemeinde, Bestand, Geometrie — bleiben " +
+           "dabei stehen und werden nicht erneut geholt."
+    };
+  }
+
+  if (zz.status !== "gefunden") {
+    var besonders = zz.status === "sondernutzungsplan_massgebend"
+      ? "Für diese Parzelle ist ein Sondernutzungsplan massgebend. Seine Vorgaben gehen " +
+        "der Grundordnung vor und werden von dieser Anwendung nicht ausgewertet."
+      : (zz.status === "mehrere_gleich_gute_kandidaten"
+          ? "Mehrere Zonen passen gleich gut auf diese Parzelle. Welche gilt, lässt sich " +
+            "aus den amtlichen Daten allein nicht entscheiden."
+          : "Der Parzelle liess sich keine Zone eindeutig zuordnen.");
+    return {
+      art: "zone_nicht_eindeutig",
+      rechenbar: false,
+      kurz: "Zone nicht eindeutig",
+      grund: besonders + " Ohne eindeutige Zone gibt es keine belastbare Geschossfläche — " +
+             "und damit keine Fläche, auf die ein Preis je m² angewendet werden könnte.",
+      weg: "Die Kennzahlen des Sondernutzungsplans sind bei der Gemeinde einzuholen und " +
+           "ersetzen dann die Grundordnung."
+    };
+  }
+
+  if (!szenarienHabenWerte(erg)) {
+    return {
+      art: "kein_szenario",
+      rechenbar: false,
+      kurz: "Kein belastbares Szenario",
+      grund: "Die Wirtschaftlichkeit rechnet auf einem Szenario. Alle Szenarien wurden " +
+             "geprüft, keines ergab eine belastbare Fläche — jede Zahl hier gäbe eine " +
+             "Genauigkeit vor, die es nicht gibt.",
+      weg: "Was die Engine je Szenario geprüft hat, steht im Reiter Potenzial."
+    };
+  }
+
+  return { art: "bereit", rechenbar: true, kurz: null, grund: null, weg: null };
+}
+
+/* Der Grund als Band -- nicht als Seite.
+
+   Frueher ersetzte dieser Text den ganzen Reiter. Ein Grund erklaert
+   aber, warum eine EINZELNE Zahl fehlt; er ist kein Ersatz fuer alles
+   andere, was bereits feststeht. */
+function rechenstandBand(stand, was) {
+  if (stand.rechenbar) return "";
+  return '<div class="antwort wartet"><div class="akopf">' +
+    '<span class="gross klein">' + esc(was) + "</span>" +
+    '<span class="badge warn">' + esc(stand.kurz) + "</span></div>" +
+    '<p class="atext">' + esc(stand.grund) + "</p>" +
+    (stand.weg ? '<p class="ahinweis">' + esc(stand.weg) + "</p>" : "") +
+  "</div>";
+}
+
 function secMarkt(erg) {
-  var blockiert = (erg.zonen_zuordnung || {}).status !== "gefunden";
   var kopf = '<div class="sechead"><h3>Markt</h3>' +
     '<span class="right"><span class="badge mute">drei Ebenen</span></span></div>';
-  if (blockiert) {
-    return '<section class="sec" id="sec-markt">' + kopf +
-      '<div class="note warn">Ohne eindeutige Zonenzuordnung gibt es keine Fläche, auf die ' +
-      'ein Preis je m² angewendet werden könnte. Die Eingabe bleibt deshalb gesperrt.</div></section>';
-  }
-  // Die drei Ebenen sind drei verschiedene Arten von Wissen und duerfen nie
-  // in derselben Zeile stehen. Die Nummer ist echte Ordnung -- von der
-  // fremden Beobachtung ueber die eigene bis zur eigenen Entscheidung --
-  // und keine Abschnittszaehlung.
+  var stand = rechenstand(erg);
+
+  // KEINE Sperre mehr. Der Marktreiter beantwortet "Was ist am Markt
+  // plausibel?" -- und das haengt an der Gemeinde, nicht am Baurecht.
+  // Vergleichsobjekte, Sicherheitsgrad und Referenzspannen liefert
+  // /api/marktdaten voellig unabhaengig von Zone und Reglement. Sie
+  // wurden bisher geholt und weggeworfen, weil eine einzige Zeile den
+  // ganzen Reiter an die Zonenzuordnung band.
+  //
+  // Was ohne Zone WIRKLICH fehlt, ist nur die Flaeche, auf die ein Preis
+  // je m2 angewendet wird -- und die gehoert in die Wirtschaftlichkeit.
+  var hinweis = stand.rechenbar ? "" :
+    '<div class="note warn"><b>' + esc(stand.kurz) + ".</b> Die Werte unten gelten " +
+    'je m² und sind davon unberührt — sie stammen aus Vergleichsobjekten der Gemeinde, ' +
+    'nicht aus dem Baurecht. Was sich daraus für <i>dieses</i> Grundstück ergibt, ' +
+    'rechnet der Reiter Wirtschaftlichkeit; dafür fehlt derzeit die Fläche. ' +
+    reiterLink("wirtschaft", "Zur Begründung") + "</div>";
+
   return '<section class="sec" id="sec-markt">' + kopf +
     '<div class="note">Drei Dinge, die nicht dasselbe sind: was eine externe Quelle über ' +
     'den Markt sagt, was wir selbst an Vergleichsobjekten haben, und was Sie annehmen. ' +
     'In die Wirtschaftlichkeit geht am Ende nur das Dritte ein.</div>' +
+    hinweis +
     '<div class="ebenen gestapelt">' +
       '<div class="ebene">' +
         ebeneKopf(1, "Externe Marktdaten", "Was sagt eine unabhängige Quelle?") +
@@ -8681,6 +8819,22 @@ function wSammleEingaben() {
 
 function wRechne() {
   if (!jobIdAktuell) return;
+  // Ohne Reglementsauswertung steht der Auftrag auf "teilweise", und
+  // /api/entwicklung antwortet mit 404. Der Anruf ist nicht nur nutzlos:
+  // seine Antwort ueberschreibt den fachlichen Grund im Statusfeld mit
+  // einer technischen Meldung ueber eine "evtl. abgelaufene job_id" --
+  // eine Auskunft ueber die Sitzung, wo eine ueber das Grundstueck
+  // gefragt war.
+  var stand = rechenstand(ergebnisAktuell);
+  if (stand.art === "reglement_offen") {
+    var sf = document.getElementById("w-status");
+    if (sf) {
+      sf.innerHTML = '<span class="wfehler">' + esc(stand.kurz) +
+        " — die Eingaben sind gespeichert und werden angewendet, sobald " +
+        "gerechnet werden kann.</span>";
+    }
+    return;
+  }
   var summe = wEingaben.wohnungsmix.reduce(function (s, t) { return s + (Number(t.anteil) || 0); }, 0);
   var status = document.getElementById("w-status");
   if (Math.abs(summe - 1) > 0.001) {

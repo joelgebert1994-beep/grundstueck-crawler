@@ -13,6 +13,8 @@ unsichtbar wird.
   6. Markt: drei Ebenen, Sicherheitsgrad sichtbar, keine Platzhalterwerte.
   7. Wirtschaftlichkeit: fuenf Kernkennzahlen, Annahmen vor dem Ergebnis.
   8. Daten & Quellen: Herkunft gebuendelt, Codes uebersetzt, Rohwert daneben.
+  9. Ein Teilfehler sperrt keinen Reiter -- Markt und Wirtschaftlichkeit
+     zeigen auch ohne Reglementsauswertung, was feststeht.
 
 Was er NICHT pruefen kann: ob ein konkreter Wert durch die Anzeigeschicht
 laeuft. Das haengt an den Daten und ist im Browser zu pruefen -- dieser
@@ -556,6 +558,132 @@ def test_umschrift_diphthong(s: str) -> None:
            f"die Ausnahme gilt fuer ue, Ue und UE (gefunden: {block.count('(?<![aeAE])')})")
 
 
+def test_teilfehler_sperrt_keinen_reiter(s: str) -> None:
+    """Ein Teilfehler darf keinen Reiter leeren.
+
+    Live beobachtet: schlaegt die Reglementsauswertung fehl -- oder ist die
+    Zone nur nicht eindeutig --, zeigten Markt und Wirtschaftlichkeit je
+    eine Ueberschrift, einen Satz und darunter eine leere Flaeche. Die
+    Marktauswertung lag dabei bereits geladen vor: /api/marktdaten liefert
+    sie unabhaengig von Zone und Reglement, und die Oberflaeche warf sie
+    weg, weil EINE Zeile den ganzen Reiter an die Zonenzuordnung band.
+    """
+    markt = s[s.index("function secMarkt("):]
+    markt = markt[: markt.index("\nfunction ", 10)]
+    wirt = s[s.index("function secWirtschaft("):]
+    wirt = wirt[: wirt.index("\nfunction ", 10)]
+
+    # 1. Keine Sperre mehr: kein frueher Ausstieg, der den Reiter durch
+    #    einen Satz ersetzt.
+    for name, block in (("secMarkt", markt), ("secWirtschaft", wirt)):
+        pruefe("zonen_zuordnung" not in block,
+               f"{name} fragt die Zonenzuordnung nicht mehr selbst ab")
+        pruefe(block.count("return ") == 1,
+               f"{name} hat genau EINEN Rueckgabeweg -- keine Sperrseite "
+               f"(gefunden: {block.count('return ')})")
+
+    # 2. Der Marktreiter baut in JEDEM Fall seine drei Ebenen.
+    for teil in ("ebeneKopf(1,", "mkt-verwaltung", "ebeneKopf(3,", 'id="w-markt"'):
+        pruefe(teil in markt, f"secMarkt baut {teil} immer")
+
+    # 3. Die Wirtschaftlichkeit behaelt Struktur und Eingaben.
+    for teil in ('id="w-annahmen"', 'id="w-ergebnis"', 'id="w-mix"', 'id="w-bkp"'):
+        pruefe(teil in wirt, f"secWirtschaft baut {teil} immer")
+    pruefe("rechenstandBand(stand" in wirt,
+           "der Grund steht als Band ueber der Struktur, nicht an ihrer Stelle")
+    # Ergebnisse dagegen sind KEINE Struktur: leere Huelsen davon waeren
+    # genau die weissen Flaechen, die verschwinden sollten.
+    pruefe("stand.rechenbar" in wirt and "kombBlock()" in wirt,
+           "Szenarienvergleich, beste Nutzung und Kombination nur, wenn "
+           "gerechnet werden kann")
+
+
+def test_rechenstand_eine_stelle(s: str) -> None:
+    """Warum nicht gerechnet werden kann, entscheidet EINE Funktion.
+
+    Sonst nennen zwei Reiter zwei verschiedene Gruende fuer denselben
+    Sachverhalt -- und der Benutzer muss raten, welcher gilt.
+    """
+    pruefe("function rechenstand(" in s, "es gibt eine gemeinsame Zustandsauskunft")
+    block = s[s.index("function rechenstand("):]
+    block = block[: block.index("\nfunction ", 10)]
+
+    # Vier Zustaende, und sie sind nicht dasselbe.
+    for art in ("reglement_offen", "zone_nicht_eindeutig", "kein_szenario", "bereit"):
+        pruefe('"' + art + '"' in block, f"Zustand {art} wird unterschieden")
+
+    # Der Unterschied zwischen den ersten beiden ist technisch: bei
+    # fehlender Reglementsauswertung ist der Auftrag nicht "done" und
+    # /api/entwicklung antwortet mit 404.
+    pruefe("zz === null || zz === undefined" in block,
+           "ein fehlendes zonen_zuordnung ist das Teilergebnis nach Modul 1")
+    pruefe('zz.status !== "gefunden"' in block,
+           "eine vorhandene, aber nicht eindeutige Zone ist etwas anderes")
+    pruefe("sondernutzungsplan_massgebend" in block
+           and "mehrere_gleich_gute_kandidaten" in block,
+           "der Grund benennt den konkreten Fall, nicht nur 'nicht eindeutig'")
+
+    # Beide Reiter fragen dieselbe Stelle.
+    for name in ("secMarkt", "secWirtschaft"):
+        block2 = s[s.index("function " + name + "("):]
+        block2 = block2[: block2.index("\nfunction ", 10)]
+        pruefe("rechenstand(erg)" in block2, f"{name} fragt rechenstand()")
+
+    # Und wRechne ruft nicht an, wenn niemand abnehmen kann.
+    wr = s[s.index("function wRechne("):]
+    wr = wr[: wr.index("\nfunction ", 10)]
+    pruefe('stand.art === "reglement_offen"' in wr,
+           "wRechne ruft /api/entwicklung NICHT auf, wenn der Auftrag nicht "
+           "abgeschlossen ist -- die 404-Antwort ueberschrieb sonst den "
+           "fachlichen Grund mit einer Meldung ueber die job_id")
+
+
+def test_marktauswertung_zwei_wege(s: str) -> None:
+    """Dieselbe Auswertung, zwei Zustellwege -- und keine zweite Logik.
+
+    werte_mit_ausweitung() im Server liefert die Referenzlage sowohl an
+    /api/entwicklung (mit den Szenarien) als auch an /api/marktdaten
+    (allein). Die Oberflaeche las nur den ersten Weg -- und der braucht
+    einen abgeschlossenen Auftrag.
+    """
+    lage = s[s.index("function wLage("):]
+    lage = lage[: lage.index("\nfunction ", 10)]
+    pruefe("wErgebnis" in lage and "mktLage" in lage,
+           "wLage liest beide Zustellwege")
+    pruefe(lage.index("wErgebnis") < lage.index("mktLage"),
+           "die Rechnung hat Vorrang, die Marktabfrage ist der Ersatz")
+
+    geb = s[s.index("function wGebiet("):]
+    geb = geb[: geb.index("\nfunction ", 10)]
+    pruefe("mktGebiete" in geb, "wGebiet ebenso")
+    pruefe("var mktGebiete" in s and "a.daten.referenzgebiet" in s,
+           "mktLaden behaelt das Referenzgebiet -- es wurde bisher verworfen")
+
+
+def test_markt_ohne_standortdaten(s: str) -> None:
+    """Der Marktreiter beantwortet nur: Was ist am Markt plausibel?
+
+    Hangneigung, Ausrichtung, Hoehe und Radon sind Standortangaben. Die
+    wichtigen stehen in der Uebersicht, die technischen in Daten &
+    Quellen. Im Markt haben sie nichts verloren -- sie wuerden eine
+    Marktaussage wie eine Standortanalyse aussehen lassen.
+    """
+    teile = []
+    for name in ("secMarkt", "marktBlock", "marktGroesse", "mktZeichne", "marktExternBlock"):
+        block = s[s.index("function " + name + "("):]
+        teile.append(block[: block.index("\nfunction ", 10)])
+    markt = "\n".join(teile)
+    # Geprueft wird der CODE, nicht die Kommentare.
+    markt = re.sub(r"/\*.*?\*/", "", markt, flags=re.S)
+    markt = re.sub(r"^\s*//.*$", "", markt, flags=re.M)
+
+    for feld in ("slope_deg", "slope_pct", "aspect", "hoehe_m", "radon",
+                 "topographie", "wahrscheinlichkeit_prozent", "konfidenz",
+                 "lv95", "egrid", "swissALTI3D"):
+        pruefe(feld not in markt,
+               f"'{feld}' steht NICHT im Marktreiter (Übersicht bzw. Daten & Quellen)")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -567,7 +695,9 @@ def main() -> int:
                test_uebersicht, test_markt_drei_ebenen, test_markt_sicherheitsgrad,
                test_markt_keine_platzhalter, test_markt_eingabefelder_bleiben,
                test_wirtschaft_kernkennzahlen,
-               test_daten_und_quellen, test_umschrift_diphthong):
+               test_daten_und_quellen, test_umschrift_diphthong,
+               test_teilfehler_sperrt_keinen_reiter, test_rechenstand_eine_stelle,
+               test_marktauswertung_zwei_wege, test_markt_ohne_standortdaten):
         fn(s)
 
     if _fehler:
