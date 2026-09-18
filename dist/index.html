@@ -1994,12 +1994,12 @@ function reglementWiederholen() {
       zeigeStand(letzteSchritte, a.fehler || "Erneut fehlgeschlagen.");
       return;
     }
-    ergebnisAktuell = a.daten.ergebnis;
-    zeichneErgebnisAufKarte(ergebnisAktuell);
-    renderDossier(ergebnisAktuell);
-    zeigeStand(letzteSchritte.map(function (s) {
-      return { schluessel: s.schluessel, bezeichnung: s.bezeichnung, stand: "fertig" };
-    }));
+    // Der Aufruf wartet NICHT mehr auf das Ergebnis, er stoesst nur an.
+    // Vorher lief die Auswertung in dieser einen Anfrage, und Cloudflare
+    // schnitt sie nach 100 Sekunden mit HTTP 524 ab -- auf dem Server lief
+    // sie weiter, hier stand ein technischer Fehler. Jetzt derselbe Weg wie
+    // beim Erstlauf: denselben Job weiter abfragen, bis er fertig ist.
+    pollStatus(jobIdAktuell);
   });
 }
 

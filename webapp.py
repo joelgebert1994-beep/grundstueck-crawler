@@ -142,6 +142,24 @@ _JOBS: dict[str, dict[str, Any]] = {}
 _JOBS_LOCK = threading.Lock()
 _JOB_TTL_SECONDS = 30 * 60
 
+# Wie viele Analysen gleichzeitig RECHNEN duerfen.
+#
+# Bis zum 18.09.2026 gab es keine Grenze: jeder Aufruf von /analyze startete
+# sofort einen weiteren Thread. Auf der Oracle-Always-Free-VM (956 MB, kein
+# Swap) hat das die Maschine umgebracht -- gemessen ~180 MB je Analyse auf
+# einer Grundlast von ~370 MB. Drei parallele Laeufe kamen auf ~910 MB; der
+# Kernel warf daraufhin den Seitenzwischenspeicher weg, die Programmseiten
+# mussten staendig von der Bootplatte nachgeladen werden, und die VM konnte
+# nicht einmal mehr ihren SSH-Willkommenstext senden. Es gab keinen
+# OOM-Eintrag -- deshalb sah es wie ein Absturz aus und war keiner.
+#
+# Zwei ist kein geschaetzter Wert: 370 + 2 x 180 = 730 MB laesst auf dieser
+# Maschine Luft, 910 MB nicht. Wer mehr Speicher hat, setzt die Zahl hoch.
+# Wartende Analysen laufen nicht ins Leere, sie warten -- eine Warteschlange
+# ist einem Ausfall vorzuziehen.
+MAX_GLEICHZEITIGE_ANALYSEN = max(1, int(os.environ.get("MAX_GLEICHZEITIGE_ANALYSEN", "2")))
+_ANALYSE_PLAETZE = threading.BoundedSemaphore(MAX_GLEICHZEITIGE_ANALYSEN)
+
 
 # Die Vergleichsobjekte liegen in der Datenschicht (kern), nicht in der
 # Engine -- die ist zustandslos. Fehlt kern (Engine allein ausgecheckt),
@@ -1000,9 +1018,10 @@ class Handler(BaseHTTPRequestHandler):
         obwohl Geodaten, OEREB, Nutzungsplanung und Restriktionen laengst da
         waren. Hier wird ausschliesslich Modul 2 wiederholt und danach die
         Potenzialkette gerechnet -- dieselben Funktionen wie im Erstlauf.
-        """
-        from potenzial_engine.pipeline import _potenzialkette
 
+        Diese Methode prueft nur und startet; gerechnet wird in
+        _reglement_nachholen.
+        """
         daten = self._lies_json_body()
         if daten is None:
             return
@@ -1023,34 +1042,68 @@ class Handler(BaseHTTPRequestHandler):
                                                     "werden koennten."}, status=409)
             return
 
+        # Diese Auswertung dauert Minuten. Frueher lief sie IN dieser
+        # Anfrage, und die Antwort kam erst am Ende. Cloudflare bricht eine
+        # Verbindung nach 100 Sekunden mit HTTP 524 ab -- die Arbeit lief auf
+        # dem Server weiter, der Benutzer sah einen technischen Fehler und
+        # drueckte noch einmal. Am 18.09.2026 live beobachtet.
+        #
+        # Deshalb dasselbe Muster wie /analyze: sofort antworten, im
+        # Hintergrund rechnen, Stand ueber /status abholen. Es ist derselbe
+        # Job und dieselbe job_id -- die Oberflaeche pollt einfach weiter.
+        with _JOBS_LOCK:
+            _JOBS[job_id].update(status="running", fehler=None)
+        threading.Thread(
+            target=self._reglement_nachholen,
+            args=(job_id, job, teil, modul1_result, oereb),
+            daemon=True,
+        ).start()
+        self._send_json({"ok": True, "status": "running", "job_id": job_id})
+
+    def _reglement_nachholen(self, job_id: str, job: dict, teil: dict,
+                             modul1_result: dict, oereb: dict) -> None:
+        """Die eigentliche Arbeit des Wiederholens -- im Hintergrundthread.
+
+        Schreibt ausschliesslich in _JOBS; die Antwort an den Browser ist
+        laengst raus. Wer hier self._send_json aufruft, schreibt in eine
+        geschlossene Verbindung.
+        """
+        from potenzial_engine.pipeline import _potenzialkette
+
         melde = _fortschritt_melder(job_id)
         melde("grundstueck", "fertig", teil)
         melde("grundnutzung", "fertig")
         melde("reglement", "laeuft")
         gemeinde = (modul1_result.get("gemeinde") or {}).get("gemeinde")
-        try:
-            modul2_result = _bzo_zwischenspeicher()(oereb, gemeinde=gemeinde,
-                                                    kanton=oereb.get("kanton"))
-        except Exception as exc:  # noqa: BLE001
-            melde("reglement", "fehler", teil)
-            with _JOBS_LOCK:
-                _JOBS[job_id].update(status="teilweise", fehler=str(exc))
-            self._send_json({"ok": False, "fehler": f"Reglementsauswertung erneut "
-                                                    f"fehlgeschlagen: {exc}"}, status=502)
-            return
 
-        melde("reglement", "fertig")
-        melde("potenzial", "laeuft")
-        ergebnis = _potenzialkette(teil.get("adresse") or job.get("adresse") or "",
-                                   modul1_result, modul2_result)
-        melde("potenzial", "fertig", ergebnis)
-        with _JOBS_LOCK:
-            _JOBS[job_id].update(status="done", ergebnis=ergebnis,
-                                 kontext={"modul1": modul1_result, "modul2": modul2_result},
-                                 fehler=None)
-        egrid = ((ergebnis.get("modul1_geodaten") or {}).get("kataster") or {}).get("egrid")
-        self._zwischenspeicher_ablegen(egrid, ergebnis)
-        self._send_json({"ok": True, "status": "done", "ergebnis": ergebnis})
+        # Auch das Wiederholen rechnet -- es braucht denselben Platz wie
+        # eine volle Analyse, sonst umgeht genau dieser Weg die Grenze.
+        _ANALYSE_PLAETZE.acquire()
+        try:
+            try:
+                modul2_result = _bzo_zwischenspeicher()(oereb, gemeinde=gemeinde,
+                                                        kanton=oereb.get("kanton"))
+            except Exception as exc:  # noqa: BLE001
+                melde("reglement", "fehler", teil)
+                with _JOBS_LOCK:
+                    _JOBS[job_id].update(
+                        status="teilweise",
+                        fehler=f"Reglementsauswertung erneut fehlgeschlagen: {exc}")
+                return
+
+            melde("reglement", "fertig")
+            melde("potenzial", "laeuft")
+            ergebnis = _potenzialkette(teil.get("adresse") or job.get("adresse") or "",
+                                       modul1_result, modul2_result)
+            melde("potenzial", "fertig", ergebnis)
+            with _JOBS_LOCK:
+                _JOBS[job_id].update(status="done", ergebnis=ergebnis,
+                                     kontext={"modul1": modul1_result, "modul2": modul2_result},
+                                     fehler=None)
+            egrid = ((ergebnis.get("modul1_geodaten") or {}).get("kataster") or {}).get("egrid")
+            self._zwischenspeicher_ablegen(egrid, ergebnis)
+        finally:
+            _ANALYSE_PLAETZE.release()
 
     def _handle_screening(self) -> None:
         """Ein Suchgebiet nach Parzellen mit Ausnutzungsreserve durchsuchen."""
@@ -1764,28 +1817,43 @@ class Handler(BaseHTTPRequestHandler):
                                      "modul2": gespeichert.get("modul2_bzo_analyse")})
                     return
 
-            melde = _fortschritt_melder(job_id)
-            analyse = analysiere_grundstueck(
-                adresse, fortschritt=melde, modul2_lader=_bzo_zwischenspeicher())
-            analyse.ergebnis["zwischenspeicher"] = {
-                "aus_zwischenspeicher": False,
-                "gerechnet_am": _jetzt_iso(),
-                "alter_tage": 0.0,
-                "gueltig_bis_tage": ANALYSE_CACHE_TAGE,
-            }
-            if egrid is None:
-                egrid = ((analyse.ergebnis.get("modul1_geodaten") or {})
-                         .get("kataster") or {}).get("egrid")
-            self._zwischenspeicher_ablegen(egrid, analyse.ergebnis)
-            # Ein bei /analyze mitgegebener Preis ist optional und aendert die
-            # baurechtliche Analyse nicht -- er wird nur zusaetzlich gerechnet.
-            if verkaufspreis is not None or verkaufspreis_total is not None:
-                w = berechne_wirtschaftlichkeit(
-                    analyse,
-                    verkaufspreis_chf_pro_m2=verkaufspreis,
-                    verkaufspreis_total_chf=verkaufspreis_total,
-                )
-                analyse.ergebnis["modul3_financial"] = w.ergebnis
+            # Ab hier wird wirklich gerechnet -- und ab hier kostet es
+            # Arbeitsspeicher. Der Platz wird ABSICHTLICH erst nach dem
+            # Zwischenspeicher geholt: eine gespeicherte Analyse kostet
+            # nichts und soll auf niemanden warten.
+            with _JOBS_LOCK:
+                _JOBS[job_id]["wartet_auf_platz"] = True
+            _ANALYSE_PLAETZE.acquire()
+            try:
+                with _JOBS_LOCK:
+                    _JOBS[job_id]["wartet_auf_platz"] = False
+                melde = _fortschritt_melder(job_id)
+                analyse = analysiere_grundstueck(
+                    adresse, fortschritt=melde, modul2_lader=_bzo_zwischenspeicher())
+                analyse.ergebnis["zwischenspeicher"] = {
+                    "aus_zwischenspeicher": False,
+                    "gerechnet_am": _jetzt_iso(),
+                    "alter_tage": 0.0,
+                    "gueltig_bis_tage": ANALYSE_CACHE_TAGE,
+                }
+                if egrid is None:
+                    egrid = ((analyse.ergebnis.get("modul1_geodaten") or {})
+                             .get("kataster") or {}).get("egrid")
+                self._zwischenspeicher_ablegen(egrid, analyse.ergebnis)
+                # Ein bei /analyze mitgegebener Preis ist optional und aendert die
+                # baurechtliche Analyse nicht -- er wird nur zusaetzlich gerechnet.
+                if verkaufspreis is not None or verkaufspreis_total is not None:
+                    w = berechne_wirtschaftlichkeit(
+                        analyse,
+                        verkaufspreis_chf_pro_m2=verkaufspreis,
+                        verkaufspreis_total_chf=verkaufspreis_total,
+                    )
+                    analyse.ergebnis["modul3_financial"] = w.ergebnis
+            finally:
+                # In JEDEM Fall zurueckgeben, auch bei Modul2Error weiter
+                # unten. Ein nicht zurueckgegebener Platz ist fuer immer weg,
+                # und nach genug Fehlern stuenden alle Analysen still.
+                _ANALYSE_PLAETZE.release()
         except Modul2Error as exc:
             # Die amtlichen Daten sind gueltig -- nur die Reglementsauswertung
             # fehlt. Frueher war damit die ganze Analyse verloren und der
