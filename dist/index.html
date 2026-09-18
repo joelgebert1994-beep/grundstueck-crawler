@@ -374,6 +374,8 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 .kz .val { font-family: var(--mono); font-size: 26px; font-weight: 500; letter-spacing: -.025em;
   line-height: 1.1; margin-top: 8px; font-variant-numeric: tabular-nums; }
 .kz .val .einheit { font-size: 13px; color: var(--ink-3); margin-left: 3px; }
+.kz .val .einheit.vorn { margin-left: 0; margin-right: 5px; }
+.kz .val { overflow-wrap: anywhere; }
 .kz .val.na { font-family: inherit; font-size: 15px; font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
 .kz .fuss { margin-top: 9px; font-size: 11px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
 .kz .fuss i { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
@@ -458,6 +460,9 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
 .kvpaar { display: grid; grid-template-columns: minmax(96px, 42%) 1fr; gap: 1px; background: var(--line-2); min-width: 0; }
 .kvpaar > * { background: var(--panel); padding: 7px 10px; font-size: 13px; min-width: 0; }
+/* Lieber trennen als mitten im Wort abbrechen: "Energiebezugsfläch e"
+   stand live in der schmalen Beschriftungsspalte. */
+.kvpaar .k { hyphens: auto; }
 .kv .k { color: var(--ink-2); overflow-wrap: break-word; }
 .kv .v { font-family: var(--mono); font-variant-numeric: tabular-nums; word-break: break-word; }
 .kv .v.na { font-family: "Archivo", sans-serif; color: var(--ink-3); font-size: 12px; }
@@ -523,6 +528,92 @@ details.more > div { padding-top: 10px; }
 .ezv.na { font-family: "Archivo", sans-serif; font-size: 12px; color: var(--ink-3); }
 .ezh { font-size: 11px; color: var(--ink-3); margin-top: 2px; font-family: var(--mono); }
 .ebene .badge { vertical-align: 1px; }
+
+/* --- Block C: Markt, Wirtschaftlichkeit, Daten & Quellen ----------------
+
+   Dieselben Bausteine wie in Uebersicht, Baurecht und Potenzial. Neu ist
+   hier nichts Visuelles erfunden -- .ebene, .kz und .ez stammen aus den
+   Bloecken davor und werden nur weiterverwendet. */
+
+/* Die drei Markt-Ebenen stehen untereinander, nicht nebeneinander: die
+   mittlere traegt eine Objektliste und waere in einer 238-px-Spalte
+   unlesbar. */
+.ebenen.gestapelt { grid-template-columns: 1fr; }
+
+/* Fehlende Daten sind eine Auskunft, keine Stoerung. .eleit.offen ist
+   orange und schreit; fuer "es gibt hier nichts, und das ist in Ordnung"
+   braucht es einen ruhigen Ton. */
+.eleit.ruhig { font-family: "Archivo", sans-serif; font-size: 16px; font-weight: 700;
+  line-height: 1.3; color: var(--ink-3); }
+
+.kz .val .neg { color: var(--stop); }
+.kz .fuss.warn { color: var(--warn); }
+.kz .fuss.mehr { flex-wrap: wrap; row-gap: 3px; }
+.kz .fuss .trenn { color: var(--line); }
+
+/* Sicherheitsgrad: drei Stufen als Balken, daneben das Wort. Eine Zahl
+   waere eine Genauigkeit, die die Einstufung nicht hat. */
+.sgrad { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; }
+.sgradbalken { display: inline-flex; gap: 3px; }
+.sgradbalken i { width: 14px; height: 5px; border-radius: 3px; background: var(--line-2); }
+.sgrad.ok .sgradbalken i.an { background: var(--ok); }
+.sgrad.warn .sgradbalken i.an { background: var(--warn); }
+.sgrad.stop .sgradbalken i.an { background: var(--stop); }
+.sgrad.ok { color: var(--ok); }
+.sgrad.warn { color: var(--warn); }
+.sgrad.stop { color: var(--stop); }
+.sgrad.mute { color: var(--ink-3); }
+
+/* Eine Marktgroesse: Kopf, grosse Zahl, Eingabe daneben, darunter die
+   Herkunft der Zahl. Die Eingabe steht bewusst NEBEN dem Wert, mit dem
+   gerechnet wird -- nicht in einem Formular weiter oben. */
+.mgr { border: 1px solid var(--line); border-radius: 10px; padding: 13px 14px;
+  background: var(--panel-2); margin-bottom: 12px; }
+.mgr:last-child { margin-bottom: 0; }
+.mgrkopf { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 11px; }
+.mgrkopf b { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.mgrkopf .right { margin-left: auto; }
+.mgrhaupt { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+.mgrwert { min-width: 0; }
+.mgrwert .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600; }
+.mgrwert .val { font-family: var(--mono); font-size: 27px; font-weight: 600; line-height: 1.15;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.mgrwert .val .einheit { font-size: 13px; color: var(--ink-3); font-weight: 500; margin-left: 3px; }
+.mgrwert .val.na { font-family: "Archivo", sans-serif; font-size: 15px; font-weight: 700; color: var(--ink-3); }
+.mgrwert .fuss { margin-top: 6px; }
+.mgrfeld { margin-left: auto; min-width: 168px; max-width: 220px; }
+.mgr .ezeilen { margin-top: 13px; }
+.mgrgruende { margin: 10px 0 0; padding-left: 16px; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+.mgrgruende li { margin-bottom: 3px; }
+@media (max-width: 620px) {
+  .mgrfeld { margin-left: 0; max-width: none; width: 100%; }
+}
+
+/* Quellen nach System: eine Zeile je angefragtem Dienst. Der Layername
+   und der Endpunkt stehen darunter in Maschinenschrift -- nachpruefbar,
+   aber nicht in Lesegroesse. */
+.qsys { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.qsysz { display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: baseline;
+  padding: 10px 13px; border-bottom: 1px solid var(--line-2); background: var(--panel); }
+.qsysz:last-child { border-bottom: none; }
+.qsysn { font-size: 13px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.qsysn a { color: inherit; }
+.qsysr { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.qsysa { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.qsyst { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+  line-height: 1.45; overflow-wrap: anywhere; }
+
+/* Technische Kennungen: sichtbar, aber erkennbar als das, was sie sind. */
+.kennungen { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 8px;
+  overflow: hidden; margin: 8px 0; }
+.kenn { background: var(--panel); padding: 9px 11px; min-width: 0; }
+.kenn .lbl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600; }
+.kenn .val { font-family: var(--mono); font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
+.kenn .val.na { font-family: "Archivo", sans-serif; color: var(--ink-3); }
+.kenn .sub { font-size: 11px; color: var(--ink-3); margin-top: 2px; line-height: 1.4; }
 
 /* Die drei Datenarten im Markt-Reiter. Die Nummer ist hier echte
    Ordnung -- extern, eigen, angenommen -- und nicht die alte
@@ -595,11 +686,13 @@ ul.plain li { margin-bottom: 4px; }
 .wakopf { display: flex; align-items: baseline; justify-content: space-between;
   gap: 12px; margin-bottom: 8px; }
 .wakopf b { font-size: 12px; letter-spacing: .02em; }
-.wagrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 16px; }
-.wazeile { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+.wagrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 4px 18px; }
+.wazeile { display: flex; flex-wrap: wrap; min-width: 0;
+  align-items: baseline; justify-content: space-between; gap: 2px 10px;
   padding: 3px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
 .wazeile .walab { color: var(--ink-3); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .wazeile .wawert { text-align: right; white-space: nowrap; }
+.wazeile .wawert.na { color: var(--ink-3); }
 .wschalter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); cursor: pointer; }
 .wok { color: #1f7a4d; } .wfehler { color: #b3324a; } .wlaeuft { color: var(--ink-3); }
 .wstatus { min-height: 18px; margin: 8px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -2530,6 +2623,15 @@ function mapBtn(gruppeName, label) {
 // Ein gespeichertes Ergebnis ist ein Ergebnis von einem BESTIMMTEN TAG.
 // Es ohne Datum zu zeigen waere eine Behauptung ueber den heutigen Stand der
 // amtlichen Grundlagen -- und genau das darf dieses Werkzeug nicht.
+// "2026-09-18" ist ein Sortierschluessel, "18.09.2026" ist ein Datum.
+// Was nicht nach einem ISO-Datum aussieht, bleibt unveraendert -- manche
+// Reglemente fuehren ihren Stand als "Fassung vom Maerz 2019".
+function chDatum(iso) {
+  var t = String(iso || "").slice(0, 10).split("-");
+  if (t.length !== 3 || t[0].length !== 4) return iso;
+  return t[2] + "." + t[1] + "." + t[0];
+}
+
 function zwischenspeicherHinweis(erg) {
   var z = erg.zwischenspeicher || {};
   if (!z.aus_zwischenspeicher) return "";
@@ -2546,8 +2648,7 @@ function zwischenspeicherHinweis(erg) {
   }
   // Schweizer Datum statt ISO: 2026-09-18 ist ein Sortierschluessel,
   // 18.09.2026 ist ein Datum.
-  var iso = (z.gerechnet_am || "").slice(0, 10).split("-");
-  var datum = iso.length === 3 ? iso[2] + "." + iso[1] + "." + iso[0] : iso.join("");
+  var datum = chDatum(z.gerechnet_am);
 
   // Eine Zeile statt eines Kastens: die Herkunft des Ergebnisses ist eine
   // Randnotiz, keine Warnung. Text und Knopf sind zwei Elemente mit
@@ -3059,6 +3160,62 @@ function headHtml(erg, m1, zz) {
 }
 
 /* --- 01 Grundstueck & Bestand --- */
+/* GWR-Codes sind Zahlen, keine Auskunft.
+
+   "Gebaeudekategorie 1040" sagt niemandem etwas; "Gebaeude mit teilweiser
+   Wohnnutzung" schon. Uebersetzt wird nach dem Merkmalskatalog des BFS
+   (GKAT bzw. GKLAS, letztere nach der EUROSTAT-Bauwerksklassifikation).
+
+   Der Code bleibt IMMER daneben stehen. Eine Uebersetzung ohne ihren
+   Ausgangswert waere nicht nachpruefbar -- und ein unbekannter Code wird
+   nicht geraten, sondern als Code gezeigt. */
+var GWR_GKAT = {
+  1010: "Provisorische Unterkunft",
+  1020: "Gebäude mit ausschliesslicher Wohnnutzung",
+  1030: "Wohngebäude mit Nebennutzung",
+  1040: "Gebäude mit teilweiser Wohnnutzung",
+  1060: "Gebäude ohne Wohnnutzung",
+  1080: "Sonderbau"
+};
+var GWR_GKLAS = {
+  1110: "Gebäude mit einer Wohnung",
+  1121: "Gebäude mit zwei Wohnungen",
+  1122: "Gebäude mit drei und mehr Wohnungen",
+  1130: "Wohngebäude für Gemeinschaften",
+  1211: "Hotelgebäude",
+  1212: "Andere Gebäude für kurzfristige Beherbergung",
+  1220: "Bürogebäude",
+  1230: "Gross- und Einzelhandelsgebäude",
+  1231: "Restaurants und Bars in Gebäuden ohne Beherbergung",
+  1241: "Gebäude des Verkehrs- und Nachrichtenwesens",
+  1242: "Garagengebäude",
+  1251: "Industriegebäude",
+  1252: "Behälter, Silos und Lagergebäude",
+  1261: "Gebäude für Kultur- und Freizeitzwecke",
+  1262: "Museen und Bibliotheken",
+  1263: "Schul- und Hochschulgebäude, Forschungseinrichtungen",
+  1264: "Krankenhäuser und Facheinrichtungen des Gesundheitswesens",
+  1265: "Sporthallen",
+  1271: "Landwirtschaftliche Betriebsgebäude",
+  1272: "Kirchen und sonstige Kultgebäude",
+  1273: "Denkmäler",
+  1274: "Sonstige Hochbauten"
+};
+function gwrCode(tabelle, code) {
+  if (leer(code)) return null;
+  var text = tabelle[code];
+  return text ? text + " (Code " + code + ")" : "Code " + code + " — nicht übersetzt";
+}
+
+/* Eine technische Kennung: sichtbar, weil man sie manchmal kopieren muss,
+   aber erkennbar als das, was sie ist -- kein Befund. */
+function kennung(lbl, val, sub) {
+  var na = leer(val);
+  return '<div class="kenn"><div class="lbl">' + esc(lbl) + "</div>" +
+    '<div class="val' + (na ? " na" : "") + '">' + (na ? "nicht verfügbar" : esc(val)) + "</div>" +
+    (sub ? '<div class="sub">' + esc(sub) + "</div>" : "") + "</div>";
+}
+
 function secGrundstueck(m1) {
   var pz = m1.kataster || {}, gw = m1.gwr || {}, gm = m1.gemeinde || {}, gc = m1.geocoding || {};
   var bestand = gw.found
@@ -3069,36 +3226,57 @@ function secGrundstueck(m1) {
         tile("Grundfläche", leer(gw.grundflaeche_m2) ? null : fmt(gw.grundflaeche_m2), "m²") +
       "</div>" +
       kvRows([
-        ["EGID", gw.egid],
-        ["Gebäudekategorie", gw.gebaeudekategorie_gkat],
-        ["Gebäudeklasse", gw.gebaeudeklasse_gklas],
-        ["Energiebezugsfläche", leer(gw.energiebezugsflaeche_m2) ? null : fmt(gw.energiebezugsflaeche_m2) + " m²"]
+        ["Gebäudekategorie", gwrCode(GWR_GKAT, gw.gebaeudekategorie_gkat)],
+        ["Gebäudeklasse", gwrCode(GWR_GKLAS, gw.gebaeudeklasse_gklas)],
+        ["Energiebezugsfläche", leer(gw.energiebezugsflaeche_m2) ? null
+          : fmt(gw.energiebezugsflaeche_m2) + " m²"]
       ]) +
-      '<div class="note">Die Energiebezugsfläche stammt aus dem GWR und ist eine SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>'
-    : '<div class="note warn">Kein Gebäude im GWR an dieser Adresse gefunden — das Grundstück ist entweder unbebaut oder das Gebäude ist nicht am Adresspunkt registriert.</div>';
+      '<div class="note">Die Energiebezugsfläche stammt aus dem GWR und ist eine ' +
+      'SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>'
+    : '<div class="eleit ruhig">kein Gebäude im Register</div>' +
+      '<div class="eleitlab">an dieser Adresse ist im GWR kein Gebäude verzeichnet</div>' +
+      '<div class="egrund">Das Grundstück ist entweder unbebaut, oder das Gebäude ist ' +
+      'nicht am Adresspunkt registriert.</div>';
 
   return '<section class="sec" id="sec-grundstueck">' +
-    '<div class="sechead"><h3>Grundstück &amp; Bestand</h3><span class="right">' + mapBtn("parzelle", "Auf Karte") + "</span></div>" +
+    '<div class="sechead"><h3>Grundstück &amp; Bestand</h3><span class="right">' +
+      mapBtn("parzelle", "Auf Karte") + "</span></div>" +
     '<div class="tiles">' +
       tile("Parzellenfläche", leer(pz.flaeche_m2) ? null : fmt(pz.flaeche_m2, 1), "m²", true) +
       tile("Parzelle", pz.parzellennummer) +
+      tile("Gemeinde", gm.gemeinde) +
+      tile("Kanton", gm.kanton) +
+    "</div>" +
+    (pz.parzellenauswahl && pz.parzellenauswahl !== "punkt_in_parzelle"
+      ? '<div class="note warn">Keine der gefundenen Parzellen enthält den Adresspunkt ' +
+        'eindeutig (z. B. Punkt auf einer Parzellengrenze). EGRID und Parzellennummer ' +
+        'stammen deshalb aus dem ersten Treffer und sind zu prüfen — der EGRID steuert ' +
+        'die gesamte ÖREB-Abfrage.</div>'
+      : "") +
+    '<h4 class="subhead">Technische Kennungen</h4>' +
+    '<div class="kennungen">' +
+      kennung("EGRID", pz.egrid, "eidgenössischer Grundstücksidentifikator") +
+      kennung("EGID", gw.found ? gw.egid : null, "eidgenössischer Gebäudeidentifikator") +
+      kennung("BFS-Nummer", gm.bfs_nummer, "Gemeindenummer des Bundesamts für Statistik") +
+      kennung("Koordinaten LV95", leer(gc.lv95_e) ? null
+        : fmt(gc.lv95_e, 1) + " / " + fmt(gc.lv95_n, 1), "Landeskoordinaten, Ost / Nord") +
     "</div>" +
     kvRows([
-      ["EGRID", pz.egrid],
-      ["Flächenherkunft", pz.flaeche_quelle === "geometrie_berechnet" ? "aus amtlicher Katastergeometrie berechnet" : pz.flaeche_quelle],
-      ["Gemeinde / BFS-Nr.", gm.gemeinde ? gm.gemeinde + " (" + (gm.bfs_nummer || "–") + ")" : null],
-      ["Kanton", gm.kanton],
-      ["Koordinaten LV95", leer(gc.lv95_e) ? null : fmt(gc.lv95_e, 1) + " / " + fmt(gc.lv95_n, 1)],
       ["Amtlich gefundene Adresse", gc.matched_label],
+      ["Herkunft der Fläche", pz.flaeche_quelle === "geometrie_berechnet"
+        ? "aus amtlicher Katastergeometrie berechnet" : begriffOderNull(pz.flaeche_quelle)],
       ["Parzellenauswahl", pz.parzellenauswahl === "punkt_in_parzelle"
-        ? "Adresspunkt liegt in dieser Parzelle (geprüft)"
-        : pz.parzellenauswahl]
+        ? "Adresspunkt liegt geprüft in dieser Parzelle"
+        : begriffOderNull(pz.parzellenauswahl)]
     ]) +
-    (pz.parzellenauswahl && pz.parzellenauswahl !== "punkt_in_parzelle"
-      ? '<div class="note warn">Keine der gefundenen Parzellen enthält den Adresspunkt eindeutig (z.B. Punkt auf einer Parzellengrenze). EGRID und Parzellennummer stammen deshalb aus dem ersten Treffer und sind zu prüfen — der EGRID steuert die gesamte ÖREB-Abfrage.</div>'
-      : "") +
     '<h4 class="subhead">Gebäudebestand (GWR)</h4>' + bestand +
   "</section>";
+}
+
+// begriff() liefert auch fuer null/"" einen escapten Leerstring -- kvRows
+// braucht aber null, um "nicht verfuegbar" zu schreiben.
+function begriffOderNull(v) {
+  return leer(v) ? null : klartext(String(v));
 }
 
 /* Eine Stoerungsmeldung nur, wenn tatsaechlich etwas gemeldet wurde.
@@ -3123,6 +3301,7 @@ function fehlerHinweis(titel, fehler) {
   return '<div class="note warn">' + esc(titel) + ": " + esc(lesbar(teile.join(" \u00b7 "))) + "</div>";
 }
 
+/* --- 02 Standort --- */
 /* --- 02 Standort --- */
 function secStandort(m1) {
   var t = m1.topographie || {}, u = m1.umgebung || {}, r = m1.radon || {}, oereb = m1.oereb || {};
@@ -3153,25 +3332,38 @@ function secStandort(m1) {
     umweltZeilen.push([UMWELT[k] || klartext(k), txt]);
   });
 
+  // Die Rohwerte der Karten -- Radon-"confidence", Hangneigung in Prozent,
+  // Ausrichtung in Grad, der Name des Hoehenmodells -- sind Belege, keine
+  // Befunde. Sie stehen deshalb unter den Kennungen und nicht zwischen den
+  // Angaben, die jemand beim Lesen braucht.
+  var rohwerte =
+    kennung("Radon, Rohwert", leer(r.konfidenz) ? null : String(r.konfidenz),
+      "Feld „confidence“ der BAG-Radonkarte — keine Prozentangabe") +
+    kennung("Hangneigung, Prozent", leer(t.slope_pct) ? null : fmt(t.slope_pct, 1) + " %",
+      "derselbe Wert wie oben, in Prozent statt Grad") +
+    kennung("Ausrichtung, Azimut", leer(t.aspect_deg) ? null : fmt(t.aspect_deg, 1) + "°",
+      "0° ist Nord, 180° ist Süd") +
+    kennung("Höhenmodell", t.quelle, "Grundlage für Höhe, Neigung und Ausrichtung");
+
   return '<section class="sec" id="sec-standort">' +
     '<div class="sechead"><h3>Standort</h3></div>' +
     '<div class="tiles">' +
       tile("Höhe", leer(t.hoehe_m) ? null : fmt(t.hoehe_m, 1), "m ü. M.") +
       tile("Hangneigung", leer(t.slope_deg) ? null : fmt(t.slope_deg, 1), "°") +
       tile("Ausrichtung", t.aspect) +
-      tile("Radon", leer(r.wahrscheinlichkeit_prozent) ? null : fmt(r.wahrscheinlichkeit_prozent, 1), "%") +
+      tile("Radon", leer(r.wahrscheinlichkeit_prozent) ? null
+        : fmt(r.wahrscheinlichkeit_prozent, 1), "%") +
     "</div>" +
     kvRows([
       ["ÖV-Haltestelle", dist(u.oev_naechste_haltestelle)],
       ["Schule", dist(u.schule_naechste)],
       ["Spital", dist(u.spital_naechstes)],
-      ["Einkauf", dist(u.supermarkt_naechster)],
-      ["Radon (Rohwert \u201econfidence\u201c der BAG-Karte)", leer(r.konfidenz) ? null
-        : r.konfidenz + " \u2014 keine Prozentangabe"],
-      ["Topografie-Quelle", t.quelle]
+      ["Einkauf", dist(u.supermarkt_naechster)]
     ]) +
-    (umweltZeilen.length ? '<h4 class="subhead">Umweltthemen (ÖREB)</h4>' + kvRows(umweltZeilen) : "") +
     fehlerHinweis("Umgebungsabfrage teilweise fehlgeschlagen", u.fehler) +
+    (umweltZeilen.length ? '<h4 class="subhead">Umweltthemen (ÖREB)</h4>' + kvRows(umweltZeilen) : "") +
+    '<h4 class="subhead">Rohwerte der Karten</h4>' +
+    '<div class="kennungen">' + rohwerte + "</div>" +
   "</section>";
 }
 
@@ -3899,9 +4091,18 @@ function lesbar(t) {
     .replace(/ -- /g, " — ")
     .replace(/[A-Za-zÄÖÜäöüß]+/g, function (wort) {
       if (KEIN_UMLAUT.test(wort) || istKuerzel(wort)) return wort;
-      return wort.replace(/ae/g, "ä").replace(/oe/g, "ö").replace(/ue/g, "ü")
-                 .replace(/Ae/g, "Ä").replace(/Oe/g, "Ö").replace(/Ue/g, "Ü")
-                 .replace(/AE/g, "Ä").replace(/OE/g, "Ö").replace(/UE/g, "Ü");
+      // "ue" nach a oder e ist kein umgeschriebenes ü, sondern der
+      // Diphthong au/eu plus ein e: streu-en, bau-en, genau-er,
+      // überbau-en. Ohne diese Ausnahme stand im Marktreiter
+      // "die Vergleichswerte streün um 37 %".
+      //
+      // Die Wortliste oben bleibt trotzdem noetig: sie faengt die
+      // Faelle, in denen ein KONSONANT davorsteht und das "ue" doch
+      // kein ü ist -- Quelle, manuell, aktuell.
+      return wort
+        .replace(/ae/g, "ä").replace(/oe/g, "ö").replace(/(?<![aeAE])ue/g, "ü")
+        .replace(/Ae/g, "Ä").replace(/Oe/g, "Ö").replace(/(?<![aeAE])Ue/g, "Ü")
+        .replace(/AE/g, "Ä").replace(/OE/g, "Ö").replace(/(?<![aeAE])UE/g, "Ü");
     });
 }
 function ebeneZeile(label, wert, marke, hinweis) {
@@ -6955,6 +7156,200 @@ function verdrahte3DSteuerung() {
 
 /* --- 07 Quellen --- */
 var QTYP = { amtliche_quelle: "amtlich", llm_extraktion: "Reglement", modellannahme: "Annahme", geometrie_berechnung: "berechnet" };
+/* "gemini-3.6-flash" ist eine Modellkennung, kein Name.
+
+   Hier steht, WOMIT das Reglement ausgewertet wurde -- das gehoert in den
+   Nachweis. Uebersetzt wird nur die Schreibweise; die Kennung selbst
+   bleibt daneben stehen, sonst laesst sich der Lauf nicht mehr zuordnen. */
+var BACKEND_NAME = { gemini: "Google Gemini", claude: "Anthropic Claude" };
+function modellKlarname(backend, model) {
+  var b = BACKEND_NAME[backend] || (backend ? String(backend) : "");
+  if (!model) return b || "nicht vermerkt";
+  var t = String(model)
+    .replace(/^gemini-/, "").replace(/^claude-/, "")
+    .replace(/-\d{8}$/, "")
+    .replace(/-/g, " ")
+    .replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+  return (b ? b + " " : "") + t;
+}
+
+/* 29 Nachweiszeilen sind kein Ueberblick.
+
+   Dieselbe Quelle liefert oft mehrere Felder -- das GWR fuenf, die
+   Kantenzuordnung fuenf. Gebuendelt wird nach dem SYSTEM, nicht nach dem
+   Feld: der Layername und der Endpunkt stehen darunter in Maschinen-
+   schrift. Nachpruefbar, aber nicht in Lesegroesse. */
+function quellenNachSystem(q) {
+  var reihenfolge = [];
+  var gruppen = {};
+  q.forEach(function (x) {
+    var b = String(x.quelle_bezeichnung || "unbenannte Quelle");
+    var i = b.indexOf(" (");
+    var name = i > 0 ? b.slice(0, i) : b;
+    // Die schliessende Klammer steht nicht immer am Ende: manche
+    // Bezeichnungen tragen dahinter noch eine eckige Anmerkung.
+    var technik = i > 0 ? b.slice(i + 2).replace(/\)(\s|$)/, "$1").trim() : "";
+    if (!gruppen[name]) {
+      gruppen[name] = { name: name, technik: [], n: 0, url: "", typ: x.quelle_typ,
+                        datum: x.abgerufen_am || "" };
+      reihenfolge.push(name);
+    }
+    var gr = gruppen[name];
+    gr.n += 1;
+    // Zwei Abfragen desselben Dienstes unterscheiden sich oft nur durch
+    // eine angehaengte Anmerkung. Dann steht die ausfuehrlichere da,
+    // nicht beide.
+    if (technik) {
+      var kuerzer = gr.technik.filter(function (t) { return technik.indexOf(t) === 0; });
+      gr.technik = gr.technik.filter(function (t) { return kuerzer.indexOf(t) < 0; });
+      var laenger = gr.technik.filter(function (t) { return t.indexOf(technik) === 0; });
+      if (!laenger.length && gr.technik.indexOf(technik) < 0) gr.technik.push(technik);
+    }
+    if (!gr.url && x.quelle_url) gr.url = x.quelle_url;
+    if (!gr.datum && x.abgerufen_am) gr.datum = x.abgerufen_am;
+  });
+  if (!reihenfolge.length) return "";
+  return '<div class="qsys">' + reihenfolge.map(function (name) {
+    var gr = gruppen[name];
+    var titel = esc(lesbar(gr.name));
+    return '<div class="qsysz">' +
+      '<div class="qsysn">' + (gr.url
+        ? '<a href="' + esc(gr.url) + '" target="_blank" rel="noopener">' + titel + "</a>"
+        : titel) + "</div>" +
+      '<div class="qsysr">' +
+        '<span class="qsysa">' + gr.n + (gr.n === 1 ? " Wert" : " Werte") + "</span>" +
+        '<span class="badge mute">' + esc(QTYP[gr.typ] || gr.typ || "Quelle") + "</span>" +
+      "</div>" +
+      (gr.technik.length || gr.datum
+        ? '<div class="qsyst">' + esc(gr.technik.join(" · ")) +
+          (gr.datum ? (gr.technik.length ? " · " : "") + "abgerufen " + esc(chDatum(gr.datum)) : "") +
+          "</div>"
+        : "") +
+    "</div>";
+  }).join("") + "</div>";
+}
+
+/* Wie ist dieses Ergebnis entstanden?
+
+   Drei Karten, dieselbe Bauform wie im Potenzialreiter: die Geodaten, die
+   Reglementsauswertung und der Stand der Rechnung. Alles daran steht schon
+   in der Serverantwort -- es wurde bisher nur nirgends gezeigt. Wer wissen
+   will, ob ein Wert alt ist oder aus welchem Dokument er stammt, musste
+   bisher die Rohantwort lesen. */
+function zaehleSysteme(q) {
+  var gesehen = {}, n = 0;
+  q.forEach(function (x) {
+    var b = String(x.quelle_bezeichnung || "unbenannte Quelle");
+    var i = b.indexOf(" (");
+    var name = i > 0 ? b.slice(0, i) : b;
+    if (!gesehen[name]) { gesehen[name] = true; n += 1; }
+  });
+  return n;
+}
+
+function herkunftEbenen(erg) {
+  var m1 = erg.modul1_geodaten || {};
+  var m2 = erg.modul2_bzo_analyse || {};
+  var q = alsListe(erg.quellen);
+  var meta1 = m1._meta || {};
+  var meta2 = m2._meta || {};
+  var zws = erg.zwischenspeicher || {};
+
+  // Karte 1 -- Geodaten.
+  var amtlich = q.filter(function (x) { return x.quelle_typ === "amtliche_quelle"; }).length;
+  var abgerufen = (q.filter(function (x) { return x.abgerufen_am; })[0] || {}).abgerufen_am || null;
+  var geo = '<div class="ebene">' +
+    ebeneKopf(1, "Geodaten", "Woher kommen Lage, Parzelle und Bestand?") +
+    ebeneLeit(amtlich ? String(amtlich) : null, amtlich === 1 ? "Wert" : "Werte",
+      amtlich ? "aus amtlichen Registern" : "keine amtlichen Werte") +
+    '<div class="ezeilen">' +
+      ebeneZeile("Abgerufen am", abgerufen ? chDatum(abgerufen) : null) +
+      ebeneZeile("Abfragedauer", leer(meta1.duration_seconds) ? null
+        : fmt(meta1.duration_seconds, 1) + " s", null,
+        meta1.nebenlaeufig ? "die Register wurden parallel abgefragt" : "") +
+      ebeneZeile("Angefragte Systeme", String(zaehleSysteme(q))) +
+    "</div>" +
+    '<div class="enote">Jeder dieser Werte ist unten auf Endpunkt und Layer ' +
+    'rückverfolgbar. Werte ohne amtliche Quelle werden nicht ausgegeben.</div>' +
+  "</div>";
+
+  // Karte 2 -- Reglementsauswertung.
+  var dok = alsListe(meta2.ausgewertete_dokumente);
+  var uebersprungen = alsListe(meta2.uebersprungene_dokumente);
+  var plausi = meta2.plausibilitaet || null;
+  var plausiZeile = !plausi
+    ? ebeneZeile("Plausibilitätsprüfung", "in dieser Auswertung nicht vermerkt",
+        ["ältere Fassung", "mute"],
+        "die Prüfung läuft erst bei Auswertungen ab der neuen Fassung mit")
+    : ebeneZeile("Plausibilitätsprüfung",
+        plausi.vollstaendig ? "ohne Befund"
+          : alsListe(plausi.befunde).length + " Hinweis" +
+            (alsListe(plausi.befunde).length === 1 ? "" : "e"),
+        plausi.vollstaendig ? ["sauber", "ok"] : ["prüfen", "warn"]);
+  var reglement = !m2 || !Object.keys(m2).length
+    ? '<div class="ebene">' +
+      ebeneKopf(2, "Reglementsauswertung", "Woher kommen Zone und Kennzahlen?") +
+      '<div class="eleit ruhig">keine Auswertung gespeichert</div>' +
+      '<div class="eleitlab">für diese Gemeinde liegt keine Reglementsauswertung vor</div>' +
+      "</div>"
+    : '<div class="ebene">' +
+      ebeneKopf(2, "Reglementsauswertung", "Woher kommen Zone und Kennzahlen?") +
+      ebeneLeit(dok.length ? String(dok.length) : null,
+        dok.length === 1 ? "Dokument" : "Dokumente",
+        dok.length ? "aus der Bau- und Nutzungsordnung" : "keine Dokumente ausgewertet") +
+      '<div class="ezeilen">' +
+        ebeneZeile("Ausgewertet durch", modellKlarname(meta2.backend, meta2.model),
+          null, meta2.model ? String(meta2.model) : "") +
+        ebeneZeile("Stand des Reglements", chDatum(m2.stand_datum)) +
+        ebeneZeile("Übersprungen", uebersprungen.length ? String(uebersprungen.length) : "keine",
+          uebersprungen.length ? ["prüfen", "warn"] : null) +
+        plausiZeile +
+      "</div>" +
+      (dok.length
+        ? '<details class="more"><summary>Welche Dokumente ausgewertet wurden</summary><div>' +
+          '<div class="qsys">' + dok.map(function (d) {
+            return '<div class="qsysz">' +
+              '<div class="qsysn"><a href="' + esc(d.url) + '" target="_blank" rel="noopener">' +
+              esc(d.url) + "</a></div>" +
+              '<div class="qsysr"><span class="qsysa">' +
+              (leer(d.bytes) ? "–" : fmt(Math.round(d.bytes / 1024)) + " KB") + "</span></div>" +
+              '<div class="qsyst">SHA-256 ' + esc(String(d.sha256 || "").slice(0, 32)) + "…</div>" +
+            "</div>";
+          }).join("") + "</div>" +
+          '<div class="note">Die Prüfsumme sichert, dass genau dieses Dokument ausgewertet ' +
+          'wurde. Ändert die Gemeinde ihr Reglement, ändert sich die Prüfsumme — und die ' +
+          'Auswertung wird neu geholt.</div>' +
+          "</div></details>"
+        : "") +
+    "</div>";
+
+  // Karte 3 -- Stand der Rechnung.
+  var datumCh = chDatum(zws.gerechnet_am) || "";
+  var tage = zws.alter_tage;
+  var stunden = leer(tage) ? null : Math.round(tage * 24);
+  var alter = leer(tage) ? null
+    : (stunden < 1 ? "weniger als eine Stunde"
+        : (tage < 1
+            ? (stunden === 1 ? "1 Stunde" : stunden + " Stunden")
+            : (Math.round(tage) === 1 ? "1 Tag" : Math.round(tage) + " Tage")));
+  var stand = '<div class="ebene">' +
+    ebeneKopf(3, "Stand", "Wie aktuell ist dieses Ergebnis?") +
+    ebeneLeit(datumCh || null, "", datumCh ? "gerechnet am" : "kein Rechenzeitpunkt vermerkt") +
+    '<div class="ezeilen">' +
+      ebeneZeile("Herkunft", zws.aus_zwischenspeicher
+        ? "aus dem Zwischenspeicher" : "frisch gerechnet",
+        zws.aus_zwischenspeicher ? ["gespeichert", "mute"] : ["neu", "ok"]) +
+      ebeneZeile("Alter", alter) +
+      ebeneZeile("Gilt als aktuell für", leer(zws.gueltig_bis_tage) ? null
+        : fmt(zws.gueltig_bis_tage, 0) + " Tage") +
+    "</div>" +
+    '<div class="enote">Der Zwischenspeicher betrifft die Reglementsauswertung, nicht die ' +
+    'Geodaten — die werden bei jeder Analyse neu geholt.</div>' +
+  "</div>";
+
+  return '<div class="ebenen">' + geo + reglement + stand + "</div>";
+}
+
 function secQuellen(erg) {
   var q = alsListe(erg.quellen);
   function wertTxt(w) {
@@ -6973,9 +7368,16 @@ function secQuellen(erg) {
     return s.length > 90 ? s.slice(0, 90) + "…" : s;
   }
   return '<section class="sec" id="sec-quellen">' +
-    '<div class="sechead"><h3>Quellen &amp; Nachweis</h3><span class="right"><span class="badge mute">' + q.length + " Nachweise</span></span></div>" +
-    '<div class="note">Jeder amtliche Wert oben ist auf Endpunkt und Layer rückverfolgbar. Werte ohne amtliche Quelle werden nicht ausgegeben.</div>' +
-    '<details class="more"><summary>Alle ' + q.length + ' Nachweise im Einzelnen</summary><div>' +
+    '<div class="sechead"><h3>Herkunft der Daten</h3><span class="right">' +
+      '<span class="badge mute">' + q.length + " Nachweise</span></span></div>" +
+    '<div class="note">Dieser Reiter beantwortet keine fachliche Frage — er belegt die ' +
+    'Antworten der anderen. Jeder amtliche Wert ist auf Endpunkt und Layer ' +
+    'rückverfolgbar; Werte ohne amtliche Quelle werden gar nicht erst ausgegeben.</div>' +
+    herkunftEbenen(erg) +
+    '<h4 class="subhead">Angefragte Systeme</h4>' +
+    quellenNachSystem(q) +
+    '<details class="more"><summary>Alle ' + q.length +
+    ' Nachweise im Einzelnen — Feld für Feld</summary><div>' +
     '<div class="scroller"><table class="src"><thead><tr><th>Feld</th><th>Wert</th><th>Quelle</th></tr></thead><tbody>' +
     q.map(function (x) {
       return "<tr><td>" + feldpfad(x.feld) + '<div class="f">' + esc(x.feld) + "</div></td><td>" +
@@ -7030,12 +7432,6 @@ function chf(v, k) {
 }
 function proz(v) { return leer(v) ? "–" : (v * 100).toFixed(1) + " %"; }
 
-function feld(id, label, wert, einheit, schritt) {
-  return '<label class="wfeld"><span class="wlab">' + esc(label) + "</span>" +
-    '<span class="winput"><input type="number" id="' + id + '" value="' +
-    (leer(wert) ? "" : esc(wert)) + '" step="' + (schritt || "any") +
-    '" placeholder="Systemvorschlag"><em>' + esc(einheit) + "</em></span></label>";
-}
 
 function wLage(groesse) {
   return (wErgebnis && wErgebnis.marktlage) ? wErgebnis.marktlage[groesse] : null;
@@ -7197,30 +7593,48 @@ function mktZeichne() {
   var unbrauchbar = mktObjekte.filter(function (o) { return !verwendet[o.bezeichnung]; });
   var ohneOrtAnzahl = mktObjekte.filter(mktOhneOrt).length;
   var angebote = mktObjekte.filter(function (o) { return o.preisart === "angebot"; }).length;
+  var mindestens = ((lage || {}).mindestanforderung || {}).min_objekte || 3;
+  var verwertbarAnzahl = lage ? lage.anzahl : brauchbar.length;
 
-  var urteil = !lage ? "" :
-    '<div class="mkturteil' + (lage.anzahl ? "" : " offen") + '">' +
-      '<div class="mktzahlen">' +
-        '<div><b>' + mktObjekte.length + "</b> gefunden</div>" +
-        '<div><b>' + lage.anzahl + "</b> für die Marktberechnung verwertbar</div>" +
-        '<div class="f">Mindestens ' + ((lage.mindestanforderung || {}).min_objekte || 3) +
-          " verwertbare Referenzen sind nötig.</div>" +
-      "</div>" +
-      (alsListe(lage.begruendung).length
-        ? '<ul class="plain">' + alsListe(lage.begruendung).map(function (b) {
-            return "<li>" + satz(b) + "</li>";
-          }).join("") + "</ul>"
-        : "") +
-      '<div class="f">Davon ' + angebote + " Angebotspreise aus Inseraten — keine beurkundeten " +
-      "Abschlüsse" + (ohneOrtAnzahl ? ", und " + ohneOrtAnzahl + " Objekte ohne Ortszuordnung" : "") +
-      ".</div>" +
+  // Vier Zahlen statt eines Absatzes. Sie beantworten in dieser Reihenfolge:
+  // Wie viel liegt vor? Wie viel davon zaehlt? Wie belastbar ist die
+  // Preisart? Wie viel laesst sich gar nicht einordnen?
+  var kz = function (lbl, wert, fuss, warnung) {
+    return '<div class="kz"><div class="lbl">' + esc(lbl) + "</div>" +
+      '<div class="val">' + esc(String(wert)) + "</div>" +
+      (fuss ? '<div class="fuss' + (warnung ? " warn" : "") + '">' + fuss + "</div>" : "") +
     "</div>";
+  };
+  var kacheln = '<div class="kzeile">' +
+    kz("Erfasst", mktObjekte.length,
+       esc(g.gemeinde ? "für " + g.gemeinde : "im Referenzgebiet")) +
+    kz("Verwertbar", verwertbarAnzahl,
+       verwertbarAnzahl >= mindestens
+         ? "mindestens " + mindestens + " nötig — erfüllt"
+         : "mindestens " + mindestens + " nötig — noch nicht erfüllt",
+       verwertbarAnzahl < mindestens) +
+    kz("Angebotspreise", angebote, "aus Inseraten, keine Abschlüsse", angebote > 0) +
+    kz("Ohne Ortszuordnung", ohneOrtAnzahl,
+       ohneOrtAnzahl ? "keiner Lage zuzuordnen" : "alle einer Lage zugeordnet",
+       ohneOrtAnzahl > 0) +
+  "</div>";
 
+  var begruendung = alsListe((lage || {}).begruendung);
+  var urteil = !mktObjekte.length ? "" :
+    kacheln +
+    (begruendung.length
+      ? '<ul class="mgrgruende">' + begruendung.map(function (b) {
+          return "<li>" + satz(b) + "</li>";
+        }).join("") + "</ul>"
+      : "");
+
+  // Kein erfasstes Objekt ist ein Zustand, keine Stoerung: ruhige Schrift,
+  // keine Warnfarbe, und direkt dahinter der Weg, ihn zu aendern.
   var liste = !mktObjekte.length
-    ? '<div class="note">Für ' + esc(g.gemeinde || "dieses Gebiet") +
-      ' sind noch keine Vergleichsobjekte erfasst. Ohne Referenzen bleibt jeder ' +
-      'Marktpreis eine reine Annahme — die Engine weist das als ' +
-      '<b>keine Daten</b> aus, statt eine Zahl zu erfinden.</div>'
+    ? '<div class="eleit ruhig">keine Vergleichsobjekte erfasst</div>' +
+      '<div class="eleitlab">' + esc(g.gemeinde ? "für " + g.gemeinde : "für dieses Gebiet") + "</div>" +
+      '<div class="egrund">Ohne Referenzen bleibt jeder Marktpreis eine reine Annahme. ' +
+      'Die Engine weist das als <b>keine Daten</b> aus, statt eine Zahl zu erfinden.</div>'
     : urteil +
       (brauchbar.length
         ? '<h4 class="subhead">Verwendet (' + brauchbar.length + ")</h4>" + tabelle(brauchbar, true)
@@ -7278,10 +7692,8 @@ function mktZeichne() {
     "</div>";
 
   ziel.innerHTML =
-    '<div class="sechead" style="margin-top:18px"><span class="enum2">2</span>' +
-      "<h3>Eigene Vergleichsobjekte</h3>" +
-      '<span class="right"><span class="badge warn">interne Daten, keine Marktquelle</span></span></div>' +
-    '<div class="note">Selbst erfasste Objekte und Übernahmen aus dem AkquiseRadar. ' +
+    mktEbeneKopf() +
+    '<div class="egrund">Selbst erfasste Objekte und Übernahmen aus dem AkquiseRadar. ' +
     'Das sind <b>eigene</b> Daten — sie stehen bewusst getrennt von externen ' +
     'Marktquellen und ersetzen keine.</div>' +
     (mktMeldung ? '<div class="note warn">' + esc(mktMeldung) + "</div>" : "") +
@@ -7456,148 +7868,233 @@ function nurReferenz(groesse) {
   };
 }
 
+/* Der Sicherheitsgrad einer Marktgroesse, sichtbar statt buchstabiert.
+
+   Drei Balken statt einer Prozentzahl: die Einstufung der Engine ist eine
+   Stufe, keine Messung. Woran sie haengt, entscheidet marktdaten._sicherheit
+   -- Anzahl, Streuung, Aktualitaet, Preisart, Datenqualitaet -- und die
+   konkreten Gruende liefert dieselbe Auswertung als Text mit. Beides wird
+   hier nur ANGEZEIGT; entschieden wird es nicht in der Oberflaeche. */
+var SGRAD_STUFEN = { hoch: 3, mittel: 2, gering: 1, keine_daten: 0 };
+var SGRAD_TEXT = {
+  hoch: "belastbar", mittel: "brauchbar",
+  gering: "schwach gestützt", keine_daten: "keine Referenzen"
+};
+var SGRAD_KLASSE = { hoch: "ok", mittel: "warn", gering: "stop", keine_daten: "mute" };
+
+function sicherheitsMeter(stufe) {
+  var n = SGRAD_STUFEN[stufe];
+  if (n === undefined) n = 0;
+  var kl = SGRAD_KLASSE[stufe] || "mute";
+  var balken = "";
+  for (var i = 1; i <= 3; i++) balken += '<i class="' + (i <= n ? "an" : "") + '"></i>';
+  return '<span class="sgrad ' + kl + '" title="Sicherheitsgrad der Marktreferenzen">' +
+    '<span class="sgradbalken">' + balken + "</span>" +
+    '<span class="sgradtext">' + esc(SGRAD_TEXT[stufe] || stufe || "nicht beurteilt") +
+    "</span></span>";
+}
+
+/* Ebene 1: externe Marktdaten. Heute ist keine Quelle angebunden -- und
+   genau das steht hier, ruhig und ohne Warnfarbe. Ein fehlender Anschluss
+   ist kein Mangel des Grundstuecks. */
+function marktExternBlock() {
+  return '<div class="eleit ruhig">keine Quelle angebunden</div>' +
+    '<div class="eleitlab">extern beobachtete Marktwerte liegen nicht vor</div>' +
+    '<div class="egrund">Anbieter wie Wüest Partner, IAZI oder RealAdvisor liefern ' +
+    'Preisindikatoren je Gemeinde und Objektart. Solange keiner davon angebunden ist, ' +
+    'zeigt diese Anwendung <b>keinen</b> externen Marktwert — auch keinen geschätzten. ' +
+    'Was unten steht, stammt ausschliesslich aus eigenen Vergleichsobjekten und aus ' +
+    'Ihren Annahmen.</div>' +
+    '<div class="enote">Sobald eine Quelle angebunden ist, erscheint sie hier mit ' +
+    'Bezeichnung, Stand, Datentyp und Bandbreite — und bleibt von Ihrer Annahme getrennt.</div>';
+}
+
+/* Der Kopf der zweiten Ebene steht an ZWEI Stellen: einmal als Platzhalter,
+   solange /api/marktdaten noch laeuft, und einmal in mktZeichne. Ohne den
+   Platzhalter zeigte der Reiter beim Oeffnen "1 ... 3" und dazwischen
+   nichts -- eine Nummerierung mit einer Luecke liest sich wie ein Fehler. */
+function mktEbeneKopf() {
+  return ebeneKopf(2, "Eigene Vergleichsobjekte", "Was haben wir selbst an Referenzen?");
+}
+function mktEbeneLeer() {
+  return mktEbeneKopf() + '<div class="eleit ruhig">wird geladen …</div>';
+}
+
+/* Ebene 3: die eigene Annahme -- die einzige Zahl, die in die
+   Wirtschaftlichkeit eingeht.
+
+   Je Marktgroesse eine Karte: gross die Zahl, mit der gerechnet wird,
+   direkt daneben das Feld, mit dem man sie setzt, darunter, woher sie
+   kommt. Die alte Fassung hatte das Formular oben und die Herkunft weit
+   darunter -- man setzte den Wert, bevor man die Referenz gesehen hatte.
+
+   Gerechnet wird hier nichts: jeder Wert stammt aus der Serverantwort. */
+// In der Ausschlussliste traegt ein Objekt oft NUR die Bezeichnung und
+// den Grund -- keine Adresse, keine Flaeche, keine Objektart. mktName()
+// faellt dann auf "Objekt ohne Bezeichnung" zurueck. Genau hier ist das
+// schlechter als die Datenbankkennung: sie ist der einzige Griff, an dem
+// sich das Objekt in der Liste darueber wiederfinden laesst.
+function mktNameOderKennung(o) {
+  var name = mktName(o);
+  if (name !== "Objekt ohne Bezeichnung") return name;
+  return (o || {}).bezeichnung ? String(o.bezeichnung) : name;
+}
+
+function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt) {
+  // Auch ohne jede Referenz bleibt die Karte stehen. Fiele sie weg, fiele
+  // ihr Eingabefeld mit -- und wSammleEingaben liest ein fehlendes Feld
+  // als null. Eine gesetzte Annahme waere beim naechsten Tastendruck
+  // still geloescht, ohne dass irgendwo etwas danach aussieht.
+  mw = mw || { wert: null, herkunft: "nicht_bestimmbar", systemvorschlag: null,
+               referenzspanne: null, anzahl_referenzen: 0 };
+  var WERTFELD = { miete: "mietzins_chf_pro_m2_jahr", boden: "bodenpreis_chf_pro_m2",
+                   verkauf: "preis_chf_pro_m2" };
+  var HERKUNFT_TEXT = { extern: "extern", gebimo: "gebimo", manuell: "manuell" };
+  var badge = HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"];
+  lage = lage || {};
+  var sicher = lage.sicherheit || (mw.anzahl_referenzen ? "mittel" : "keine_daten");
+  var objekte = alsListe(lage.objekte);
+  var feld = WERTFELD[lage.groesse] || "preis_chf_pro_m2";
+
+  var refText = !mw.referenzspanne
+    ? null
+    : (mw.referenzspanne[0] === mw.referenzspanne[1]
+        ? chf(mw.referenzspanne[0]) + " " + einheit
+        : chf(mw.referenzspanne[0]) + "–" + chf(mw.referenzspanne[1]) + " " + einheit);
+  var refHinweis = !mw.anzahl_referenzen ? "" :
+    mw.anzahl_referenzen + (mw.anzahl_referenzen === 1 ? " Objekt" : " Objekte") +
+    (lage.nach_herkunft
+      ? " · " + Object.keys(lage.nach_herkunft).map(function (k) {
+          return lage.nach_herkunft[k] + "× " + (HERKUNFT_TEXT[k] || k);
+        }).join(", ")
+      : "");
+
+  var gebiet = wGebiet(lage.groesse) || {};
+  var gebietZeile = !gebiet.bezeichnung ? "" :
+    ebeneZeile("Ausgewertet für",
+      ((gebiet.text ? gebiet.text + " " : "") + gebiet.bezeichnung).replace(/^\s+/, ""),
+      gebiet.ausgeweitet ? ["ausgeweitet", "warn"] : null);
+
+  // Die Begruendung der Engine IST die Erklaerung des Sicherheitsgrads.
+  // Sie gehoert deshalb neben ihn und nicht in eine Klappe.
+  var gruende = alsListe(lage.begruendung);
+  var gruendeHtml = gruende.length
+    ? '<ul class="mgrgruende">' + gruende.map(function (b) {
+        return "<li>" + satz(b) + "</li>";
+      }).join("") + "</ul>"
+    : "";
+
+  var mind = lage.mindestanforderung || {};
+  var mindZeile = (mind.erfuellt === false)
+    ? '<div class="note warn">Kein Systemvorschlag: ' + (mind.vorhanden || 0) +
+      " von " + (mind.min_objekte || 3) + " nötigen Referenzen. " +
+      "Ein Punktwert aus weniger Beobachtungen wäre eine Behauptung — " +
+      "die Bandbreite ist hier die ganze Aussage." +
+      (gebiet.hinweis ? " " + satz(gebiet.hinweis) : "") + "</div>"
+    : (gebiet.ausgeweitet && gebiet.hinweis
+        ? '<div class="note warn">' + satz(gebiet.hinweis) + "</div>" : "");
+
+  var angebote = (lage.nach_preisart || {}).angebot || 0;
+  var preisartZeile = !angebote ? "" :
+    '<div class="note">' + angebote + " von " + (lage.anzahl || 0) +
+    (angebote === 1 ? " Referenz ist ein <b>Angebotspreis</b>"
+                    : " Referenzen sind <b>Angebotspreise</b>") +
+    " aus Inseraten, kein beurkundeter Abschluss. Angebotspreise liegen in der " +
+    "Regel höher — um wie viel, lässt sich ohne Handänderungsdaten nicht sagen.</div>";
+
+  var tabelle = objekte.length
+    ? '<div class="scroller"><table class="src"><thead><tr><th>Objekt</th><th>Quelle</th>' +
+      "<th>Stand</th><th>Wert</th><th>Qualität</th></tr></thead><tbody>" +
+      objekte.slice(0, 25).map(function (o) {
+        return "<tr><td>" + esc(mktName(o)) +
+          (o.gemeinde || o.plz
+            ? '<div class="f">' + esc([o.plz, o.gemeinde].filter(Boolean).join(" ")) + "</div>"
+            : "") + "</td>" +
+          "<td>" + esc(o.quelle || "–") +
+          '<div class="f">' + begriff(o.herkunftsart || "") + "</div></td>" +
+          "<td>" + esc(o.datenstand || "–") +
+          (leer(o.alter_monate) ? "" : '<div class="f">' + o.alter_monate + " Mt.</div>") + "</td>" +
+          "<td>" + chf(o[feld]) + "</td>" +
+          "<td>" + begriff(o.datenqualitaet || "–") +
+          '<div class="f">' + esc(o.preisart === "angebot" ? "Angebotspreis"
+            : (o.preisart === "abschluss" ? "Abschluss" : "Preisart unbekannt")) +
+          "</div></td></tr>";
+      }).join("") +
+      (objekte.length > 25
+        ? '<tr><td colspan="5" class="f">… und ' + (objekte.length - 25) +
+          " weitere in der Auswertung.</td></tr>"
+        : "") + "</tbody></table></div>"
+    : "";
+
+  var AUSSCHLUSS_TEXT = {
+    kein_wert: "kein Wert für diese Grösse", nicht_geeignet: "fachlich ungeeignet",
+    unplausibel: "unplausibler Wert", passt_nicht: "passt nicht zum Grundstück",
+    ausreisser: "Ausreisser"
+  };
+  var nachArt = lage.ausgeschlossen_nach_art || {};
+  var ausgeschlossen = alsListe(lage.ausgeschlossen);
+  var ausGesamt = lage.ausgeschlossen_gesamt || ausgeschlossen.length;
+  var ausHtml = ausgeschlossen.length
+    ? '<h4 class="subhead">Nicht einbezogen (' + ausGesamt + ")</h4>" +
+      '<div class="note">' + Object.keys(nachArt).map(function (a) {
+        return nachArt[a] + "× " + (AUSSCHLUSS_TEXT[a] || a);
+      }).join(", ") + "</div>" +
+      '<ul class="plain">' + ausgeschlossen.slice(0, 12).map(function (a) {
+        return "<li><b>" + esc(mktNameOderKennung(a)) + "</b> — " + satz(a.grund) + "</li>";
+      }).join("") + "</ul>" +
+      (ausGesamt > 12
+        ? '<span class="f">… und ' + (ausGesamt - 12) + " weitere.</span>"
+        : "")
+    : "";
+
+  var details = (objekte.length || ausgeschlossen.length)
+    ? '<details class="more"><summary>Welche Objekte dahinterstehen — ' +
+      objekte.length + " verwendet" +
+      (ausgeschlossen.length ? ", " + ausGesamt + " ausgeschlossen" : "") +
+      "</summary><div>" + tabelle + ausHtml + "</div></details>"
+    : "";
+
+  return '<div class="mgr">' +
+    '<div class="mgrkopf"><b>' + esc(label) + "</b>" +
+      '<span class="right">' + sicherheitsMeter(sicher) + "</span></div>" +
+    '<div class="mgrhaupt">' +
+      '<div class="mgrwert"><div class="lbl">Gerechnet mit</div>' +
+        '<div class="val' + (leer(mw.wert) ? " na" : "") + '">' +
+        (leer(mw.wert) ? "noch nicht gesetzt"
+          : chf(mw.wert) + ' <span class="einheit">' + esc(einheit) + "</span>") + "</div>" +
+        (leer(mw.wert) && mw.herkunft === "nicht_bestimmbar"
+          ? '<div class="fuss">noch kein gerechneter Wert</div>'
+          : '<div class="fuss"><span class="badge ' + badge[1] + '">' + esc(badge[0]) +
+            "</span></div>") + "</div>" +
+      '<label class="wfeld mgrfeld"><span class="wlab">Eigener Wert</span>' +
+        '<span class="winput"><input type="number" id="' + feldId + '" value="' +
+        (leer(feldWert) ? "" : esc(feldWert)) + '" step="' + esc(schritt) +
+        '" placeholder="' + (leer(mw.systemvorschlag) ? "Ihr Wert" : "Systemvorschlag") +
+        '"><em>' + esc(einheit) + "</em></span></label>" +
+    "</div>" +
+    '<div class="ezeilen">' +
+      ebeneZeile("Marktreferenzen", refText, null, refHinweis) +
+      ebeneZeile("Systemvorschlag",
+        leer(mw.systemvorschlag) ? null : chf(mw.systemvorschlag) + " " + einheit) +
+      gebietZeile +
+    "</div>" +
+    gruendeHtml + mindZeile + preisartZeile + details +
+  "</div>";
+}
+
 function marktBlock(erg) {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
-  var preis = (e.verkauf || {}).preis;
-  var SICHER_BADGE = { hoch: "ok", mittel: "warn", gering: "stop", keine_daten: "mute" };
-  var SICHER_TEXT = { hoch: "belastbar", mittel: "brauchbar", gering: "schwach gestützt",
-                      keine_daten: "keine Referenzen" };
-  var HERKUNFT_TEXT = { extern: "extern", gebimo: "gebimo", manuell: "manuell" };
-  var WERTFELD = { miete: "mietzins_chf_pro_m2_jahr", boden: "bodenpreis_chf_pro_m2",
-                   verkauf: "preis_chf_pro_m2" };
 
-  // Die drei Ebenen untereinander, in genau dieser Reihenfolge: was der Markt
-  // zeigt, was das System daraus vorschlägt, und womit tatsächlich
-  // gerechnet wird. Die Benutzerannahme steht zuunterst und hervorgehoben --
-  // sie ist die einzige Zahl, die in die Wirtschaftlichkeit eingeht.
-  var referenzZeile = function (mw, label, einheit, lage) {
-    if (!mw) return "";
-    var badge = HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"];
-    lage = lage || {};
-    var sicher = lage.sicherheit || (mw.anzahl_referenzen ? "mittel" : "keine_daten");
-    var objekte = lage.objekte || [];
-    var feld = WERTFELD[lage.groesse] || "preis_chf_pro_m2";
-
-    var refText = !mw.referenzspanne
-      ? "keine Vergleichsobjekte hinterlegt"
-      : (mw.referenzspanne[0] === mw.referenzspanne[1]
-          ? chf(mw.referenzspanne[0]) + " " + einheit
-          : chf(mw.referenzspanne[0]) + "–" + chf(mw.referenzspanne[1]) + " " + einheit);
-    var herkunftText = lage.nach_herkunft
-      ? Object.keys(lage.nach_herkunft).map(function (k) {
-          return lage.nach_herkunft[k] + "× " + (HERKUNFT_TEXT[k] || k);
-        }).join(", ")
-      : "";
-
-    var tabelle = objekte.length
-      ? '<div class="scroller"><table class="src"><thead><tr><th>Objekt</th><th>Quelle</th>' +
-        "<th>Stand</th><th>Wert</th><th>Qualität</th></tr></thead><tbody>" +
-        objekte.slice(0, 25).map(function (o) {
-          return "<tr><td>" + esc(o.bezeichnung || "–") +
-            (o.gemeinde || o.plz
-              ? '<div class="f">' + esc([o.plz, o.gemeinde].filter(Boolean).join(" ")) + "</div>"
-              : "") + "</td>" +
-            "<td>" + esc(o.quelle || "–") +
-            '<div class="f">' + esc(o.herkunftsart || "") + "</div></td>" +
-            "<td>" + esc(o.datenstand || "–") +
-            (leer(o.alter_monate) ? "" : '<div class="f">' + o.alter_monate + " Mt.</div>") + "</td>" +
-            "<td>" + chf(o[feld]) + "</td>" +
-            "<td>" + esc(o.datenqualitaet || "–") +
-            '<div class="f">' + esc(o.preisart === "angebot" ? "Angebot"
-              : (o.preisart === "abschluss" ? "Abschluss" : "Preisart unbekannt")) +
-            "</div></td></tr>";
-        }).join("") +
-        (objekte.length > 25
-          ? '<tr><td colspan="5" class="f">… und ' + (objekte.length - 25) +
-            " weitere in der Auswertung.</td></tr>"
-          : "") + "</tbody></table></div>"
-      : "";
-
-    var AUSSCHLUSS_TEXT = {
-      kein_wert: "kein Wert für diese Grösse", nicht_geeignet: "fachlich ungeeignet",
-      unplausibel: "unplausibler Wert", passt_nicht: "passt nicht zum Grundstück",
-      ausreisser: "Ausreisser"
-    };
-    var nachArt = lage.ausgeschlossen_nach_art || {};
-    var ausgeschlossen = (lage.ausgeschlossen || []).length
-      ? '<div class="note"><b>' + (lage.ausgeschlossen_gesamt || 0) +
-        " nicht einbezogen:</b> " +
-        Object.keys(nachArt).map(function (a) {
-          return nachArt[a] + "× " + (AUSSCHLUSS_TEXT[a] || a);
-        }).join(", ") +
-        '<ul class="plain">' + lage.ausgeschlossen.slice(0, 12).map(function (a) {
-          return "<li>" + esc(a.bezeichnung) + " — " + esc(a.grund) + "</li>";
-        }).join("") + "</ul>" +
-        ((lage.ausgeschlossen_gesamt || 0) > 12
-          ? '<span class="f">… und ' + (lage.ausgeschlossen_gesamt - 12) + " weitere.</span>"
-          : "") +
-        "</div>"
-      : "";
-
-    var details = (lage.begruendung && lage.begruendung.length)
-      ? '<details class="more"><summary>' + objekte.length + " Vergleichsobjekt" +
-        (objekte.length === 1 ? "" : "e") + " &amp; Bewertung</summary><div>" +
-        '<ul class="plain">' + lage.begruendung.map(function (b) {
-          return "<li>" + esc(b) + "</li>";
-        }).join("") + "</ul>" + tabelle + ausgeschlossen + "</div></details>"
-      : "";
-
-    // Worueber redet diese Auswertung ueberhaupt? Eine auf die Umgebung
-    // ausgeweitete Aussage darf nicht wie eine oertliche aussehen.
-    var gebiet = wGebiet(lage.groesse) || {};
-    var gebietZeile = !gebiet.bezeichnung ? "" :
-      '<div class="wmzeile"><span class="wmlab">Ausgewertet für</span>' +
-      '<span class="wmwert">' + esc(gebiet.text || "") + " " + esc(gebiet.bezeichnung) +
-      (gebiet.ausgeweitet ? ' <span class="badge warn">ausgeweitet</span>' : "") +
-      "</span></div>";
-
-    var mind = lage.mindestanforderung || {};
-    var mindZeile = (mind.erfuellt === false)
-      ? '<div class="note warn">Kein Systemvorschlag: ' + (mind.vorhanden || 0) +
-        " von " + (mind.min_objekte || 3) + " nötigen Referenzen. " +
-        "Ein Punktwert aus weniger Beobachtungen wäre eine Behauptung — " +
-        "die Bandbreite ist hier die ganze Aussage." +
-        (gebiet.hinweis ? " " + esc(gebiet.hinweis) : "") + "</div>"
-      : (gebiet.ausgeweitet && gebiet.hinweis
-          ? '<div class="note warn">' + esc(gebiet.hinweis) + "</div>" : "");
-
-    var preisarten = lage.nach_preisart || {};
-    var angebote = preisarten.angebot || 0;
-    var preisartZeile = !angebote ? "" :
-      '<div class="note">' + angebote + " von " + (lage.anzahl || 0) +
-      (angebote === 1 ? " Referenz ist ein <b>Angebotspreis</b>"
-                      : " Referenzen sind <b>Angebotspreise</b>") +
-      " aus Inseraten, kein beurkundeter Abschluss. Angebotspreise liegen in der " +
-      "Regel höher — um wie viel, lässt sich ohne Handänderungsdaten nicht sagen.</div>";
-
-    return '<div class="wmarkt">' +
-      '<div class="wmkopf"><b>' + esc(label) + "</b>" +
-        '<span class="badge ' + (SICHER_BADGE[sicher] || "mute") + '">' +
-          esc(SICHER_TEXT[sicher] || sicher) + "</span></div>" +
-      gebietZeile +
-      '<div class="wmzeile"><span class="wmlab">Marktreferenzen</span>' +
-        '<span class="wmwert">' + refText +
-        (mw.anzahl_referenzen ? " <em>(" + mw.anzahl_referenzen +
-          (mw.anzahl_referenzen === 1 ? " Objekt" : " Objekte") +
-          (herkunftText ? ", " + esc(herkunftText) : "") + ")</em>" : "") + "</span></div>" +
-      '<div class="wmzeile"><span class="wmlab">Systemvorschlag</span>' +
-        '<span class="wmwert' + (leer(mw.systemvorschlag) ? " na" : "") + '">' +
-        (leer(mw.systemvorschlag) ? "nicht ableitbar" : chf(mw.systemvorschlag) + " " + einheit) +
-        "</span></div>" +
-      '<div class="wmzeile stark"><span class="wmlab">Gerechnet mit</span>' +
-        '<span class="wmwert' + (leer(mw.wert) ? " na" : "") + '">' +
-        (leer(mw.wert) ? "nicht gesetzt" : chf(mw.wert) + " " + einheit) +
-        ' <span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></span></div>" +
-      mindZeile + preisartZeile + details +
-    "</div>";
-  };
-
-  return '<div class="wkarte"><h4>Markt</h4>' +
+  // Verkaufsbasis, Grundstuecksansatz und Zielmarge sind KEINE Marktwerte.
+  // Sie legen fest, worauf ein Preis angewendet wird und woran die
+  // Wirtschaftlichkeit gemessen wird -- deshalb stehen sie getrennt und
+  // ohne Sicherheitsgrad. Die Feldkennungen bleiben unveraendert: an
+  // ihnen haengen wSammleEingaben und die Verdrahtung.
+  var grundlagen = '<div class="mgr">' +
+    '<div class="mgrkopf"><b>Rechnungsgrundlagen</b>' +
+      '<span class="right"><span class="badge ok">Ihre Entscheidung</span></span></div>' +
     '<div class="wgrid">' +
-      feld("w-verkauf", "Verkaufspreis", wEingaben.verkauf_chf_pro_m2, "CHF/m²", "50") +
-      feld("w-miete", "Mietzins", wEingaben.miete_chf_pro_m2_jahr, "CHF/m²/Jahr", "5") +
-      feld("w-boden", "Bodenpreis", wEingaben.bodenpreis_chf_pro_m2, "CHF/m²", "50") +
       '<label class="wfeld"><span class="wlab">Verkaufsbasis</span><span class="winput">' +
         '<select id="w-basis">' +
         ["nwf", "hnf", "nf", "belegt"].map(function (b) {
@@ -7614,15 +8111,22 @@ function marktBlock(erg) {
         '<input type="number" id="w-zielmarge" value="' + (wEingaben.zielmarge * 100).toFixed(0) +
         '" step="1" min="0" max="60"><em>%</em></span></label>' +
     "</div>" +
-    (wErgebnis && wErgebnis.marktlage_fehler
-      ? '<div class="note warn">' + esc(wErgebnis.marktlage_fehler) + "</div>" : "") +
-    referenzZeile(preis || nurReferenz("verkauf"), "Verkaufspreis", "CHF/m²", wLage("verkauf")) +
-    referenzZeile((e.miete || {}).ansatz || nurReferenz("miete"),
-                  "Mietzins", "CHF/m²/Jahr", wLage("miete")) +
-    referenzZeile((e.land || {}).bodenpreis || nurReferenz("boden"),
-                  "Bodenpreis", "CHF/m²", wLage("boden")) +
-    ((e.land || {}).ansatz_bedeutung ? '<div class="note">' + esc(e.land.ansatz_bedeutung) + "</div>" : "") +
+    '<div class="enote">Keine Marktwerte: sie bestimmen, auf welche Fläche der Preis ' +
+    'angewendet wird, ob das Land noch gekauft werden muss, und woran die ' +
+    'Wirtschaftlichkeit gemessen wird.</div>' +
   "</div>";
+
+  return (wErgebnis && wErgebnis.marktlage_fehler
+      ? '<div class="note warn">' + esc(wErgebnis.marktlage_fehler) + "</div>" : "") +
+    marktGroesse((e.verkauf || {}).preis || nurReferenz("verkauf"), "Verkaufspreis",
+                 "CHF/m²", wLage("verkauf"), "w-verkauf", wEingaben.verkauf_chf_pro_m2, "50") +
+    marktGroesse((e.miete || {}).ansatz || nurReferenz("miete"), "Mietzins",
+                 "CHF/m²/Jahr", wLage("miete"), "w-miete", wEingaben.miete_chf_pro_m2_jahr, "5") +
+    marktGroesse((e.land || {}).bodenpreis || nurReferenz("boden"), "Bodenpreis",
+                 "CHF/m²", wLage("boden"), "w-boden", wEingaben.bodenpreis_chf_pro_m2, "50") +
+    ((e.land || {}).ansatz_bedeutung
+      ? '<div class="note">' + esc(e.land.ansatz_bedeutung) + "</div>" : "") +
+    grundlagen;
 }
 
 function mixBlock() {
@@ -7775,30 +8279,67 @@ function ergebnisBlock() {
   var e = wErgebnis && wErgebnis.szenarien ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
   var g = e.ergebnis || {};
   var r = e.residualwert || {};
-  var zielBadge = g.zielmarge_erreicht === true ? "ok" : (g.zielmarge_erreicht === false ? "stop" : "mute");
   var nz = (e.verkauf || {}).nicht_zugeordnet_m2;
+
+  // Dieselben Kacheln wie in der Uebersicht. Der maximal tragbare Landwert
+  // ist die Hauptkachel: er ist die einzige Zahl, mit der ein Makler in
+  // eine Verhandlung geht -- alles andere fuehrt zu ihm hin.
+  var kz = function (lbl, wert, fuss, klasse) {
+    var na = leer(wert);
+    return '<div class="kz' + (klasse ? " " + klasse : "") + '">' +
+      '<div class="lbl">' + esc(lbl) + "</div>" +
+      '<div class="val' + (na ? " na" : "") + '">' +
+      (na ? "nicht berechenbar" : wert) + "</div>" +
+      (fuss ? '<div class="fuss mehr">' + fuss + "</div>" : "") +
+    "</div>";
+  };
+  var franken = function (v) {
+    if (leer(v)) return null;
+    // Waehrung und "Mio." sind Beiwerk. Stehen sie in der grossen
+    // Ziffernschrift mit, bricht die Kachel mitten im Wert um.
+    var gross = Math.abs(v) >= 1000000;
+    return '<span class="einheit vorn">CHF</span>' +
+      (gross ? (v / 1000000).toFixed(2) + ' <span class="einheit">Mio.</span>'
+             : chf(v));
+  };
+  var gewinnWert = leer(g.gewinn_chf) ? null
+    : '<span class="' + (g.gewinn_chf >= 0 ? "" : "neg") + '">' +
+      franken(g.gewinn_chf) + "</span>";
+
+  var margeFuss = [];
+  if (!leer(g.zielmarge)) {
+    margeFuss.push('<span class="badge ' +
+      (g.zielmarge_erreicht === true ? "ok" : (g.zielmarge_erreicht === false ? "stop" : "mute")) +
+      '">Ziel ' + esc(proz(g.zielmarge)) + "</span>");
+  }
+  if (!leer(g.bruttorendite)) {
+    margeFuss.push("Bruttorendite " + esc(proz(g.bruttorendite)));
+  }
+
+  var landFuss = leer(r.max_landwert_chf_pro_m2) ? ""
+    : esc(chf(r.max_landwert_chf_pro_m2) + " CHF/m² Grundstück");
+
   return (leer(nz) ? "" :
-    '<div class="note stop"><b>' + fmt(nz, 0) + ' m² nicht zugeordnet.</b> Diese Fläche ist keiner Wohnung zugewiesen und fliesst weder in den Verkaufserlös noch in den Mietertrag ein. Wohnungsmix anpassen oder die Restfläche auf die Wohnungen verteilen.</div>') +
-  '<div class="wergebnis">' +
-    '<div class="wgross"><span class="wlabel">Verkaufserlös</span><b>CHF ' + chf(g.verkaufserloes_chf, true) + "</b></div>" +
-    '<div class="wgross"><span class="wlabel">Investition</span><b>CHF ' + chf(g.gesamtinvestition_chf, true) + "</b></div>" +
-    '<div class="wgross"><span class="wlabel">Gewinn</span><b class="' +
-      (leer(g.gewinn_chf) ? "" : (g.gewinn_chf >= 0 ? "wpos" : "wneg")) + '">CHF ' + chf(g.gewinn_chf, true) + "</b></div>" +
-    '<div class="wgross"><span class="wlabel">Marge <span class="badge ' + zielBadge + '">Ziel ' +
-      proz(g.zielmarge) + "</span></span><b>" + proz(g.marge) + "</b></div>" +
-    '<div class="wgross"><span class="wlabel">Bruttorendite</span><b>' + proz(g.bruttorendite) + "</b></div>" +
-    '<div class="wgross whervor"><span class="wlabel">Max. tragbarer Landwert</span><b>CHF ' +
-      chf(r.max_landwert_chf, true) + "</b><span class=\"wklein\">" +
-      (leer(r.max_landwert_chf_pro_m2) ? "" : chf(r.max_landwert_chf_pro_m2) + " CHF/m² Grundstück") + "</span></div>" +
+    '<div class="note stop"><b>' + fmt(nz, 0) + ' m² nicht zugeordnet.</b> Diese Fläche ist ' +
+    'keiner Wohnung zugewiesen und fliesst weder in den Verkaufserlös noch in den ' +
+    'Mietertrag ein. Wohnungsmix anpassen oder die Restfläche auf die Wohnungen ' +
+    'verteilen.</div>') +
+  '<div class="kzeile">' +
+    kz("Verkaufserlös", franken(g.verkaufserloes_chf)) +
+    kz("Investition", franken(g.gesamtinvestition_chf)) +
+    kz("Gewinn", gewinnWert) +
+    kz("Marge", leer(g.marge) ? null : esc(proz(g.marge)),
+       margeFuss.join('<span class="trenn">·</span>')) +
+    kz("Max. tragbarer Landwert", franken(r.max_landwert_chf), landFuss, "haupt") +
   "</div>" +
-  (r.rechnung ? '<div class="note">' + esc(r.rechnung) + "</div>" : "") +
-  (r.hinweis ? '<div class="note stop">' + esc(r.hinweis) + "</div>" : "") +
-  (r.grund ? '<div class="note warn">' + esc(r.grund) + "</div>" : "") +
+  (r.rechnung ? '<div class="note">' + satz(r.rechnung) + "</div>" : "") +
+  (r.hinweis ? '<div class="note stop">' + satz(r.hinweis) + "</div>" : "") +
+  (r.grund ? '<div class="note warn">' + satz(r.grund) + "</div>" : "") +
   rueckwaertsBlock(e) +
   (alsListe(e.offene_punkte).length
     ? '<details class="more"><summary>Offene Punkte (' + alsListe(e.offene_punkte).length +
       ')</summary><div><ul class="plain">' +
-      alsListe(e.offene_punkte).map(function (o) { return "<li>" + esc(o) + "</li>"; }).join("") +
+      alsListe(e.offene_punkte).map(function (o) { return "<li>" + satz(o) + "</li>"; }).join("") +
       "</ul></div></details>"
     : "");
 }
@@ -7976,13 +8517,25 @@ function wAktivesSzenario() {
    Wiederholt, nicht neu gerechnet. Die Werte kommen aus demselben
    Ergebnis, das auch der Marktreiter zeigt; es gibt keine zweite Quelle,
    die auseinanderlaufen koennte. */
+/* Womit wurde gerechnet?
+
+   Die Annahmen stehen seit der Trennung im Reiter davor. Eine Marge ohne
+   ihre Grundlage ist aber keine Auskunft, sondern eine Behauptung --
+   deshalb steht die Grundlage hier noch einmal: jeder Wert mit seiner
+   Herkunft und ein Weg zurueck zum Markt.
+
+   Wiederholt, nicht neu gerechnet. Die Werte kommen aus demselben
+   Ergebnis, das auch der Marktreiter zeigt; es gibt keine zweite Quelle,
+   die auseinanderlaufen koennte. */
 function wAnnahmenStreifen() {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
   var zeilen = [];
   var nimm = function (label, mw, einheit) {
     if (!mw || leer(mw.wert)) {
-      zeilen.push([label, "nicht gesetzt", ["nicht gesetzt", "warn"]]);
+      // Kein Abzeichen: "nicht gesetzt" daneben noch einmal als Marke zu
+      // wiederholen fuellt Platz, ohne etwas dazuzusagen.
+      zeilen.push([label, "nicht gesetzt", null]);
     } else {
       zeilen.push([label, chf(mw.wert) + " " + einheit,
                    HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"]]);
@@ -7999,8 +8552,9 @@ function wAnnahmenStreifen() {
       '<span class="right">' + reiterLink("markt", "Im Reiter Markt ändern") + "</span></div>" +
     '<div class="wagrid">' + zeilen.map(function (z) {
       return '<div class="wazeile"><span class="walab">' + esc(z[0]) + "</span>" +
-        '<span class="wawert">' + esc(z[1]) +
-        ' <span class="badge ' + z[2][1] + '">' + esc(z[2][0]) + "</span></span></div>";
+        '<span class="wawert' + (z[2] ? "" : " na") + '">' + esc(z[1]) +
+        (z[2] ? ' <span class="badge ' + z[2][1] + '">' + esc(z[2][0]) + "</span>" : "") +
+        "</span></div>";
     }).join("") + "</div>" +
     '<div class="note">Das sind <b>Annahmen</b>, keine amtlichen Werte. Amtlich sind ' +
     'Zone, Kennzahlen und Geometrie im Reiter <b>Potenzial</b> — an denen ändert hier ' +
@@ -8010,18 +8564,18 @@ function wAnnahmenStreifen() {
 
 function secWirtschaft(erg) {
   var kopf = '<div class="sechead"><h3>Wirtschaftlichkeit</h3>' +
-    '<span class="right"><span class="badge mute">dynamisch</span></span></div>';
+    '<span class="right"><span class="badge mute">rechnet auf Ihren Annahmen</span></span></div>';
   // Zwei verschiedene Gruende, warum hier nichts zu rechnen ist. Beide
   // fuehrten bisher zum vollen Formular mit "CHF -" in jedem Feld: sechs
   // grosse Kennzahlenkacheln ohne eine einzige Zahl, dazu Wohnungsmix und
   // Kostenaufstellung. Das sieht aus wie ein Fehler und ist keiner.
   var grund = null;
   if ((erg.zonen_zuordnung || {}).status !== "gefunden") {
-    grund = "Ohne eindeutige Zonenzuordnung gibt es keine belastbare Fl\u00e4che \u2014 und damit " +
+    grund = "Ohne eindeutige Zonenzuordnung gibt es keine belastbare Fläche — und damit " +
       "keine belastbare Wirtschaftlichkeit.";
   } else if (!szenarienHabenWerte(erg)) {
     grund = "Die Wirtschaftlichkeit rechnet auf einem Szenario. Solange keines belastbar " +
-      "gerechnet werden kann, g\u00e4be jede Zahl hier eine Genauigkeit vor, die es nicht gibt.";
+      "gerechnet werden kann, gäbe jede Zahl hier eine Genauigkeit vor, die es nicht gibt.";
   }
   if (grund) {
     return '<section class="sec" id="sec-wirtschaft">' + kopf +
@@ -8030,11 +8584,12 @@ function secWirtschaft(erg) {
       '<p class="atext">' + esc(grund) + "</p></div></section>";
   }
   return '<section class="sec" id="sec-wirtschaft">' + kopf +
-    '<div class="note">Jede \u00c4nderung rechnet Fl\u00e4chen, Wohnungen, Kosten, Gewinn, Marge und den ' +
-    'maximal tragbaren Landwert neu \u2014 die baurechtliche Analyse wird dabei <b>nicht</b> wiederholt.</div>' +
-    '<div id="w-status" class="wstatus"></div>' +
     '<div id="w-annahmen">' + wAnnahmenStreifen() + "</div>" +
     '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
+    '<div id="w-status" class="wstatus"></div>' +
+    '<div class="note">Jede Änderung an einer Annahme rechnet Flächen, Wohnungen, Kosten, ' +
+    'Gewinn, Marge und den maximal tragbaren Landwert neu — die baurechtliche Analyse ' +
+    'wird dabei <b>nicht</b> wiederholt.</div>' +
     '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
     '<div id="w-hbu">' + hbuBlock() + "</div>" +
     '<div id="w-kombination">' + kombBlock() + "</div>" +
@@ -8042,7 +8597,6 @@ function secWirtschaft(erg) {
     '<div id="w-bkp">' + bkpBlock() + "</div>" +
   "</section>";
 }
-
 
 /* --- Markt: Referenzen und eigene Annahmen, sichtbar getrennt ----------
 
@@ -8059,33 +8613,34 @@ function secWirtschaft(erg) {
 function secMarkt(erg) {
   var blockiert = (erg.zonen_zuordnung || {}).status !== "gefunden";
   var kopf = '<div class="sechead"><h3>Markt</h3>' +
-    '<span class="right"><span class="badge mute">Referenzen &amp; Annahmen</span></span></div>';
+    '<span class="right"><span class="badge mute">drei Ebenen</span></span></div>';
   if (blockiert) {
     return '<section class="sec" id="sec-markt">' + kopf +
       '<div class="note warn">Ohne eindeutige Zonenzuordnung gibt es keine Fläche, auf die ' +
       'ein Preis je m² angewendet werden könnte. Die Eingabe bleibt deshalb gesperrt.</div></section>';
   }
+  // Die drei Ebenen sind drei verschiedene Arten von Wissen und duerfen nie
+  // in derselben Zeile stehen. Die Nummer ist echte Ordnung -- von der
+  // fremden Beobachtung ueber die eigene bis zur eigenen Entscheidung --
+  // und keine Abschnittszaehlung.
   return '<section class="sec" id="sec-markt">' + kopf +
-    '<div class="note">Drei Dinge, die nicht dasselbe sind und hier deshalb getrennt ' +
-    'stehen: was der Markt laut einer externen Quelle sagt, was wir selbst an ' +
-    'Vergleichsobjekten haben, und was Sie annehmen.</div>' +
-    '<div class="sechead"><span class="enum2">1</span><h3>Externe Marktdaten</h3>' +
-      '<span class="right"><span class="badge stop">keine Quelle angebunden</span></span></div>' +
-    '<div class="note warn"><b>Keine externe Marktdatenquelle angeschlossen.</b> ' +
-    'Anbieter wie Wüest Partner, IAZI oder RealAdvisor liefern Preisindikatoren je ' +
-    'Gemeinde und Objektart. Solange keine davon angebunden ist, zeigt diese ' +
-    'Anwendung <b>keinen</b> externen Marktwert — auch keinen geschätzten. Was hier ' +
-    'steht, stammt ausschliesslich aus selbst erfassten Vergleichsobjekten und aus ' +
-    'Ihren eigenen Annahmen.<br>Sobald eine Quelle angebunden ist, erscheint sie hier ' +
-    'mit Quelle, Stand, Datentyp und Bandbreite — und bleibt von Ihrer Annahme getrennt.</div>' +
-    '<div id="mkt-verwaltung"></div>' +
-    '<div class="sechead" style="margin-top:18px"><span class="enum2">3</span>' +
-      "<h3>Eigene Annahmen</h3>" +
-      '<span class="right"><span class="badge ok">Ihre Entscheidung</span></span></div>' +
-    '<div class="note">Was Sie hier setzen, hat immer Vorrang vor jedem Systemvorschlag. ' +
-    'Ohne verwertbare Referenzen gibt es keinen Vorschlag — dann ist der Wert ' +
-    'ausschliesslich Ihre Annahme, und das Dossier weist ihn auch so aus.</div>' +
-    '<div id="w-markt">' + marktBlock(erg) + "</div>" +
+    '<div class="note">Drei Dinge, die nicht dasselbe sind: was eine externe Quelle über ' +
+    'den Markt sagt, was wir selbst an Vergleichsobjekten haben, und was Sie annehmen. ' +
+    'In die Wirtschaftlichkeit geht am Ende nur das Dritte ein.</div>' +
+    '<div class="ebenen gestapelt">' +
+      '<div class="ebene">' +
+        ebeneKopf(1, "Externe Marktdaten", "Was sagt eine unabhängige Quelle?") +
+        marktExternBlock() +
+      "</div>" +
+      '<div class="ebene" id="mkt-verwaltung">' + mktEbeneLeer() + "</div>" +
+      '<div class="ebene gut">' +
+        ebeneKopf(3, "Meine Annahmen", "Womit wird gerechnet?") +
+        '<div class="egrund">Was Sie hier setzen, hat immer Vorrang vor jedem ' +
+        'Systemvorschlag. Ohne verwertbare Referenzen gibt es keinen Vorschlag — dann ist ' +
+        'der Wert ausschliesslich Ihre Annahme, und das Dossier weist ihn auch so aus.</div>' +
+        '<div id="w-markt">' + marktBlock(erg) + "</div>" +
+      "</div>" +
+    "</div>" +
   "</section>";
 }
 
