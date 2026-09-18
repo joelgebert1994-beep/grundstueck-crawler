@@ -2683,6 +2683,7 @@ function secUebersicht(erg, m1, zz) {
         '<span class="alab">Geschossfl\u00e4che Neubau \u2014 je nach Ausrichtung</span></div>' +
       '<p class="ahinweis">Welche Seite den grossen Grenzabstand tr\u00e4gt, entscheidet der ' +
       'Geb\u00e4udeentwurf. Alle ' + kurz.anzahl + ' zul\u00e4ssigen Anordnungen sind gerechnet.</p>' +
+      nullErklaerung(kurz, "kurz") +
       '<div class="afuss">' + reiterLink("potenzial", "Einzelwerte im Reiter Potenzial") + "</div>");
   } else {
     moeglich = uAntwort("offen",
@@ -3796,21 +3797,90 @@ function detailBlock(titel, inhalt, fallback) {
    mit dem, was das Ergebnis dort jeweils begrenzt. Das ist die Antwort auf
    "warum steht hier eine Spanne und kein Wert" -- und im eindeutigen Fall
    der Beleg, dass die Frage nach der Ausrichtung nichts aendert. */
+/* Eine Anordnung ist entartet, wenn nach Abzug der vorgeschriebenen
+   Abstaende nichts uebrig bleibt. Das ist eine Eigenschaft DIESER
+   Ausrichtung, nicht des Grundstuecks -- der Unterschied entscheidet, ob
+   jemand "0-123 m²" als "kein Potenzial" missversteht. */
+function istEntartet(a) {
+  return !leer(a.baubereich_m2) && a.baubereich_m2 <= 0.01;
+}
+
+function entarteteAnordnungen(g1) {
+  return alsListe((g1 || {}).anordnungen).filter(istEntartet);
+}
+
+/* "99, 110 und 123" statt "99 und 110 und 123". */
+function aufzaehlung(teile) {
+  if (teile.length <= 1) return teile.join("");
+  return teile.slice(0, -1).join(", ") + " und " + teile[teile.length - 1];
+}
+
+/* Ein Befund, zwei Laengen, EINE Quelle. Die Uebersicht hat wenig Platz,
+   der Potenzialreiter viel -- was beide sagen, darf sich deswegen trotzdem
+   nicht unterscheiden. Beide lesen dieselbe potenzialKurz-Auskunft. */
+function nullErklaerung(kurz, laenge) {
+  if (kurz.art !== "spanne" || !kurz.tote || !alsListe(kurz.bebaubar).length) return "";
+  if (kurz.tote >= kurz.anzahl) return "";
+  var werte = aufzaehlung(kurz.bebaubar.map(function (v) { return fmt(v, 0); }));
+  var kern = "Die Null gehört zu " + kurz.tote + " der " + kurz.anzahl +
+    " Ausrichtungen, nicht zum Grundstück.";
+  if (laenge === "kurz") {
+    return '<p class="ahinweis"><b>' + kern + "</b> Die übrigen " + kurz.bebaubar.length +
+      " ergeben " + werte + " m² Geschossfläche.</p>";
+  }
+  return '<p class="ahinweis"><b>' + kern + "</b> Dort ist die Parzelle an der schmalsten " +
+    "Stelle schmaler als die vorgeschriebenen Abstände zusammen, sodass kein Baubereich " +
+    "übrig bleibt. Die übrigen " + kurz.bebaubar.length + " Ausrichtungen ergeben " +
+    werte + " m² Geschossfläche. Welche Ausrichtung gewählt wird, entscheidet der Entwurf.</p>";
+}
+
+/* Die Anordnungen sind der Beleg fuer die Spanne, nicht eine Fussnote
+   dazu. Sie stehen deshalb direkt unter dem Urteil -- wer die Zahl
+   "0-123 m²" liest, muss ohne Klick sehen koennen, welche Ausrichtung
+   welchen Rand erzeugt. */
 function anordnungsTabelle(g1) {
   var a = alsListe((g1 || {}).anordnungen);
   if (!a.length) return "";
   var ein = (g1 || {}).eindeutigkeit;
-  return '<h4 class="subhead">Die ' + a.length + ' zulässigen Abstandsanordnungen</h4>' +
+  var bb = (g1 || {}).bandbreite || {};
+  var spanne = bb.geschossflaeche_m2 || [];
+  var istSpanne = spanne.length === 2 && !leer(spanne[0]) && spanne[0] !== spanne[1];
+
+  // Welcher Rand kommt woher? Mehrere Anordnungen duerfen denselben Rand
+  // erzeugen -- dann tragen auch alle das Etikett. Etwas anderes waere
+  // eine Auswahl, und ausgewaehlt wird hier nichts.
+  function rand(x) {
+    if (!istSpanne || leer(x.geschossflaeche_m2)) return "";
+    if (Math.abs(x.geschossflaeche_m2 - spanne[0]) < 0.05) return "untere Grenze";
+    if (Math.abs(x.geschossflaeche_m2 - spanne[1]) < 0.05) return "obere Grenze";
+    return "";
+  }
+
+  var ueberschrift = istSpanne
+    ? "Wie die Spanne entsteht"
+    : "Die " + a.length + " zulässigen Abstandsanordnungen";
+  var einleitung = istSpanne
+    ? '<p class="atext">Jede Zeile ist eine baurechtlich zulässige Lage des grossen ' +
+      'Grenzabstands. Gerechnet wurden alle ' + a.length + '; die Spanne oben ist ' +
+      'der kleinste und der grösste dieser Werte — keine Auswahl und kein Mittelwert.</p>'
+    : "";
+
+  return '<h4 class="subhead">' + ueberschrift + "</h4>" + einleitung +
     ((g1 || {}).regel ? '<div class="note">' + esc(lesbar(g1.regel)) + "</div>" : "") +
     '<div class="scroller"><table class="src"><thead><tr><th>Anordnung</th>' +
     '<th>Baubereich</th><th>Geschossfläche</th><th>begrenzt durch</th></tr></thead><tbody>' +
     a.map(function (x) {
       var vertreter = ein && ein.vertreter_anordnung === x.name;
+      var r = rand(x);
+      var tot = istEntartet(x);
       return "<tr><td>" + esc(lesbar(x.beschreibung || x.name)) +
-        (vertreter ? ' <span class="badge ok">ausgewiesen</span>' : "") + "</td>" +
-        "<td>" + (leer(x.baubereich_m2) ? "&ndash;" : fmt(x.baubereich_m2, 1) + " m²") + "</td>" +
+        (vertreter ? ' <span class="badge ok">ausgewiesen</span>' : "") +
+        (r ? ' <span class="badge mute">' + r + "</span>" : "") + "</td>" +
+        "<td>" + (tot ? "kein Baubereich"
+          : (leer(x.baubereich_m2) ? "&ndash;" : fmt(x.baubereich_m2, 1) + " m²")) + "</td>" +
         "<td><b>" + (leer(x.geschossflaeche_m2) ? "&ndash;" : fmt(x.geschossflaeche_m2, 1) + " m²") + "</b></td>" +
-        "<td>" + esc(bindendText(x.geschossflaeche_limitiert_durch)) + "</td></tr>";
+        "<td>" + (tot ? "Parzelle an der schmalsten Stelle schmaler als die Abstände zusammen"
+          : esc(bindendText(x.geschossflaeche_limitiert_durch))) + "</td></tr>";
     }).join("") + "</tbody></table></div>" +
     (ein && ein.erklaerung ? '<div class="note ok">' + esc(lesbar(ein.erklaerung)) + "</div>" : "");
 }
@@ -3860,7 +3930,10 @@ function g1Herleitung(erg) {
             esc(alsListe(g1.betroffene_nachbarkanten).join(", ")) + ".</div>"
           : "")
       : "") +
-    anordnungsTabelle(g1) +
+    // Die Anordnungstabelle steht NICHT mehr hier, sondern direkt unter dem
+    // Urteil (siehe secPotenzial). Sie ist der Beleg fuer die Spanne; wer
+    // sie unter "Herleitung" versteckt, laesst die Hauptaussage
+    // unbelegt stehen.
     (neubau.bedeutung ? '<div class="note"><b>Was G1 rechnet:</b> ' + esc(lesbar(neubau.bedeutung)) + "</div>" : "") +
     paare.map(function (paar) {
       var name = paar[0], e = paar[1];
@@ -3945,7 +4018,16 @@ function potenzialKurz(erg) {
   }
   var spanne = bb.geschossflaeche_m2 || [];
   if (spanne.length === 2 && !leer(spanne[0]) && spanne[0] !== spanne[1]) {
-    return { art: "spanne", spanne: spanne, anzahl: anzahl, zp: zp };
+    // Die entarteten Anordnungen gehoeren in die GEMEINSAME Auskunft, nicht
+    // in die einzelne Ansicht. Sonst erklaert der Potenzialreiter die Null
+    // und die Uebersicht laesst sie unkommentiert stehen -- und genau dort
+    // trifft jemand die Entscheidung, ob er sich die Parzelle ansieht.
+    var alle = alsListe(g1.anordnungen);
+    return { art: "spanne", spanne: spanne, anzahl: anzahl, zp: zp,
+             tote: alle.filter(istEntartet).length,
+             bebaubar: alle.filter(function (a) {
+               return !istEntartet(a) && !leer(a.geschossflaeche_m2);
+             }).map(function (a) { return a.geschossflaeche_m2; }) };
   }
   return { art: "offen", zp: zp };
 }
@@ -3975,8 +4057,18 @@ function potenzialUrteil(erg) {
   }
 
   var offen = alsListe((zp || {}).offene_punkte);
+  // Oben steht eine Zahl oder eine Spanne fuer den Neubau, hier darunter
+  // "nicht belastbar bestimmbar". Gemeint ist der VERGLEICH mit dem
+  // Bestand, nicht der Neubauwert -- aber ohne diesen Satz liest sich der
+  // Block wie ein Widerspruch zur eigenen Ueberschrift.
+  var bruecke = (kurz.art === "spanne" || kurz.art === "eindeutig")
+    ? '<p class="atext">Die Angabe oben betrifft den Neubau nach heutigem ' +
+      'Rechtsrahmen. Hier geht es um eine andere Frage: wie viel davon ' +
+      'gegen\u00fcber dem heute stehenden Geb\u00e4ude <b>zus\u00e4tzlich</b> w\u00e4re.</p>'
+    : "";
   var grundBlock =
     '<div class="uwarum">Zum zus\u00e4tzlichen Potenzial gegen\u00fcber dem Bestand</div>' +
+    bruecke +
     '<p class="atext">' + esc(lesbar((zp || {}).grund ||
       "Der Vergleich mit dem Bestand ist offen.")) + "</p>" +
     (offen.length ? '<ul class="plain">' + offen.map(function (x) {
@@ -3998,25 +4090,24 @@ function potenzialUrteil(erg) {
 
   // Echte Spanne -- aber ausschliesslich ueber zulaessige Anordnungen.
   var spanne = bb.geschossflaeche_m2 || [];
-  // Eine Null am unteren Rand ist echt, liest sich aber wie "kein
-  // Potenzial". Sie bedeutet: in dieser Ausrichtung bleibt nichts uebrig.
-  var leerAnzahl = alsListe(g1.anordnungen).filter(function (a) {
-    return !leer(a.baubereich_m2) && a.baubereich_m2 <= 0.01;
-  }).length;
-  var leerText = (leerAnzahl > 0 && leerAnzahl < anzahl)
-    ? '<p class="ahinweis">In ' + leerAnzahl + ' der ' + anzahl + ' Anordnungen bleibt ' +
-      'keine Fl\u00e4che \u00fcbrig: die Parzelle ist an der schmalsten Stelle schmaler ' +
-      'als die dort vorgeschriebenen Abst\u00e4nde zusammen. Welche Ausrichtung gew\u00e4hlt ' +
-      'wird, entscheidet der Entwurf.</p>'
-    : "";
+
+  // Eine Null am unteren Rand ist echt, liest sich aber wie "das
+  // Grundstueck gibt nichts her". Sie bedeutet etwas viel Engeres: in
+  // DIESER Ausrichtung bleibt nach Abzug der Abstaende nichts uebrig.
+  // Ohne diesen Satz legt ein Makler eine Parzelle weg, die 123 m\u00b2
+  // hergibt, weil vorne eine Null steht.
+  var leerText = nullErklaerung(kurz, "lang");
+
   if (kurz.art === "spanne") {
     return '<div class="urteil"><h4>' + fmt(spanne[0], 0) + "\u2013" + fmt(spanne[1], 0) +
       ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
-      '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 je nach Ausrichtung</div>' +
-      '<p class="atext">Jeder Rand ist baurechtlich zul\u00e4ssig. Welcher gilt, ' +
+      '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 je nach Ausrichtung ' +
+      'des Geb\u00e4udes</div>' +
+      '<p class="atext">Beide R\u00e4nder sind baurechtlich zul\u00e4ssig. Welcher gilt, ' +
       'entscheidet, welche Seite den grossen Grenzabstand tr\u00e4gt \u2014 also die ' +
-      'Fassadenorientierung des noch nicht entworfenen Geb\u00e4udes. Gerechnet wurden alle ' +
-      anzahl + ' zul\u00e4ssigen Anordnungen; die Einzelwerte stehen unter \u201eHerleitung\u201c.</p>' +
+      'Fassadenorientierung des noch nicht entworfenen Geb\u00e4udes. Diese Spanne ist ' +
+      'das Ergebnis; ein Einzelwert daraus w\u00e4re eine Annahme \u00fcber einen Entwurf, ' +
+      'den es noch nicht gibt.</p>' +
       leerText + grundBlock + "</div>";
   }
 
@@ -4054,6 +4145,7 @@ function secPotenzial(erg) {
       mapBtn("baubereich", "Baubereich") + "</span></div>" +
     pruef +
     potenzialUrteil(erg) +
+    anordnungsTabelle(erg.g1_ergebnis) +
     '<div class="ebenen">' +
       ebeneBestand(bnb.bestand) +
       ebeneRechtsrahmen(erg, m1, zz, bnb.heutiger_rechtsrahmen) +

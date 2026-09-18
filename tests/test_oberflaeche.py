@@ -121,13 +121,68 @@ def test_keine_abschnittsnummern(s: str) -> None:
            "Entwicklungsdokumentation gehoert nicht in die Oberflaeche")
 
 
+def test_bandbreiten_auskunft(s: str) -> None:
+    """Die Spanne ist die Hauptaussage -- und sie muss belegt dastehen.
+
+    Vier Vertraege, die sich beim naechsten Umbau still brechen lassen:
+
+    1. Die Anordnungen stehen DIREKT unter dem Urteil, nicht unter
+       "Herleitung". Sie sind der Beleg fuer die Spanne; unten versteckt
+       steht die Hauptaussage unbelegt da.
+    2. Uebersicht und Potenzialreiter erklaeren die Null aus DERSELBEN
+       Funktion. Zwei getrennte Texte laufen garantiert auseinander --
+       genau das ist an Bahnhofstrasse 4 schon einmal passiert.
+    3. Die entarteten Anordnungen stecken in der gemeinsamen Auskunft
+       (potenzialKurz), nicht in einer der beiden Ansichten.
+    4. Beide Raender der Spanne werden ausgegeben. Eine einzelne Zahl aus
+       Minimum oder Maximum waere eine Annahme ueber einen Entwurf, den es
+       noch nicht gibt.
+    """
+    # 1. Genau eine Fundstelle von "anordnungsTabelle(g1)" -- die
+    #    Funktionsdefinition. Der alte Aufruf in g1Herleitung ist weg.
+    pruefe(s.count("anordnungsTabelle(g1)") == 1,
+           "anordnungsTabelle steht nicht mehr in der Herleitung "
+           f"(gefunden: {s.count('anordnungsTabelle(g1)')} Vorkommen von "
+           "'anordnungsTabelle(g1)', erwartet 1 = nur die Definition)")
+    pruefe("anordnungsTabelle(erg.g1_ergebnis)" in s,
+           "anordnungsTabelle wird im Potenzialreiter direkt unter dem Urteil gerufen")
+    urteil_pos = s.find("potenzialUrteil(erg) +")
+    tabelle_pos = s.find("anordnungsTabelle(erg.g1_ergebnis)")
+    pruefe(0 < urteil_pos < tabelle_pos,
+           "die Anordnungen stehen NACH dem Urteil, nicht davor")
+
+    # 2. Eine Quelle, zwei Laengen.
+    pruefe("function nullErklaerung(" in s,
+           "nullErklaerung ist die gemeinsame Quelle fuer die Null am unteren Rand")
+    pruefe('nullErklaerung(kurz, "kurz")' in s,
+           "die Uebersicht benutzt nullErklaerung")
+    pruefe('nullErklaerung(kurz, "lang")' in s,
+           "der Potenzialreiter benutzt nullErklaerung")
+
+    # 3. Der Befund gehoert in die gemeinsame Auskunft.
+    kurz_block = s[s.index("function potenzialKurz("):]
+    kurz_block = kurz_block[: kurz_block.index("\nfunction ", 10)]
+    for feld in ("tote:", "bebaubar:"):
+        pruefe(feld in kurz_block,
+               f"potenzialKurz liefert {feld} -- beide Ansichten lesen denselben Befund")
+    pruefe("function istEntartet(" in s,
+           "istEntartet ist eine eigene Funktion, nicht zweimal abgeschrieben")
+
+    # 4. Beide Raender, keine kuenstliche Einzelzahl.
+    pruefe("fmt(spanne[0], 0)" in s and "fmt(spanne[1], 0)" in s,
+           "der Potenzialreiter gibt beide Raender der Spanne aus")
+    pruefe("fmt(kurz.spanne[0], 0)" in s and "fmt(kurz.spanne[1], 0)" in s,
+           "die Uebersicht gibt beide Raender der Spanne aus")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
         return 1
     s = lies()
     for fn in (test_reiter, test_karte_ausserhalb_des_dossiers, test_css_variablen,
-               test_inhaltsbreite, test_keine_abschnittsnummern):
+               test_inhaltsbreite, test_keine_abschnittsnummern,
+               test_bandbreiten_auskunft):
         fn(s)
 
     if _fehler:
