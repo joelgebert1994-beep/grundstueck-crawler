@@ -180,6 +180,20 @@ def test_bandbreiten_auskunft(s: str) -> None:
     pruefe("function istEntartet(" in s,
            "istEntartet ist eine eigene Funktion, nicht zweimal abgeschrieben")
 
+    # 3b. Die Anordnungen sind Balken, keine Tabelle. Eine Spanne ist ein
+    #     Groessenverhaeltnis -- als Zahlenspalte muss man es lesen, als
+    #     Laengen sieht man es. Und eine Anordnung, die nichts ergibt, ist
+    #     eine leere Bahn statt einer "0.0" zwischen anderen Zahlen.
+    tab = s[s.index("function anordnungsTabelle("):]
+    tab = tab[: tab.index("\nfunction ", 10)]
+    pruefe('class="anordbahn"' in tab and 'class="anordfuell' in tab,
+           "die Anordnungen werden als Balken gezeichnet")
+    pruefe("<table" not in tab,
+           "die Anordnungen stehen NICHT mehr als Tabelle")
+    pruefe("maxWert" in tab,
+           "der Massstab ist der groesste Wert im Feld, nicht die Spanne -- "
+           "sonst haette die untere Grenze immer die Laenge null")
+
     # 4. Beide Raender, keine kuenstliche Einzelzahl.
     pruefe("fmt(spanne[0], 0)" in s and "fmt(spanne[1], 0)" in s,
            "der Potenzialreiter gibt beide Raender der Spanne aus")

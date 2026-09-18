@@ -339,11 +339,20 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 /* Kennzahlen der Zone: nebeneinander, solange Platz ist. Was das
    Reglement nicht hergibt, bekommt eine flachere Karte -- die Angabe
    bleibt vollstaendig, sie draengt sich nur nicht mehr vor. */
-.kzgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 9px; align-items: start; margin-bottom: 10px; }
-.kzgrid .card { margin-bottom: 0; }
-.kzgrid .card.leer { padding: 9px 11px; opacity: .72; }
-.kzgrid .card.leer .cardhead { margin-bottom: 4px; }
-.kzgrid .card.leer .cardhead h4 { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+/* Die Zonenkennzahlen tragen dieselbe Formensprache wie die Kernzahlen
+   der Uebersicht: kleine Grossbuchstaben als Etikett, die Zahl gross in
+   der Ziffernschrift, die Einordnung klein darunter. Zwei Kachelarten
+   nebeneinander in einem Dossier sehen aus wie zwei Werkzeuge. */
+.kzgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; align-items: start; margin-bottom: 10px; }
+.kzgrid .card { margin-bottom: 0; padding: 14px 16px; }
+.kzgrid .card .cardhead { margin-bottom: 8px; align-items: center; }
+.kzgrid .card .cardhead h4 { font-size: 10px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3); }
+.kzgrid .bigval { font-size: 24px; font-weight: 500; letter-spacing: -.025em; line-height: 1.1; }
+.kzgrid .bigval.na { font-family: var(--mono); font-size: 24px; color: var(--ink-3); }
+.kzgrid .kzgrund { font-size: 11px; color: var(--ink-3); margin-top: 4px; line-height: 1.35; }
+.kzgrid .card.leer { opacity: 1; }
+.kzgrid .card.leer .cardhead { margin-bottom: 8px; }
 .kzgrid .card.leer .bigval { font-size: 12px; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-bottom: 12px; }
@@ -400,6 +409,24 @@ section.sec.flash { animation: flash 1.1s ease-out; }
    derselben Grundlinie wie die Zahlen daneben. */
 .uefuss .val.na { color: var(--ink-3); }
 .uefuss .nagrund { font-size: 11px; color: var(--ink-3); margin-top: 2px; line-height: 1.35; }
+
+/* --- Die zulaessigen Abstandsanordnungen als Balken -------------------
+   Eine Spanne ist ein Groessenverhaeltnis. Als Zahlenspalte muss man sie
+   lesen, als Balkenlaengen sieht man sie -- und eine Anordnung, die
+   nichts ergibt, ist dann eine leere Bahn statt einer "0.0" zwischen
+   anderen Zahlen. */
+.anordnungen { display: flex; flex-direction: column; gap: 14px; margin: 12px 0 4px; }
+.anord { max-width: 92ch; }
+.anordkopf { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 6px; }
+.anordname { font-size: 12.5px; color: var(--ink-2); }
+.anordwert { font-family: var(--mono); font-size: 13.5px; font-weight: 600; white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.anord.tot .anordwert { font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--warn); }
+.anordbahn { height: 10px; background: var(--line-2); border-radius: 5px; overflow: hidden; }
+.anordfuell { height: 100%; background: var(--zone); border-radius: 5px; }
+.anordfuell.oben { background: var(--accent); }
+.anordfuell.unten { background: var(--warn); }
+.anordfuss { margin-top: 5px; font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel-2);
@@ -3168,8 +3195,17 @@ function kennzahlBlock(label, kz, einheit) {
   var bed = alsListe(kz.bedingungen);
   return '<div class="card' + (hatWert ? "" : " leer") + '"><div class="cardhead"><h4>' + esc(label) +
     '</h4>' + (hatWert ? '<span class="badge ' + badge + '">' + begriff(conf) + "</span>" : "") + "</div>" +
-    '<div class="bigval' + (hatWert ? "" : " na") + '">' +
-      (hatWert ? esc(kz.wert) + (einheit ? ' <span class="unit">' + esc(einheit) + "</span>" : "") : "nicht bestimmbar") + "</div>" +
+    // Kein Wert heisst hier nicht "Fehler", sondern "die Bau- und
+    // Nutzungsordnung fuehrt diese Ziffer nicht". Wie in der Uebersicht:
+    // Gedankenstrich in der Ziffernschrift, damit die Kacheln auf einer
+    // Linie stehen, und der Grund darunter.
+    (hatWert
+      ? '<div class="bigval">' + esc(kz.wert) +
+        (einheit ? ' <span class="unit">' + esc(einheit) + "</span>" : "") + "</div>"
+      : '<div class="bigval na">–</div><div class="kzgrund">' +
+        (conf === "nicht_bestimmbar"
+          ? "aus der Bau- und Nutzungsordnung nicht ableitbar"
+          : "nicht bestimmbar") + "</div>") +
     (kz.unklarheit ? '<div class="note warn" style="margin-top:8px">' + satz(kz.unklarheit) + "</div>" : "") +
     ((kz.artikel_referenz || kz.zitat || bed.length)
       ? '<details class="more"><summary>Rechtsgrundlage &amp; Bedingungen</summary><div>' +
@@ -4097,23 +4133,48 @@ function anordnungsTabelle(g1) {
       'der kleinste und der grösste dieser Werte — keine Auswahl und kein Mittelwert.</p>'
     : "";
 
+  // Balken statt Tabellenzeilen. Eine Spanne ist ein Groessenverhaeltnis,
+  // und ein Groessenverhaeltnis liest man aus Laengen schneller ab als aus
+  // Zahlen untereinander -- gerade bei Buhofstrasse 20, wo zwei von vier
+  // Anordnungen NICHTS ergeben. Als Zahl steht dort "0.0 m²" zwischen
+  // anderen Zahlen; als Balken sieht man die Luecke.
+  //
+  // Massstab ist der groesste Wert im Feld, nicht die Spanne: sonst
+  // bekaeme die untere Grenze die Laenge null und die obere die volle
+  // Breite, egal wie eng die beiden beieinander liegen.
+  var werte = a.map(function (x) { return leer(x.geschossflaeche_m2) ? 0 : x.geschossflaeche_m2; });
+  var maxWert = Math.max.apply(null, werte.concat([0]));
+
+  var balken = a.map(function (x) {
+    var vertreter = ein && ein.vertreter_anordnung === x.name;
+    var r = rand(x);
+    var tot = istEntartet(x);
+    var gf = leer(x.geschossflaeche_m2) ? null : x.geschossflaeche_m2;
+    var anteil = (maxWert > 0 && gf) ? Math.max(1.5, (gf / maxWert) * 100) : 0;
+    var randKlasse = r === "obere Grenze" ? " oben" : (r === "untere Grenze" ? " unten" : "");
+
+    return '<div class="anord' + (tot ? " tot" : "") + '">' +
+      '<div class="anordkopf">' +
+        '<span class="anordname">' + esc(lesbar(x.beschreibung || x.name)) +
+          (vertreter ? ' <span class="badge ok">ausgewiesen</span>' : "") +
+          (r ? ' <span class="badge mute">' + esc(r) + "</span>" : "") + "</span>" +
+        '<span class="anordwert">' +
+          (tot ? "kein Baubereich"
+               : (gf === null ? "&ndash;" : fmt(gf, 1) + " m²")) + "</span>" +
+      "</div>" +
+      '<div class="anordbahn"><div class="anordfuell' + randKlasse +
+        '" style="width:' + anteil.toFixed(1) + '%"></div></div>' +
+      '<div class="anordfuss">' +
+        (tot
+          ? "Parzelle an der schmalsten Stelle schmaler als die vorgeschriebenen Abstände zusammen"
+          : (leer(x.baubereich_m2) ? "" : "Baubereich " + fmt(x.baubereich_m2, 1) + " m² · ") +
+            "begrenzt durch " + esc(bindendText(x.geschossflaeche_limitiert_durch))) +
+      "</div></div>";
+  }).join("");
+
   return '<h4 class="subhead">' + ueberschrift + "</h4>" + einleitung +
     ((g1 || {}).regel ? '<div class="note">' + esc(lesbar(g1.regel)) + "</div>" : "") +
-    '<div class="scroller"><table class="src"><thead><tr><th>Anordnung</th>' +
-    '<th>Baubereich</th><th>Geschossfläche</th><th>begrenzt durch</th></tr></thead><tbody>' +
-    a.map(function (x) {
-      var vertreter = ein && ein.vertreter_anordnung === x.name;
-      var r = rand(x);
-      var tot = istEntartet(x);
-      return "<tr><td>" + esc(lesbar(x.beschreibung || x.name)) +
-        (vertreter ? ' <span class="badge ok">ausgewiesen</span>' : "") +
-        (r ? ' <span class="badge mute">' + r + "</span>" : "") + "</td>" +
-        "<td>" + (tot ? "kein Baubereich"
-          : (leer(x.baubereich_m2) ? "&ndash;" : fmt(x.baubereich_m2, 1) + " m²")) + "</td>" +
-        "<td><b>" + (leer(x.geschossflaeche_m2) ? "&ndash;" : fmt(x.geschossflaeche_m2, 1) + " m²") + "</b></td>" +
-        "<td>" + (tot ? "Parzelle an der schmalsten Stelle schmaler als die Abstände zusammen"
-          : esc(bindendText(x.geschossflaeche_limitiert_durch))) + "</td></tr>";
-    }).join("") + "</tbody></table></div>" +
+    '<div class="anordnungen">' + balken + "</div>" +
     (ein && ein.erklaerung ? '<div class="note ok">' + esc(lesbar(ein.erklaerung)) + "</div>" : "");
 }
 
