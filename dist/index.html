@@ -396,7 +396,10 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 .uefuss > div:last-child { border-right: 0; }
 .uefuss .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
 .uefuss .val { font-family: var(--mono); font-size: 14px; font-weight: 500; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.uefuss .val.na { font-family: inherit; font-size: 12px; color: var(--ink-3); }
+/* Der Gedankenstrich bleibt in der Ziffernschrift: so steht er auf
+   derselben Grundlinie wie die Zahlen daneben. */
+.uefuss .val.na { color: var(--ink-3); }
+.uefuss .nagrund { font-size: 11px; color: var(--ink-3); margin-top: 2px; line-height: 1.35; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel-2);
@@ -685,9 +688,13 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .pjtab td { font-variant-numeric: tabular-nums; }
 /* Eine Zeile statt eines gelben Kastens: woher das Ergebnis stammt, ist
    eine Randnotiz. Als Warnfarbe stand es groesser da als der Dossierkopf. */
-.zshinweis { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+.zshinweis { display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
   font-size: 11.5px; line-height: 1.45; color: var(--ink-3);
   padding: 0 0 10px; margin: 0; }
+.zshinweis b { font-weight: 600; color: var(--ink-2); }
+/* Trenner mit Luft auf beiden Seiten -- ein Mittelpunkt ohne Abstand
+   klebt an den Woertern und liest sich als Tippfehler. */
+.zstrenn { padding: 0 7px; color: var(--line); }
 
 /* Zustand des Analyse-Dienstes. Bewusst getrennte Farben: eine technische
    Stoerung darf nicht wie ein fachlicher Befund aussehen. */
@@ -2500,14 +2507,28 @@ function zwischenspeicherHinweis(erg) {
   var z = erg.zwischenspeicher || {};
   if (!z.aus_zwischenspeicher) return "";
   var tage = z.alter_tage || 0;
-  var alter = tage < 1
-    ? Math.max(1, Math.round(tage * 24)) + " Stunde(n)"
-    : Math.round(tage) + " Tag(e)";
+  // "2 Stunde(n)" ist Datenbanksprache. Eine Anzeige schreibt aus, was sie
+  // meint -- und weiss dafuer, ob es eins oder mehrere sind.
+  var n, alter;
+  if (tage < 1) {
+    n = Math.max(1, Math.round(tage * 24));
+    alter = n === 1 ? "1 Stunde" : n + " Stunden";
+  } else {
+    n = Math.round(tage);
+    alter = n === 1 ? "1 Tag" : n + " Tage";
+  }
+  // Schweizer Datum statt ISO: 2026-09-18 ist ein Sortierschluessel,
+  // 18.09.2026 ist ein Datum.
+  var iso = (z.gerechnet_am || "").slice(0, 10).split("-");
+  var datum = iso.length === 3 ? iso[2] + "." + iso[1] + "." + iso[0] : iso.join("");
+
   // Eine Zeile statt eines Kastens: die Herkunft des Ergebnisses ist eine
-  // Randnotiz, keine Warnung -- sie stand bisher groesser da als der
-  // Dossierkopf darunter.
-  return '<div class="zshinweis">Gespeicherte Analyse vom <b>' +
-    esc((z.gerechnet_am || "").slice(0, 10)) + '</b>, ' + esc(alter) + ' alt' +
+  // Randnotiz, keine Warnung. Text und Knopf sind zwei Elemente mit
+  // Abstand dazwischen -- aneinandergeklebt las sich das als
+  // "alt neu rechnen".
+  return '<div class="zshinweis">' +
+    '<span>Gespeicherte Analyse vom <b>' + esc(datum) + '</b>' +
+      '<span class="zstrenn">·</span>' + esc(alter) + ' alt</span>' +
     '<button class="szbtn klein" id="zs-neu">neu rechnen</button></div>';
 }
 
@@ -2686,33 +2707,41 @@ function secUebersicht(erg, m1, zz) {
      Grundstueck, Ausnuetzungsziffer, Bestand, Potenzial. Mehr nicht. Eine
      Uebersicht, die alles zeigt, ist keine -- und was hier fehlt, ist
      nicht verschwunden, sondern einen Reiter weiter. */
-  function kz(lbl, val, einheit, fuss, haupt) {
-    var inhalt = leer(val)
-      ? '<div class="val na">' + esc(fuss || "nicht verfügbar") + "</div>"
+  // Wert und Status sind zwei Zeilen, immer. Auch wenn kein Zahlenwert
+  // existiert: "Sondernutzungsplan" ist dann der Wert und "massgebend" der
+  // Status -- frueher verschluckte der Ersatztext die Statuszeile, und die
+  // Kachel las sich wie eine Fehlermeldung statt wie eine Auskunft.
+  function kz(lbl, val, einheit, fuss, haupt, ersatz) {
+    var wert = leer(val)
+      ? '<div class="val na">' + esc(ersatz || "nicht verfügbar") + "</div>"
       : '<div class="val">' + esc(String(val)) +
-        (einheit ? '<span class="einheit">' + esc(einheit) + "</span>" : "") + "</div>" +
-        (fuss ? '<div class="fuss">' + (haupt ? "" : "<i></i>") + esc(fuss) + "</div>" : "");
+        (einheit ? '<span class="einheit">' + esc(einheit) + "</span>" : "") + "</div>";
     return '<div class="kz' + (haupt ? " haupt" : "") + '">' +
-      '<div class="lbl">' + esc(lbl) + "</div>" + inhalt + "</div>";
+      '<div class="lbl">' + esc(lbl) + "</div>" + wert +
+      (fuss ? '<div class="fuss">' + (haupt ? "" : "<i></i>") + esc(fuss) + "</div>" : "") +
+    "</div>";
   }
 
   // Ausnuetzungsziffer: bei einem Sondernutzungsplan gibt es sie nicht --
-  // die Ziffer der ordentlichen Zone waere hier scheingenau.
+  // die Ziffer der ordentlichen Zone waere hier scheingenau. Dann steht
+  // als Wert, WAS stattdessen gilt, und als Status, wie es gilt.
   var az = w(zone.ausnuetzungsziffer_az);
-  var azFuss = snp ? "Sondernutzungsplan massgebend"
-    : (laeuft ? "wird ausgewertet"
+  var azErsatz = snp ? "Sondernutzungsplan" : (laeuft ? "wird ausgewertet" : "nicht geführt");
+  var azFuss = snp ? "massgebend — die Ziffer der ordentlichen Zone gilt hier nicht"
+    : (laeuft ? "Bau- und Nutzungsordnung wird ausgewertet"
       : (leer(az) ? "von der Bau- und Nutzungsordnung nicht geführt"
         : "Bau- und Nutzungsordnung"));
 
   var bGf = ((b || {}).grundflaeche || {}).wert_m2;
   var bGeschosse = alsListe(((b || {}).geschosse || {}).wert);
-  var bFuss = !b ? "wird ermittelt"
-    : (!b.gebaeude ? "unbebaut — kein Eintrag im Register"
-      : [b.gebaeude + (b.gebaeude === 1 ? " Gebäude" : " Gebäude"),
+  var bErsatz = !b ? "wird ermittelt" : "unbebaut";
+  var bFuss = !b ? ""
+    : (!b.gebaeude ? "kein Eintrag im Gebäuderegister"
+      : [b.gebaeude + " Gebäude",
          bGeschosse.length ? bGeschosse.join(" · ") + " Geschosse" : null]
         .filter(Boolean).join(" · "));
 
-  var potVal = null, potEinheit = "", potFuss = "wird ermittelt";
+  var potVal = null, potEinheit = "", potErsatz = "wird ermittelt", potFuss = "";
   if (kurz.art === "eindeutig") {
     potVal = fmt(kurz.wert, 0); potEinheit = "m² GF"; potFuss = "eindeutig bestimmbar";
   } else if (kurz.art === "spanne") {
@@ -2721,15 +2750,17 @@ function secUebersicht(erg, m1, zz) {
   } else if (kurz.art === "zusatz") {
     potVal = fmt(kurz.wert, 0); potEinheit = "m² GF"; potFuss = "zusätzlich gegenüber dem Bestand";
   } else if (kurz.art !== "laeuft") {
-    potFuss = "nicht abschliessend bestimmbar";
+    potErsatz = "nicht bestimmbar";
+    potFuss = snp ? "Sondernutzungsplan geht der Regelbauweise vor"
+                  : "Gründe im Reiter Potenzial";
   }
 
   var kennzahlen = '<div class="kzeile">' +
     kz("Grundstück", leer(pz.flaeche_m2) ? null : fmt(pz.flaeche_m2, 1), "m²",
-       leer(pz.flaeche_m2) ? "nicht verfügbar" : "amtliche Vermessung") +
-    kz("Ausnützungsziffer", leer(az) ? null : String(az), "", azFuss) +
-    kz("Bestand", leer(bGf) ? null : fmt(bGf, 0), "m²", bFuss) +
-    kz("Potenzial Neubau", potVal, potEinheit, potFuss, true) +
+       leer(pz.flaeche_m2) ? "" : "amtliche Vermessung", false, "nicht verfügbar") +
+    kz("Ausnützungsziffer", leer(az) ? null : String(az), "", azFuss, false, azErsatz) +
+    kz("Bestand", leer(bGf) ? null : fmt(bGf, 0), "m²", bFuss, false, bErsatz) +
+    kz("Potenzial Neubau", potVal, potEinheit, potFuss, true, potErsatz) +
   "</div>";
 
   /* --- Die Karte ------------------------------------------------------
@@ -2756,10 +2787,15 @@ function secUebersicht(erg, m1, zz) {
   var vg = w(zone.vollgeschosse_max);
   if (leer(vg)) vg = (g1.ergebnis || {}).geschosszahl;
 
-  function fussfeld(lbl, val, na) {
+  // Ein fehlender Wert und eine Angabe, die es hier gar nicht GIBT, sehen
+  // gleich aus, wenn beide nur einen Text zeigen. Deshalb steht im
+  // Wertfeld ein Gedankenstrich -- die Spalte bleibt ausgerichtet -- und
+  // darunter der Grund. Das liest sich als Antwort, nicht als Luecke.
+  function fussfeld(lbl, val, grund) {
     return "<div>" + '<div class="lbl">' + esc(lbl) + "</div>" +
-      (leer(val) ? '<div class="val na">' + esc(na) + "</div>"
-                 : '<div class="val">' + esc(String(val)) + "</div>") + "</div>";
+      (leer(val)
+        ? '<div class="val na">–</div><div class="nagrund">' + esc(grund) + "</div>"
+        : '<div class="val">' + esc(String(val)) + "</div>") + "</div>";
   }
 
   var karte = '<div class="uekarte">' +
@@ -2775,8 +2811,8 @@ function secUebersicht(erg, m1, zz) {
     "</div>" +
     '<div class="uefuss">' +
       fussfeld("Bebaubar", bau, "noch nicht bestimmt") +
-      fussfeld("Grenzabstand", abstand, "nicht geführt") +
-      fussfeld("Geschosse", leer(vg) ? null : String(vg), "nicht geführt") +
+      fussfeld("Grenzabstand", abstand, "in der Zone nicht geführt") +
+      fussfeld("Geschosse", leer(vg) ? null : String(vg), "in der Zone nicht geregelt") +
     "</div></div>";
 
   /* --- Was ist hier moeglich? ----------------------------------------
@@ -2831,8 +2867,9 @@ function secUebersicht(erg, m1, zz) {
      und dass etwas GEPRUEFT wurde, ist selbst eine Auskunft. */
   var r = m1.restriktionsgeometrie || {};
   var betroffen = [], frei = [];
-  function chip(text, ist) {
-    (ist ? betroffen : frei).push('<span class="chip' + (ist ? " warn" : "") + '"><i></i>' +
+  function chip(text, ist, voll) {
+    (ist ? betroffen : frei).push('<span class="chip' + (ist ? " warn" : "") + '"' +
+      (voll && voll !== text ? ' title="' + esc(voll) + '"' : "") + "><i></i>" +
       esc(text) + "</span>");
   }
   var anzGw = (r.gewaesserraum_flaechen || []).length;
@@ -2848,16 +2885,19 @@ function secUebersicht(erg, m1, zz) {
   var oereb = betroffeneOerebThemen(m1);
   var gesehen = {};
   ueberl.forEach(function (u) {
-    var name = zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "Überlagerung";
+    var voll = zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung)
+      || "Überlagerung";
+    var name = chipKlarname(voll);
     if (gesehen[name]) return;
     gesehen[name] = true;
-    chip(name, true);
+    chip(name, true, voll);
   });
   oereb.forEach(function (k) {
-    var name = oerebThemaName(k);
+    var voll = oerebThemaName(k);
+    var name = chipKlarname(voll);
     if (gesehen[name]) return;
     gesehen[name] = true;
-    chip(name, true);
+    chip(name, true, voll);
   });
 
   // Nicht endlos: die vollstaendige Liste steht im Reiter Baurecht.
@@ -3380,6 +3420,26 @@ function zoneKlarname(name) {
   // daraus "Verkehrsflaeche" mit Umlaut und laesst Kuerzel wie "iB" oder
   // "OeZ" in Ruhe.
   return lesbar(t.replace(TECHNISCHES_PRAEFIX, "").trim() || t);
+}
+
+/* Fuer die Chips der Uebersicht: der GEGENSTAND, nicht die Fundstelle.
+   Die amtlichen Bezeichnungen haengen die Gesetzesstelle an den Namen --
+   "Bestimmte Nutzungsart Art 28oct". Fuer einen Makler ist das der
+   Gegenstand plus eine Fundstelle, die ihm auf der Uebersicht nichts
+   sagt; er sucht sie, wenn ueberhaupt, im Reiter Baurecht, wo die
+   vollstaendige Bezeichnung unveraendert steht.
+
+   Abgeschnitten wird AUSSCHLIESSLICH die angehaengte Fundstelle. Am Namen
+   selbst wird nichts uebersetzt und nichts gedeutet -- was der Artikel
+   inhaltlich anordnet, weiss diese Anzeige nicht, und sie tut auch nicht
+   so. Die volle Bezeichnung bleibt als Titel am Chip haengen. */
+var ARTIKELSTELLE =
+  /[\s,;(–-]+(?:Art\.?|Artikel|§+|Ziff\.?|Abs\.?|lit\.?|Par\.?)\s*\d+[A-Za-z.°]*\)?\s*$/i;
+function chipKlarname(name) {
+  var voll = zoneKlarname(name);
+  var kurz = voll.replace(ARTIKELSTELLE, "").trim();
+  // Bleibt zu wenig uebrig, war der vermeintliche Anhang der Name selbst.
+  return kurz.length >= 4 ? kurz : voll;
 }
 
 var OEREB_THEMA = {
