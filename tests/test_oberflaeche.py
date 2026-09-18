@@ -47,7 +47,8 @@ def test_reiter(s: str) -> None:
     block = s[s.index("var REITER = ["):]
     block = block[: block.index("];")]
     namen = re.findall(r'\["([a-z]+)", "', block)
-    erwartet = ["uebersicht", "baurecht", "karte", "potenzial", "markt", "quellen"]
+    erwartet = ["uebersicht", "baurecht", "karte", "potenzial", "markt",
+                "wirtschaft", "quellen"]
     pruefe(namen == erwartet, f"Reiterfolge {erwartet} (gefunden: {namen})")
 
     # Jede in REITER genannte Sektion muss auch gebaut werden, sonst
@@ -175,6 +176,60 @@ def test_bandbreiten_auskunft(s: str) -> None:
            "die Uebersicht gibt beide Raender der Spanne aus")
 
 
+def test_markt_und_wirtschaft_getrennt(s: str) -> None:
+    """Baurecht, Markt und Wirtschaftlichkeit sind drei verschiedene Dinge.
+
+    Die Reihenfolge ist die Reihenfolge der Fragen, die ein Makler hat:
+    Was darf ich bauen -> was koennte daraus entstehen -> was ist am Markt
+    plausibel -> lohnt es sich. Wirtschaftlichkeit steht deshalb NACH
+    Markt: sie rechnet mit den Annahmen, die dort gesetzt werden.
+    """
+    # 1. Die Wirtschaftlichkeit hat einen eigenen Reiter und haengt nicht
+    #    mehr im Potenzialreiter -- dort sah eine Annahme aus wie ein
+    #    amtlicher Befund.
+    block = s[s.index("var REITER = ["):]
+    block = block[: block.index("];")]
+    potenzial = block[block.index('["potenzial"'):]
+    potenzial = potenzial[: potenzial.index("]]") + 2]
+    pruefe("sec-wirtschaft" not in potenzial,
+           "sec-wirtschaft haengt nicht mehr im Potenzialreiter")
+    pruefe('["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"]]' in block,
+           "Wirtschaftlichkeit ist ein eigener Reiter")
+    pruefe(block.index('["markt"') < block.index('["wirtschaft"'),
+           "der Reiter Wirtschaftlichkeit steht NACH dem Reiter Markt")
+
+    # 2. Auch im Dokument steht der Markt vor der Wirtschaftlichkeit --
+    #    sonst springt "zum naechsten Abschnitt" rueckwaerts.
+    pruefe(s.index("secMarkt(erg)") < s.index("secWirtschaft(erg)"),
+           "secMarkt wird vor secWirtschaft gebaut")
+
+    # 3. Die Annahmen stehen im Reiter Markt, gerechnet wird im Reiter
+    #    Wirtschaftlichkeit. Ein Selektor auf "#sec-wirtschaft" trifft sie
+    #    nicht -- ohne diese Erweiterung loest eine geaenderte Annahme
+    #    keine Neuberechnung aus.
+    pruefe('"#w-markt input, #w-markt select"' in s,
+           "die Marktannahmen sind an die Neuberechnung verdrahtet")
+    pruefe("#sec-markt input" not in s,
+           "NUR die Annahmen sind verdrahtet, nicht die Erfassung der "
+           "Vergleichsobjekte -- die aendern die Rechnung nicht")
+
+    # 4. Eine Marge ohne ihre Grundlage ist keine Auskunft. Der
+    #    Wirtschaftsreiter wiederholt deshalb die Annahmen mit Herkunft.
+    pruefe("function wAnnahmenStreifen(" in s,
+           "der Wirtschaftsreiter zeigt, mit welchen Marktannahmen gerechnet wurde")
+    pruefe('<div id="w-annahmen">' in s and 'setze("w-annahmen"' in s,
+           "der Annahmenstreifen wird bei jeder Neuberechnung mitgezogen")
+    ann = s[s.index("function wAnnahmenStreifen("):]
+    ann = ann[: ann.index("\nfunction ", 10)]
+    pruefe("HERKUNFT_KURZ" in ann,
+           "jeder Wert im Annahmenstreifen traegt seine Herkunft")
+    pruefe("keine amtlichen Werte" in ann,
+           "der Streifen sagt ausdruecklich, dass es Annahmen sind und "
+           "keine amtlichen Werte")
+    pruefe('reiterLink("markt"' in ann,
+           "vom Ergebnis fuehrt ein Weg zurueck zu den Annahmen")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -182,7 +237,7 @@ def main() -> int:
     s = lies()
     for fn in (test_reiter, test_karte_ausserhalb_des_dossiers, test_css_variablen,
                test_inhaltsbreite, test_keine_abschnittsnummern,
-               test_bandbreiten_auskunft):
+               test_bandbreiten_auskunft, test_markt_und_wirtschaft_getrennt):
         fn(s)
 
     if _fehler:

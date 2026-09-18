@@ -485,6 +485,19 @@ ul.plain li { margin-bottom: 4px; }
 .wmzeile .wmwert.na { color: var(--ink-3); font-style: italic; }
 .wmzeile .wmwert em { color: var(--ink-3); font-style: normal; font-size: 11px; }
 .wmzeile.stark { border-top: 1px solid var(--line-2); margin-top: 4px; padding-top: 6px; font-weight: 600; }
+/* "Gerechnet mit diesen Marktannahmen" -- die Grundlage der Zahlen
+   darunter. Bewusst ruhig gehalten: sie ist der Beleg, nicht das
+   Ergebnis, und darf die Kennzahlen darunter nicht ueberstrahlen. */
+.wannahmen { margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--line);
+  border-left: 3px solid var(--line-2); border-radius: 10px; background: var(--bg-2); }
+.wakopf { display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px; }
+.wakopf b { font-size: 12px; letter-spacing: .02em; }
+.wagrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 16px; }
+.wazeile { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 3px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.wazeile .walab { color: var(--ink-3); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.wazeile .wawert { text-align: right; white-space: nowrap; }
 .wschalter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); cursor: pointer; }
 .wok { color: #1f7a4d; } .wfehler { color: #b3324a; } .wlaeuft { color: var(--ink-3); }
 .wstatus { min-height: 18px; margin: 8px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -2435,13 +2448,29 @@ function zwischenspeicherHinweis(erg) {
    Die Abschnitte selbst bleiben unveraendert; sie werden nur einem Reiter
    zugeordnet und ein- oder ausgeblendet. Gerechnet wird nichts anders.
 */
+/* Die Reiterfolge ist die Reihenfolge der vier Fragen, die ein Makler an
+   eine Parzelle hat:
+
+     Baurecht           Was darf ich hier bauen?
+     Potenzial          Was koennte daraus entstehen?
+     Markt              Was ist am Markt plausibel?
+     Wirtschaftlichkeit Lohnt sich eine Entwicklung?
+
+   Wirtschaftlichkeit steht deshalb NACH Markt, nicht davor und nicht im
+   Potenzialreiter. Sie rechnet mit den Marktannahmen, die im Reiter davor
+   gesetzt werden -- wer sie vorher zeigt, zeigt eine Rendite, bevor der
+   Preis gesetzt ist, mit dem sie gerechnet wurde.
+
+   Genauso wichtig ist die Trennung: Potenzial ist amtliches Baurecht und
+   Geometrie, Wirtschaftlichkeit sind Annahmen. Solange beides im selben
+   Reiter stand, sah das eine wie das andere aus. */
 var REITER = [
   ["uebersicht", "Übersicht", ["sec-uebersicht"]],
   ["baurecht", "Baurecht", ["sec-baurecht", "sec-restriktionen"]],
   ["karte", "Karte", ["sec-karte"]],
-  ["potenzial", "Potenzial",
-   ["sec-potenzial", "sec-szenarien", "sec-wirtschaft", "sec-screening"]],
+  ["potenzial", "Potenzial", ["sec-potenzial", "sec-szenarien", "sec-screening"]],
   ["markt", "Markt", ["sec-markt"]],
+  ["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"]],
   ["quellen", "Daten & Quellen", ["sec-grundstueck", "sec-standort", "sec-quellen"]]
 ];
 var reiterAktiv = "uebersicht";
@@ -7673,6 +7702,48 @@ function wAktivesSzenario() {
   return v.length ? v[0].id : null;
 }
 
+/* Womit wurde gerechnet?
+
+   Die Annahmen stehen seit der Trennung im Reiter davor. Eine Marge ohne
+   ihre Grundlage ist aber keine Auskunft, sondern eine Behauptung --
+   deshalb steht die Grundlage hier noch einmal: jeder Wert mit seiner
+   Herkunft und ein Weg zurueck zum Markt.
+
+   Wiederholt, nicht neu gerechnet. Die Werte kommen aus demselben
+   Ergebnis, das auch der Marktreiter zeigt; es gibt keine zweite Quelle,
+   die auseinanderlaufen koennte. */
+function wAnnahmenStreifen() {
+  var e = wErgebnis && wErgebnis.szenarien
+    ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
+  var zeilen = [];
+  var nimm = function (label, mw, einheit) {
+    if (!mw || leer(mw.wert)) {
+      zeilen.push([label, "nicht gesetzt", ["nicht gesetzt", "warn"]]);
+    } else {
+      zeilen.push([label, chf(mw.wert) + " " + einheit,
+                   HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"]]);
+    }
+  };
+  nimm("Verkaufspreis", (e.verkauf || {}).preis, "CHF/m²");
+  nimm("Mietzins", (e.miete || {}).ansatz, "CHF/m²/Jahr");
+  nimm("Bodenpreis", (e.land || {}).bodenpreis, "CHF/m²");
+  zeilen.push(["Zielmarge", Math.round((wEingaben.zielmarge || 0) * 100) + " %",
+               HERKUNFT_KURZ.benutzerannahme]);
+
+  return '<div class="wannahmen">' +
+    '<div class="wakopf"><b>Gerechnet mit diesen Marktannahmen</b>' +
+      '<span class="right">' + reiterLink("markt", "Im Reiter Markt ändern") + "</span></div>" +
+    '<div class="wagrid">' + zeilen.map(function (z) {
+      return '<div class="wazeile"><span class="walab">' + esc(z[0]) + "</span>" +
+        '<span class="wawert">' + esc(z[1]) +
+        ' <span class="badge ' + z[2][1] + '">' + esc(z[2][0]) + "</span></span></div>";
+    }).join("") + "</div>" +
+    '<div class="note">Das sind <b>Annahmen</b>, keine amtlichen Werte. Amtlich sind ' +
+    'Zone, Kennzahlen und Geometrie im Reiter <b>Potenzial</b> — an denen ändert hier ' +
+    'nichts etwas, in welche Richtung die Annahmen auch gesetzt werden.</div>' +
+  "</div>";
+}
+
 function secWirtschaft(erg) {
   var kopf = '<div class="sechead"><h3>Wirtschaftlichkeit</h3>' +
     '<span class="right"><span class="badge mute">dynamisch</span></span></div>';
@@ -7698,6 +7769,7 @@ function secWirtschaft(erg) {
     '<div class="note">Jede \u00c4nderung rechnet Fl\u00e4chen, Wohnungen, Kosten, Gewinn, Marge und den ' +
     'maximal tragbaren Landwert neu \u2014 die baurechtliche Analyse wird dabei <b>nicht</b> wiederholt.</div>' +
     '<div id="w-status" class="wstatus"></div>' +
+    '<div id="w-annahmen">' + wAnnahmenStreifen() + "</div>" +
     '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
     '<div id="w-vergleich">' + wVergleichBlock() + "</div>" +
     '<div id="w-hbu">' + hbuBlock() + "</div>" +
@@ -7851,6 +7923,9 @@ function wZeichneNeu() {
     var el = document.getElementById(id);
     if (el) el.innerHTML = html;
   };
+  // Zuerst die Annahmen, dann das Ergebnis -- in dieser Reihenfolge steht
+  // nie eine neue Zahl ueber einer alten Grundlage.
+  setze("w-annahmen", wAnnahmenStreifen());
   setze("w-ergebnis", ergebnisBlock());
   setze("w-vergleich", wVergleichBlock());
   setze("w-hbu", hbuBlock());
@@ -7891,7 +7966,19 @@ function verdrahteWirtschaft() {
     }
   }
 
-  document.querySelectorAll("#sec-wirtschaft input, #sec-wirtschaft select").forEach(function (el) {
+  // Die Marktannahmen (Verkaufspreis, Miete, Bodenpreis, Zielmarge) stehen
+  // im Reiter MARKT, gerechnet wird im Reiter WIRTSCHAFTLICHKEIT. Ein
+  // Selektor auf "#sec-wirtschaft" trifft sie deshalb nicht -- eine
+  // geaenderte Annahme loeste keine Neuberechnung aus, und die Zahl daneben
+  // blieb stillschweigend die alte.
+  //
+  // Bewusst "#w-markt" und nicht "#sec-markt": im selben Reiter steht auch
+  // die Verwaltung der Vergleichsobjekte. Die aendern die Rechnung NICHT,
+  // sie ordnen das Ergebnis nur ein (siehe marktdaten.py). Wer sie mit
+  // verdrahtet, rechnet bei jedem Tastendruck in einem Erfassungsformular
+  // die ganze Wirtschaftlichkeit neu.
+  document.querySelectorAll("#sec-wirtschaft input, #sec-wirtschaft select, " +
+                            "#w-markt input, #w-markt select").forEach(function (el) {
     if (el.dataset.verdrahtet) return;
     el.dataset.verdrahtet = "1";
     var merken = function () {
