@@ -6,6 +6,7 @@
 #     ├── grundstueck-crawler/     Engine und Webdienst   (Repo 1)
 #     ├── Crawler/                 Datenschicht (kern)    (Repo 2)
 #     ├── daten/                   SQLite -- ueberlebt jedes Neubauen
+#     ├── radar/                   radar.db aus dem AkquiseRadar, nur lesend
 #     ├── caddy/                   TLS-Zertifikate
 #     ├── .env                     Secrets, Modus 600, NIE im Repo
 #     └── docker-compose.yml       diese Datei (von einrichten.sh kopiert)
@@ -38,6 +39,26 @@ services:
       # Die Datenbank liegt AUSSERHALB des Abbilds. Ein Abbild wird bei jedem
       # Einspielen ersetzt; Projekte, Varianten und Vergleichsobjekte nicht.
       - ./daten:/daten
+
+      # Der AkquiseRadar -- nur lesend. `kern/db.verbinde_radar_lesend`
+      # sucht ihn unter <kern>/../akquiseradar/data/radar.db, im Abbild
+      # also unter /app/Crawler/akquiseradar/data. Genau dorthin wird das
+      # Verzeichnis eingehaengt, damit KEIN Code geaendert werden muss.
+      #
+      # Eingehaengt wird das VERZEICHNIS, nicht die Datei. Bei einer
+      # einzeln eingehaengten Datei behaelt der Container die alte Inode,
+      # nachdem sie ersetzt wurde -- der Dienst laese dann fuer immer den
+      # Stand vom ersten Start.
+      #
+      # `:ro` ist nicht bloss Vorsicht: die Datenschicht oeffnet den Radar
+      # ohnehin schreibgeschuetzt, und hier gilt dasselbe noch einmal auf
+      # Ebene des Dateisystems. Der Radar ist fremdes Eigentum dieses
+      # Dienstes.
+      #
+      # Gefuellt wird das Verzeichnis von deploy/radar_hochladen.py. Fehlt
+      # es, laeuft der Dienst normal weiter und /marktdaten/radar
+      # antwortet mit "AkquiseRadar-Datenbank nicht gefunden".
+      - ./radar:/app/Crawler/akquiseradar/data:ro
 
     # KEIN ports:-Eintrag. Der Dienst ist nur ueber Caddy erreichbar, nie
     # direkt. Sonst umginge man TLS und den Zugangsschluessel waere die

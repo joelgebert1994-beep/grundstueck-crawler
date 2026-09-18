@@ -601,6 +601,7 @@ details.more > div { padding-top: 10px; }
 .qsysn a { color: inherit; }
 .qsysr { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .qsysa { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.qsyst .qstand { font-family: var(--mono); margin-left: 8px; }
 .qsyst { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
   line-height: 1.45; overflow-wrap: anywhere; }
 
@@ -7667,6 +7668,10 @@ function mktZeichne() {
   var begruendung = alsListe((lage || {}).begruendung);
   var urteil = !mktObjekte.length ? "" :
     kacheln +
+    // Welche Quelle wie viel beigetragen hat -- und mit welchem Datentyp.
+    // Ohne diese Aufteilung waeren 1857 Angebotspreise aus einer Quelle
+    // von 1857 Abschluessen aus vier Quellen nicht zu unterscheiden.
+    quellenBlock(mktObjekte, "Woher diese Objekte stammen") +
     (begruendung.length
       ? '<ul class="mgrgruende">' + begruendung.map(function (b) {
           return "<li>" + satz(b) + "</li>";
@@ -7960,6 +7965,75 @@ function marktExternBlock() {
    solange /api/marktdaten noch laeuft, und einmal in mktZeichne. Ohne den
    Platzhalter zeigte der Reiter beim Oeffnen "1 ... 3" und dazwischen
    nichts -- eine Nummerierung mit einer Luecke liest sich wie ein Fehler. */
+/* Welche Quelle hat wie viel beigetragen?
+
+   Die Regel, die das erzwingt: mehrere Quellen duerfen nie zu einer Zahl
+   verschmelzen. Ein "Marktpreis CHF 8'600/m2" ohne Herkunft ist keine
+   Auskunft, sondern eine Behauptung -- und sobald neben dem AkquiseRadar
+   eine zweite Quelle steht, waere genau das die bequemste Darstellung.
+
+   Deshalb wird JEDE Quelle einzeln ausgewiesen: mit Anzahl, Datentyp und
+   Stand. Gerechnet wird hier nichts; gezaehlt wird, was die Engine
+   ohnehin je Objekt mitliefert.
+
+   Angebotspreis und Abschluss stehen bewusst getrennt und nicht als
+   Summe. Sie sind nicht dieselbe Groesse: ein Inserat nennt, was verlangt
+   wird. */
+var MKT_DATENTYP = {
+  angebot: ["Angebotspreis", "Angebotspreise", "warn"],
+  abschluss: ["beurkundeter Abschluss", "beurkundete Abschlüsse", "ok"],
+  unbekannt: ["Preisart unbekannt", "Preisart unbekannt", "mute"]
+};
+
+function quellenAufteilung(objekte) {
+  var reihenfolge = [];
+  var nach = {};
+  alsListe(objekte).forEach(function (o) {
+    var name = (o.quelle || "").trim() || "ohne Quellenangabe";
+    if (!nach[name]) {
+      nach[name] = { name: name, n: 0, arten: {}, von: null, bis: null };
+      reihenfolge.push(name);
+    }
+    var q = nach[name];
+    q.n += 1;
+    var art = o.preisart || "unbekannt";
+    q.arten[art] = (q.arten[art] || 0) + 1;
+    var stand = (o.datenstand || "").slice(0, 10);
+    if (stand) {
+      if (!q.von || stand < q.von) q.von = stand;
+      if (!q.bis || stand > q.bis) q.bis = stand;
+    }
+  });
+  // Die ergiebigste Quelle zuerst -- sie traegt die Aussage.
+  reihenfolge.sort(function (a, b) { return nach[b].n - nach[a].n; });
+  return reihenfolge.map(function (n) { return nach[n]; });
+}
+
+function quellenBlock(objekte, ueberschrift) {
+  var quellen = quellenAufteilung(objekte);
+  if (!quellen.length) return "";
+  return (ueberschrift ? '<h4 class="subhead">' + esc(ueberschrift) + "</h4>" : "") +
+    '<div class="qsys">' + quellen.map(function (q) {
+      var arten = Object.keys(q.arten).map(function (a) {
+        var t = MKT_DATENTYP[a] || [a, a, "mute"];
+        // "1x beurkundete Abschluesse" ist Datenbanksprache. Eine Anzeige
+        // weiss, ob es eins oder mehrere sind.
+        return '<span class="badge ' + t[2] + '">' + q.arten[a] + "× " +
+          esc(q.arten[a] === 1 ? t[0] : t[1]) + "</span>";
+      }).join(" ");
+      var stand = !q.von ? "ohne Datenstand"
+        : (q.von === q.bis ? "Stand " + chDatum(q.von)
+            : "Stand " + chDatum(q.von) + " bis " + chDatum(q.bis));
+      return '<div class="qsysz">' +
+        '<div class="qsysn">' + esc(q.name) + "</div>" +
+        '<div class="qsysr"><span class="qsysa">' + q.n +
+          (q.n === 1 ? " Objekt" : " Objekte") + "</span></div>" +
+        '<div class="qsyst">' + arten + '<span class="qstand">' + esc(stand) +
+        "</span></div>" +
+      "</div>";
+    }).join("") + "</div>";
+}
+
 function mktEbeneKopf() {
   return ebeneKopf(2, "Eigene Vergleichsobjekte", "Was haben wir selbst an Referenzen?");
 }
@@ -8102,11 +8176,18 @@ function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt) {
         : "")
     : "";
 
+  // Die Aufteilung gilt den tatsaechlich verwendeten Referenzen -- nicht
+  // allen erfassten. Sonst behauptete sie eine Herkunft fuer Zahlen, die
+  // gar nicht eingeflossen sind.
+  var herkunft = objekte.length
+    ? quellenBlock(objekte, "Woher diese Referenzen stammen")
+    : "";
+
   var details = (objekte.length || ausgeschlossen.length)
     ? '<details class="more"><summary>Welche Objekte dahinterstehen — ' +
       objekte.length + " verwendet" +
       (ausgeschlossen.length ? ", " + ausGesamt + " ausgeschlossen" : "") +
-      "</summary><div>" + tabelle + ausHtml + "</div></details>"
+      "</summary><div>" + herkunft + tabelle + ausHtml + "</div></details>"
     : "";
 
   return '<div class="mgr">' +

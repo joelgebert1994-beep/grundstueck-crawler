@@ -94,7 +94,37 @@ Schritt 4 wird leicht vergessen und ist trotzdem zwingend: **ein Pages-Secret
 wirkt erst für den nächsten Deploy.** Ein bestehender Deploy behält seine
 Bindungen, auch wenn das Secret längst neu gesetzt ist.
 
-### Der Zugangsschlüssel gehört dazu
+#
+## AkquiseRadar auf die Produktion bringen
+
+Der Radar sammelt auf Joels PC; der Dienst liest ihn auf der VM. Dazwischen
+liegt genau ein Befehl:
+
+```bash
+python deploy/radar_hochladen.py
+```
+
+Er macht drei Dinge, die ein `scp` nicht macht: einen **konsistenten**
+Abzug mit `VACUUM INTO` (der Radar darf dabei weiterschreiben), das
+Hochladen **neben** die Zieldatei mit anschliessendem unteilbarem
+Umbenennen, und das Auslösen des Imports im Dienst.
+
+Gedacht für die Aufgabenplanung — derselbe Aufruf nach jedem Radar-Lauf.
+Niemand muss je wieder eine Datenbankdatei von Hand kopieren.
+
+**Wo die Datei liegt und warum dort:** `/opt/gebimo/radar/radar.db`, im
+Container eingehängt unter `/app/Crawler/akquiseradar/data` — genau der
+Pfad, den `kern/db.verbinde_radar_lesend` erwartet. Dadurch braucht es
+**keine Codeänderung**. Eingehängt wird das *Verzeichnis*, nicht die Datei:
+bei einer einzeln eingehängten Datei behält der Container die alte Inode,
+nachdem sie ersetzt wurde, und läse für immer den Stand vom ersten Start.
+`:ro`, weil der Radar fremdes Eigentum dieses Dienstes ist.
+
+Das Verzeichnis liegt bewusst **nicht** unter `daten/`: es wird nicht
+gesichert. 30 MB bei jeder Sicherung für einen Bestand, der sich jederzeit
+vom PC neu erzeugen lässt, wäre Verschwendung.
+
+## Der Zugangsschlüssel gehört dazu
 
 Ein Quick Tunnel veröffentlicht `localhost:8787` im offenen Internet. Ohne
 Riegel kann jeder, der die Adresse kennt, `/analyze` auslösen (Rechenzeit und

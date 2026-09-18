@@ -360,6 +360,11 @@ def test_markt_drei_ebenen(s: str) -> None:
     #    steht da. Ein Platzhalterwert waere hier eine erfundene Zahl.
     extern = s[s.index("function marktExternBlock("):]
     extern = extern[: extern.index("\nfunction ", 10)]
+    # Geprueft wird der CODE. Ein Kommentar, der eine verbotene
+    # Darstellung ZITIERT, um zu erklaeren warum sie verboten ist,
+    # darf nicht als Verstoss gegen genau diese Regel zaehlen.
+    extern = re.sub(r"/\*.*?\*/", "", extern, flags=re.S)
+    extern = re.sub(r"^\s*//.*$", "", extern, flags=re.M)
     pruefe("keine Quelle angebunden" in extern,
            "Ebene 1 sagt ausdruecklich, dass keine externe Quelle angebunden ist")
     pruefe("eleit ruhig" in extern,
@@ -742,6 +747,43 @@ def test_qualitaetsauswahl_passt_zur_engine(s: str) -> None:
            "ein ersetzter Rohwert wird angezeigt, nicht verschwiegen")
 
 
+def test_quellen_nie_vermischt(s: str) -> None:
+    """Mehrere Quellen duerfen nie zu einer Zahl verschmelzen.
+
+    Sobald neben dem AkquiseRadar eine zweite Quelle steht, waere genau
+    das die bequemste Darstellung: ein "Marktpreis CHF 8'600/m2" ohne
+    Herkunft. Jede Quelle wird deshalb einzeln ausgewiesen -- mit Anzahl,
+    Datentyp und Stand.
+    """
+    pruefe("function quellenAufteilung(" in s and "function quellenBlock(" in s,
+           "es gibt eine Aufteilung nach Quelle")
+    block = s[s.index("function quellenAufteilung("):]
+    block = block[: block.index(chr(10) + "function ", 10)]
+    pruefe("o.quelle" in block,
+           "gruppiert wird nach der Quelle des Objekts, nicht nach Herkunftsart")
+    pruefe("q.von" in block and "q.bis" in block,
+           "je Quelle wird der Datenstand mitgefuehrt")
+
+    # Angebotspreis und Abschluss duerfen nicht zu einer Summe werden.
+    typ = s[s.index("var MKT_DATENTYP = {"):]
+    typ = typ[: typ.index("};") + 2]
+    for art in ("angebot", "abschluss", "unbekannt"):
+        pruefe(art in typ, f"der Datentyp '{art}' ist benannt")
+    pruefe("Angebotspreis" in typ and "Abschluss" in typ,
+           "Angebotspreise und Abschluesse werden getrennt benannt")
+
+    # Beide Ebenen zeigen die Aufteilung -- Ebene 2 fuer alles Erfasste,
+    # Ebene 3 fuer das tatsaechlich Verwendete.
+    zeichne = s[s.index("function mktZeichne("):]
+    zeichne = zeichne[: zeichne.index(chr(10) + "function ", 10)]
+    pruefe("quellenBlock(mktObjekte" in zeichne,
+           "Ebene 2 zeigt, woher die erfassten Objekte stammen")
+    groesse = s[s.index("function marktGroesse("):]
+    groesse = groesse[: groesse.index(chr(10) + "function ", 10)]
+    pruefe("quellenBlock(objekte" in groesse,
+           "Ebene 3 zeigt, woher die VERWENDETEN Referenzen stammen")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -757,7 +799,8 @@ def main() -> int:
                test_teilfehler_sperrt_keinen_reiter, test_rechenstand_eine_stelle,
                test_marktauswertung_zwei_wege, test_markt_ohne_standortdaten,
                test_marktsatz_stimmt_mit_der_engine,
-               test_qualitaetsauswahl_passt_zur_engine):
+               test_qualitaetsauswahl_passt_zur_engine,
+               test_quellen_nie_vermischt):
         fn(s)
 
     if _fehler:
