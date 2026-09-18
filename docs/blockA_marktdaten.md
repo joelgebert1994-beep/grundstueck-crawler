@@ -132,11 +132,75 @@ eines echten Anbieters) wurden nach dem Test **aus der Datenbank entfernt**.
 Sie hätten später für echte Marktbeobachtungen gehalten werden können.
 Die Ablage ist funktionsfähig und leer.
 
+## Qualität der Angabe: eine Skala, zwei Eingabewege
+
+Jedes Vergleichsobjekt trägt eine Einschätzung, **wie belastbar die erfasste
+Angabe ist** — nicht, wie gut das Objekt ist. Vier Stufen:
+
+| Stufe | Bedeutung |
+|---|---|
+| `hoch` | belegt — aus Kaufvertrag, Abrechnung oder amtlicher Quelle |
+| `mittel` | so angegeben — aus Inserat, Exposé oder Auskunft |
+| `gering` | geschätzt oder abgeleitet |
+| `unbekannt` | nicht beurteilbar (Vorgabewert) |
+
+Die Stufe erscheint in der **Begründung** des Sicherheitsgrads, wo `gering`
+und `unbekannt` zusammengezählt werden. Die *Stufe* des Sicherheitsgrads
+ändert sie heute nicht — der hängt an Anzahl, Streuung, Aktualität und
+Preisart (`_sicherheit`). `tests/test_marktdaten.py` hält diesen Stand fest,
+damit eine spätere Änderung daran eine bewusste ist.
+
+### Die dokumentierte Zuordnung
+
+Die Oberfläche bot bis zum 18.09.2026 eine **andere** Auswahl als die Engine
+kennt: `geprüft / angegeben / geschätzt / unbekannt`. Drei der vier Werte
+wurden beim Speichern abgewiesen — darunter die Vorauswahl `geprüft`. Ein
+Erfassungsformular, dessen Standardeinstellung nicht speicherbar war.
+
+Die Oberfläche führt jetzt die kanonischen Stufen direkt; es gibt nichts mehr
+zu übersetzen. Für Importe aus Fremdexporten bleibt eine **ausdrückliche**
+Zuordnung (`marktdaten.QUALITAET_SYNONYME`):
+
+| Eingelesen | Wird zu |
+|---|---|
+| `geprüft`, `belegt`, `beurkundet`, `amtlich`, `high` | `hoch` |
+| `angegeben`, `gemeldet`, `inserat`, `medium` | `mittel` |
+| `geschätzt`, `abgeleitet`, `berechnet`, `low` | `gering` |
+| `unknown`, `keine`, leer | `unbekannt` |
+
+Die Zuordnung übersetzt zwischen zwei **verschiedenen Achsen**: die alten
+Wörter beschrieben die *Herkunft* einer Angabe, die Skala beschreibt ihre
+*Belastbarkeit*. Das ist nicht dasselbe — in dieser Richtung aber eindeutig:
+was belegt ist, ist belastbar; was geschätzt ist, ist es nicht.
+
+**Was nicht in der Tabelle steht, wird nicht geraten.** Es wird `unbekannt`,
+und der Rohtext bleibt unter `merkmale.datenqualitaet_roh` erhalten — die
+Oberfläche zeigt ihn neben der Stufe an. Eine Einstufung, die niemand
+nachprüfen kann, ist keine.
+
+### Beide Wege verhalten sich gleich
+
+`normalisiere_qualitaet()` ist die einzige Stelle, die eine Stufe bestimmt.
+`aus_dicts()` (Handerfassung, API) und `lese_csv()` (Import) rufen beide sie
+auf. Vorher normalisierte nur der CSV-Weg, und zwar still auf `unbekannt`,
+während die Handerfassung dieselbe Eingabe rundweg abwies — dasselbe Wort
+hatte je nach Eingabeweg drei Bedeutungen: hohe Qualität, keine Qualität,
+oder ein Fehler.
+
 ## Offen
 
 * Eine kommerzielle Quelle ist weiterhin **nicht** angebunden — das braucht
   einen Vertrag, nicht Code. Der Weg dorthin ist der CSV-/Dict-Import, der
   ohne Codeänderung funktioniert.
-* Erfassungsmaske für eigene Objekte in der Oberfläche: die Endpunkte stehen,
-  die Eingabemaske fehlt noch.
+* `nurReferenz()` in der Oberfläche setzt `wert: null` und
+  `herkunft: "nicht_bestimmbar"`, auch wenn ein Systemvorschlag vorliegt.
+  Solange nichts gerechnet wird, ist das nicht falsch — es unterschlägt aber,
+  dass der Wert bereits feststünde. **Notiert, nicht angefasst.**
+* `Marktwert.herkunft` gibt in beiden Zweigen derselben Bedingung
+  `HERKUNFT_SYSTEMANNAHME` zurück; links war vermutlich `HERKUNFT_REFERENZ`
+  gemeint. Das Abzeichen „Marktreferenz" der Oberfläche kann deshalb nie
+  erscheinen. Ohne Wirkung auf die Rechnung. **Notiert, nicht angefasst.**
+* Daten & Quellen: Rohdaten und technische Fehlerdetails sind dort richtig
+  aufgehoben, sollten aber standardmässig stärker eingeklappt sein.
+  **Beobachtung, keine Änderung abgeleitet.**
 * Gewichtung nach Mikrolage und Zustand: bewusst zurückgestellt, siehe oben.

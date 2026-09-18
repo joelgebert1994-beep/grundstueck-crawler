@@ -7522,6 +7522,31 @@ function mktKennung(o) {
 // Bezeichnung da, wird eine aus dem gebaut, was das Objekt beschreibt --
 // Art, Zimmer, Flaeche, Ort. Erfunden wird dabei nichts: jede Angabe
 // stammt aus dem Objekt selbst.
+/* Die Qualitaetsstufen -- WORTGLEICH mit marktdaten.QUALITAET_BEDEUTUNG.
+
+   Bis hierher standen in der Oberflaeche andere Woerter als in der Engine:
+   das Formular bot "geprueft / angegeben / geschaetzt", die Engine kennt
+   "hoch / mittel / gering". Drei der vier Auswahlen wurden beim Speichern
+   abgewiesen -- darunter die Vorauswahl. Ein Erfassungsformular, dessen
+   Standardeinstellung nicht speicherbar ist.
+
+   Jetzt gibt es EINE Skala. Was hier ausgewaehlt wird, geht unveraendert
+   an die Engine; es gibt nichts mehr zu uebersetzen. Die alten Woerter
+   bleiben beim Import erkannt (marktdaten.QUALITAET_SYNONYME).
+
+   Vorbelegt ist "unbekannt" -- derselbe Vorgabewert wie im Datenmodell.
+   Eine Stufe, die niemand gewaehlt hat, waere eine erfundene Einschaetzung. */
+var MKT_QUALITAET = [
+  ["hoch", "hoch — belegt (Kaufvertrag, Abrechnung, amtliche Quelle)"],
+  ["mittel", "mittel — so angegeben (Inserat, Exposé, Auskunft)"],
+  ["gering", "gering — geschätzt oder abgeleitet"],
+  ["unbekannt", "unbekannt — nicht beurteilbar"]
+];
+var MKT_QUALITAET_KURZ = {
+  hoch: "belegt", mittel: "so angegeben", gering: "geschätzt",
+  unbekannt: "nicht beurteilbar"
+};
+
 var MKT_KENNUNG_ALS_NAME = /^(?:radar|objekt|obj)[\s:_-]*[0-9a-f]{6,}$/i;
 function mktUnbrauchbarerName(b) {
   var t = String(b || "").trim();
@@ -7688,15 +7713,17 @@ function mktZeichne() {
       '<div class="mktzeile">' +
         '<label>Quelle <b>*</b><input id="mkt-quelle" placeholder="z. B. Homegate-Inserat, eigene Transaktion"></label>' +
         '<label>Datenstand <b>*</b><input id="mkt-stand" type="date" value="' + heuteIso() + '"></label>' +
-        '<label>Qualität<select id="mkt-qual">' +
-          [["geprueft", "geprüft"], ["angegeben", "angegeben"], ["geschaetzt", "geschätzt"],
-           ["unbekannt", "unbekannt"]].map(function (q) {
-            return '<option value="' + q[0] + '">' + q[1] + "</option>";
+        '<label>Qualität der Angabe<select id="mkt-qual">' +
+          MKT_QUALITAET.map(function (q) {
+            return '<option value="' + q[0] + '"' +
+              (q[0] === "unbekannt" ? " selected" : "") + ">" + q[1] + "</option>";
           }).join("") + "</select></label>" +
       "</div>" +
       '<div class="note">Quelle und Datenstand sind Pflicht. Ohne Herkunft und Datum ist ' +
       'eine Referenz keine Referenz, sondern eine Behauptung — die Engine weist ein ' +
-      'Objekt ohne diese Angaben ab.</div>' +
+      'Objekt ohne diese Angaben ab.<br>Die <b>Qualität der Angabe</b> wird in der ' +
+      'Begründung des Sicherheitsgrads ausgewiesen; „gering“ und „unbekannt“ zählen ' +
+      'dort gleich.</div>' +
       '<div class="szwahl">' +
         '<button class="szbtn" id="mkt-speichern">Objekt erfassen</button>' +
         '<button class="szbtn" id="mkt-csv-zeigen">Mehrere aus CSV einfügen</button>' +
@@ -8036,6 +8063,14 @@ function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt) {
           (leer(o.alter_monate) ? "" : '<div class="f">' + o.alter_monate + " Mt.</div>") + "</td>" +
           "<td>" + chf(o[feld]) + "</td>" +
           "<td>" + begriff(o.datenqualitaet || "–") +
+          (MKT_QUALITAET_KURZ[o.datenqualitaet]
+            ? ' <span class="f">' + esc(MKT_QUALITAET_KURZ[o.datenqualitaet]) + "</span>"
+            : "") +
+          // Wurde die Stufe beim Import ersetzt, steht der Rohwert daneben.
+          // Eine Einstufung, die niemand nachpruefen kann, ist keine.
+          ((o.merkmale || {}).datenqualitaet_roh
+            ? '<div class="f">Rohwert „' + esc(o.merkmale.datenqualitaet_roh) + "“</div>"
+            : "") +
           '<div class="f">' + esc(o.preisart === "angebot" ? "Angebotspreis"
             : (o.preisart === "abschluss" ? "Abschluss" : "Preisart unbekannt")) +
           "</div></td></tr>";
@@ -8763,7 +8798,9 @@ function secMarkt(erg) {
   return '<section class="sec" id="sec-markt">' + kopf +
     '<div class="note">Drei Dinge, die nicht dasselbe sind: was eine externe Quelle über ' +
     'den Markt sagt, was wir selbst an Vergleichsobjekten haben, und was Sie annehmen. ' +
-    'In die Wirtschaftlichkeit geht am Ende nur das Dritte ein.</div>' +
+    'Gerechnet wird mit dem <b>Systemvorschlag</b> aus den Referenzen — setzen Sie einen ' +
+    'eigenen Wert, hat <b>Ihre Annahme</b> Vorrang. Reichen die Referenzen nicht für einen ' +
+    'Vorschlag, bleibt der Wert offen, bis Sie ihn setzen.</div>' +
     hinweis +
     '<div class="ebenen gestapelt">' +
       '<div class="ebene">' +

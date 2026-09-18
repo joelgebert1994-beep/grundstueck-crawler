@@ -15,6 +15,7 @@ Geprueft wird, was fachlich schiefgehen kann:
     Bandbreite die Aussage.
   * Ausgeschlossene Objekte muessen mit Grund sichtbar bleiben.
   * Die Benutzerannahme hat immer Vorrang -- eine Referenz ersetzt sie nie.
+  * Handerfassung und CSV-Import beurteilen dieselbe Eingabe gleich.
 
 CLI: python -m tests.test_marktdaten
 """
@@ -565,6 +566,126 @@ def test_aussenkante_marktdaten() -> None:
     print()
 
 
+def test_qualitaet_eine_terminologie() -> None:
+    """Eine Skala, ein Normalisierungsweg -- fuer Hand und CSV gleich.
+
+    Live beobachtet: das Erfassungsformular bot "geprueft / angegeben /
+    geschaetzt / unbekannt", die Engine kennt "hoch / mittel / gering /
+    unbekannt". Drei der vier Auswahlen wurden beim Speichern abgewiesen,
+    darunter die VORAUSWAHL -- ein Formular, dessen Standardeinstellung
+    nicht speicherbar war.
+
+    Dasselbe Wort hatte dabei je nach Eingabeweg drei Bedeutungen:
+    ueber CSV wurde es still zu "unbekannt", ueber die Handerfassung war
+    es ein Fehler, und gemeint war "hoch".
+    """
+    print("\n== Qualitaet: eine Terminologie ==")
+
+    # 1. Die kanonische Skala ist vollstaendig erklaert -- die Saetze
+    #    stehen hier und nicht in der Oberflaeche, sonst driften sie.
+    pruefe(set(md.QUALITAET_BEDEUTUNG) == md._QUALITAETEN,
+           "jede Qualitaetsstufe hat eine Bedeutung hinterlegt")
+
+    # 2. Die alten Woerter werden erkannt -- ausdruecklich, nicht geraten.
+    for wort, erwartet in (("geprueft", md.QUALITAET_HOCH),
+                           ("geprüft", md.QUALITAET_HOCH),
+                           ("angegeben", md.QUALITAET_MITTEL),
+                           ("geschaetzt", md.QUALITAET_GERING),
+                           ("geschätzt", md.QUALITAET_GERING),
+                           ("unbekannt", md.QUALITAET_UNBEKANNT)):
+        stufe, roh = md.normalisiere_qualitaet(wort)
+        pruefe(stufe == erwartet and roh is None,
+               f"'{wort}' wird zu '{erwartet}' (gefunden: {stufe})")
+
+    # 3. Die kanonischen Werte bleiben, wie sie sind -- auch in anderer
+    #    Schreibweise.
+    for wort in ("hoch", "MITTEL", " gering "):
+        stufe, roh = md.normalisiere_qualitaet(wort)
+        pruefe(stufe == wort.strip().lower() and roh is None,
+               f"'{wort}' bleibt '{stufe}'")
+
+    # 4. Was NICHT in der Tabelle steht, wird nicht geraten: "unbekannt"
+    #    ist die ehrliche Antwort, und der Rohtext bleibt erhalten.
+    stufe, roh = md.normalisiere_qualitaet("Sternchen")
+    pruefe(stufe == md.QUALITAET_UNBEKANNT and roh == "Sternchen",
+           "ein unbekanntes Wort wird 'unbekannt' UND behaelt seinen Rohwert")
+    stufe, roh = md.normalisiere_qualitaet(None)
+    pruefe(stufe == md.QUALITAET_UNBEKANNT and roh is None,
+           "keine Angabe ist 'unbekannt' ohne Rohwert -- es gibt keinen")
+
+    # 5. Der Kern: Handerfassung und CSV verhalten sich GLEICH. Das war
+    #    der eigentliche Fehler -- nicht die Woerter, sondern die zwei
+    #    verschiedenen Antworten auf dieselbe Eingabe.
+    basis = {"bezeichnung": "X", "quelle": "T", "datenstand": "2026-06-01",
+             "objektart": "ETW", "preis_chf_pro_m2": 8900}
+    for wort in ("geprueft", "angegeben", "geschaetzt", "hoch", "unbekannt", "Sternchen"):
+        per_hand, fehler = md.aus_dicts([dict(basis, datenqualitaet=wort)])
+        csv = ("bezeichnung;objektart;preis_chf_pro_m2;datenqualitaet\n"
+               f"X;ETW;8900;{wort}")
+        per_csv, _ = md.lese_csv(csv, quelle="T", datenstand="2026-06-01")
+        pruefe(len(per_hand) == 1 and len(per_csv) == 1,
+               f"'{wort}' wird auf BEIDEN Wegen angenommen"
+               + (f" (Hand: {fehler[0]['grund'][:40]})" if fehler else ""))
+        if per_hand and per_csv:
+            pruefe(per_hand[0].datenqualitaet == per_csv[0].datenqualitaet,
+                   f"'{wort}' ergibt beidseitig '{per_hand[0].datenqualitaet}'")
+            pruefe(per_hand[0].merkmale.get("datenqualitaet_roh")
+                   == per_csv[0].merkmale.get("datenqualitaet_roh"),
+                   f"'{wort}': der Rohwert wird beidseitig gleich behandelt")
+
+    # 6. Die Vorauswahl des Formulars muss speicherbar sein. Genau das
+    #    war sie nicht.
+    objekte, fehler = md.aus_dicts([dict(basis, datenqualitaet="unbekannt")])
+    pruefe(len(objekte) == 1 and not fehler,
+           "die Vorauswahl 'unbekannt' laesst sich speichern")
+
+    # 7. Eine ungueltige Stufe direkt im Datenmodell bleibt ein Fehler --
+    #    die Normalisierung gehoert an den Rand, nicht in den Kern.
+    try:
+        md.Vergleichsobjekt(bezeichnung="X", quelle="T", datenstand="2026-06-01",
+                            preis_chf_pro_m2=8900, datenqualitaet="geprueft")
+        pruefe(False, "Vergleichsobjekt weist eine nicht kanonische Stufe ab")
+    except md.MarktdatenError:
+        pruefe(True, "Vergleichsobjekt weist eine nicht kanonische Stufe ab")
+
+    # 8. Was die Stufe TATSAECHLICH bewirkt -- gemessen, nicht vermutet.
+    #
+    #    Sie erscheint in der BEGRUENDUNG des Sicherheitsgrads, wo
+    #    "gering" und "unbekannt" zusammengezaehlt werden. Die Stufe des
+    #    Sicherheitsgrads selbst aendert sie heute NICHT (_sicherheit
+    #    haengt an Anzahl, Streuung, Aktualitaet und Preisart). Der Test
+    #    haelt diesen Stand fest, damit eine spaetere Aenderung daran
+    #    eine bewusste ist und keine stille.
+    def lage(stufe: str):
+        eintraege = [
+            {"bezeichnung": f"O{i}", "quelle": "T", "datenstand": "2026-06-01",
+             "objektart": "ETW", "preis_chf_pro_m2": p, "datenqualitaet": stufe,
+             "preisart": md.PREISART_ABSCHLUSS}
+            # Genug Referenzen fuer "hoch" und eng beieinander -- sonst
+            # entscheidet nicht die Qualitaetsstufe, sondern die Anzahl
+            # oder die Streuung, und der Test misst etwas anderes.
+            for i, p in enumerate(8500 + 20 * n for n in range(md.MIN_OBJEKTE_HOCH))
+        ]
+        objekte, _ = md.aus_dicts(eintraege)
+        return md.werte_referenzen_aus(objekte, md.GROESSE_VERKAUF)
+
+    pruefe(lage(md.QUALITAET_HOCH).sicherheit == md.SICHERHEIT_HOCH,
+           f"{md.MIN_OBJEKTE_HOCH} belegte Referenzen ergeben Sicherheit hoch "
+           f"(gefunden: {lage(md.QUALITAET_HOCH).sicherheit})")
+    for stufe in (md.QUALITAET_UNBEKANNT, md.QUALITAET_GERING):
+        ref = lage(stufe)
+        text = " ".join(ref.begruendung)
+        pruefe("geringe oder unbekannte Datenqualitaet" in text,
+               f"'{stufe}' wird in der Begruendung des Sicherheitsgrads ausgewiesen")
+        pruefe(f"{md.MIN_OBJEKTE_HOCH} von {md.MIN_OBJEKTE_HOCH}" in text,
+               f"'{stufe}' zaehlt dabei wie 'gering' -- beide in derselben Zahl")
+        pruefe(ref.sicherheit == md.SICHERHEIT_HOCH,
+               f"'{stufe}' aendert die STUFE des Sicherheitsgrads heute nicht "
+               f"(gefunden: {ref.sicherheit}) -- festgehaltener Stand")
+    pruefe("Datenqualitaet" not in " ".join(lage(md.QUALITAET_HOCH).begruendung),
+           "bei belegten Angaben steht dazu nichts in der Begruendung")
+
+
 def main() -> None:
     test_vergleichsobjekt()
     test_import()
@@ -577,6 +698,7 @@ def main() -> None:
     test_plz_und_preisart()
     test_marktlage()
     test_aussenkante_marktdaten()
+    test_qualitaet_eine_terminologie()
 
     print("=" * 60)
     if FEHLER:

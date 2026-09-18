@@ -73,11 +73,78 @@ _GROESSEN: dict[str, tuple[str, str, str]] = {
     GROESSE_BODEN: ("bodenpreis_chf_pro_m2", "CHF/m2", "Bodenpreis"),
 }
 
+# Wie belastbar ist die ERFASSTE ANGABE? Nicht: wie gut ist das Objekt.
+# Drei Stufen plus "weiss nicht" -- die Stufe geht in den Sicherheitsgrad
+# ein (siehe _sicherheit), wo "gering" und "unbekannt" gleich behandelt
+# werden: beides heisst, dass man sich auf die Zahl nicht stuetzen kann.
 QUALITAET_HOCH = "hoch"
 QUALITAET_MITTEL = "mittel"
 QUALITAET_GERING = "gering"
 QUALITAET_UNBEKANNT = "unbekannt"
 _QUALITAETEN = {QUALITAET_HOCH, QUALITAET_MITTEL, QUALITAET_GERING, QUALITAET_UNBEKANNT}
+
+# Was eine Stufe bedeutet -- dieselben Saetze stehen im Erfassungsformular.
+# Sie gehoeren hierher, weil die Skala hier definiert ist: zwei Stellen mit
+# eigenen Erklaerungen driften auseinander.
+QUALITAET_BEDEUTUNG = {
+    QUALITAET_HOCH: "belegt -- aus Kaufvertrag, Abrechnung oder amtlicher Quelle",
+    QUALITAET_MITTEL: "so angegeben -- aus Inserat, Expose oder Auskunft",
+    QUALITAET_GERING: "geschaetzt oder abgeleitet",
+    QUALITAET_UNBEKANNT: "nicht beurteilbar",
+}
+
+# Fruehere Bezeichnungen und gaengige Schreibweisen aus Fremdexporten.
+#
+# Diese Zuordnung ist AUSDRUECKLICH und dokumentiert (docs/blockA_marktdaten.md),
+# weil sie zwischen zwei verschiedenen Achsen uebersetzt: die alte Auswahl im
+# Formular beschrieb die HERKUNFT einer Angabe (geprueft / angegeben /
+# geschaetzt), diese Skala beschreibt ihre BELASTBARKEIT. Das ist nicht
+# dasselbe -- aber in dieser Richtung eindeutig: was belegt ist, ist
+# belastbar; was geschaetzt ist, ist es nicht.
+#
+# Was NICHT in dieser Tabelle steht, wird nicht geraten. Es wird zu
+# "unbekannt" und der Rohwert bleibt unter merkmale erhalten, damit die
+# Einstufung nachpruefbar ist und nichts still verschwindet.
+QUALITAET_SYNONYME = {
+    "geprueft": QUALITAET_HOCH,
+    "belegt": QUALITAET_HOCH,
+    "beurkundet": QUALITAET_HOCH,
+    "amtlich": QUALITAET_HOCH,
+    "high": QUALITAET_HOCH,
+    "angegeben": QUALITAET_MITTEL,
+    "gemeldet": QUALITAET_MITTEL,
+    "inserat": QUALITAET_MITTEL,
+    "medium": QUALITAET_MITTEL,
+    "geschaetzt": QUALITAET_GERING,
+    "abgeleitet": QUALITAET_GERING,
+    "berechnet": QUALITAET_GERING,
+    "low": QUALITAET_GERING,
+    "unknown": QUALITAET_UNBEKANNT,
+    "keine": QUALITAET_UNBEKANNT,
+}
+
+
+def normalisiere_qualitaet(roh: Any) -> tuple[str, Optional[str]]:
+    """Eine Stufe aus einer beliebigen Schreibweise.
+
+    Liefert `(stufe, nicht_erkannt)`. Ist der zweite Wert gesetzt, enthaelt
+    er den Rohtext -- die Einstufung lautet dann "unbekannt", und der
+    Aufrufer haelt den Rohtext fest, statt ihn wegzuwerfen.
+
+    Handerfassung (aus_dicts) und Import (lese_csv) rufen beide DIESE
+    Funktion. Vorher normalisierte nur der CSV-Weg, und zwar still auf
+    "unbekannt"; die Handerfassung wies dieselbe Eingabe rundweg ab. Damit
+    hatte dasselbe Wort je nach Eingabeweg drei verschiedene Bedeutungen:
+    hohe Qualitaet, keine Qualitaet, oder ein Fehler.
+    """
+    text = _normalisiere_spalte(str(roh or ""))
+    if not text:
+        return QUALITAET_UNBEKANNT, None
+    if text in _QUALITAETEN:
+        return text, None
+    if text in QUALITAET_SYNONYME:
+        return QUALITAET_SYNONYME[text], None
+    return QUALITAET_UNBEKANNT, str(roh)
 
 # Was der Preis BEDEUTET. Ein Inseratspreis ist kein Abschluss -- in der
 # Schweiz liegen Angebotspreise systematisch ueber den beurkundeten Preisen,
@@ -979,10 +1046,13 @@ def lese_csv(
         daten["datenstand"] = daten.get("datenstand") or datenstand
         daten["herkunftsart"] = herkunftsart
         daten["merkmale"] = merkmale
-        roh_qualitaet = _normalisiere_spalte(str(daten.get("datenqualitaet") or ""))
-        daten["datenqualitaet"] = (
-            roh_qualitaet if roh_qualitaet in _QUALITAETEN else QUALITAET_UNBEKANNT
-        )
+        daten["datenqualitaet"], roh_qualitaet = normalisiere_qualitaet(
+            daten.get("datenqualitaet"))
+        if roh_qualitaet is not None:
+            # Nicht erkannt heisst "unbekannt" -- aber der Rohtext bleibt
+            # stehen. Ihn wegzuwerfen hiesse, eine Einstufung zu behaupten,
+            # die niemand nachpruefen kann.
+            merkmale["datenqualitaet_roh"] = roh_qualitaet
         if not daten.get("bezeichnung"):
             daten["bezeichnung"] = daten.get("adresse") or daten.get("objekt_id") or f"Zeile {nr}"
         try:
@@ -1002,6 +1072,16 @@ def aus_dicts(eintraege: Iterable[dict[str, Any]]) -> tuple[list[Vergleichsobjek
         unbekannt = {k: v for k, v in (eintrag or {}).items() if k not in erlaubt}
         if unbekannt:
             daten["merkmale"] = {**(daten.get("merkmale") or {}), **unbekannt}
+        # Derselbe Weg wie beim CSV-Import. Vorher gab es hier gar keine
+        # Normalisierung: dieselbe Eingabe wurde ueber den einen Weg
+        # stillschweigend zu "unbekannt" und ueber den anderen rundweg
+        # abgewiesen -- inklusive der Vorauswahl des eigenen Formulars.
+        if "datenqualitaet" in daten:
+            daten["datenqualitaet"], roh_qualitaet = normalisiere_qualitaet(
+                daten["datenqualitaet"])
+            if roh_qualitaet is not None:
+                daten["merkmale"] = {**(daten.get("merkmale") or {}),
+                                     "datenqualitaet_roh": roh_qualitaet}
         try:
             objekte.append(Vergleichsobjekt(**daten))
         except (MarktdatenError, TypeError) as exc:

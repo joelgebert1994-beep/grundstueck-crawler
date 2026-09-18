@@ -684,6 +684,64 @@ def test_markt_ohne_standortdaten(s: str) -> None:
                f"'{feld}' steht NICHT im Marktreiter (Übersicht bzw. Daten & Quellen)")
 
 
+def test_marktsatz_stimmt_mit_der_engine(s: str) -> None:
+    """Der einleitende Satz im Markt muss die Rechenregel treffen.
+
+    Er sagte: "In die Wirtschaftlichkeit geht am Ende nur das Dritte ein."
+    Gemessen an wirtschaftlichkeit.Marktwert.wert ist das falsch -- ohne
+    eigene Annahme rechnet die Engine mit dem Systemvorschlag:
+
+        return self.benutzerannahme if self.benutzerannahme is not None                else self.systemvorschlag
+
+    Ein Satz ueber die Rechnung, den die Rechnung nicht deckt, ist
+    schlimmer als kein Satz.
+    """
+    block = s[s.index("function secMarkt("):]
+    block = block[: block.index(chr(10) + "function ", 10)]
+    pruefe("nur das Dritte ein" not in block,
+           "der falsche Satz ist weg")
+    pruefe("Systemvorschlag" in block and "Vorrang" in block,
+           "der Satz nennt Systemvorschlag UND den Vorrang der eigenen Annahme")
+
+    # Und die Reihenfolge stimmt: erst der Vorschlag, dann das Ueberschreiben.
+    pruefe(block.index("Systemvorschlag") < block.index("Vorrang"),
+           "erst der Systemvorschlag, dann sein Ueberschreiben")
+
+
+def test_qualitaetsauswahl_passt_zur_engine(s: str) -> None:
+    """Die Auswahl im Formular muss speicherbar sein.
+
+    Sie war es nicht: das Formular bot "geprueft / angegeben /
+    geschaetzt / unbekannt", die Engine kennt "hoch / mittel / gering /
+    unbekannt". Drei von vier Auswahlen wurden abgewiesen, darunter die
+    Vorauswahl.
+    """
+    pruefe("var MKT_QUALITAET = [" in s, "die Skala steht an einer Stelle")
+    block = s[s.index("var MKT_QUALITAET = ["):]
+    block = block[: block.index("];") + 2]
+    werte = re.findall(r'\["([a-z]+)",', block)
+    erwartet = ["hoch", "mittel", "gering", "unbekannt"]
+    pruefe(werte == erwartet,
+           f"die Auswahl fuehrt genau die kanonischen Stufen {erwartet} "
+           f"(gefunden: {werte})")
+
+    # Die alten Woerter duerfen nicht mehr als Auswahlwert auftauchen --
+    # sie leben nur noch in der Synonymtabelle der Engine.
+    formular = s[s.index("function mktZeichne("):]
+    formular = formular[: formular.index(chr(10) + "function ", 10)]
+    for wort in ('"geprueft"', '"angegeben"', '"geschaetzt"'):
+        pruefe(wort not in formular,
+               f"{wort} steht nicht mehr im Formular")
+
+    pruefe('"unbekannt" ? " selected"' in formular,
+           "vorbelegt ist 'unbekannt' -- derselbe Vorgabewert wie im Datenmodell; "
+           "eine Stufe, die niemand gewaehlt hat, waere eine erfundene Einschaetzung")
+
+    # Wird eine Stufe beim Import ersetzt, muss der Rohwert sichtbar sein.
+    pruefe("datenqualitaet_roh" in s,
+           "ein ersetzter Rohwert wird angezeigt, nicht verschwiegen")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -697,7 +755,9 @@ def main() -> int:
                test_wirtschaft_kernkennzahlen,
                test_daten_und_quellen, test_umschrift_diphthong,
                test_teilfehler_sperrt_keinen_reiter, test_rechenstand_eine_stelle,
-               test_marktauswertung_zwei_wege, test_markt_ohne_standortdaten):
+               test_marktauswertung_zwei_wege, test_markt_ohne_standortdaten,
+               test_marktsatz_stimmt_mit_der_engine,
+               test_qualitaetsauswahl_passt_zur_engine):
         fn(s)
 
     if _fehler:
