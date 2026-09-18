@@ -98,11 +98,14 @@ img { max-width: 100%; }
   flex: 1 1 auto; width: auto; border-left: none; box-shadow: none;
   background: var(--paper);
 }
-/* Eine Zeile Fliesstext ueber 2000 px ist unlesbar, ein Kennzahlenraster
-   ueber 2000 px wirkt leer. Deshalb eine Bahn, zentriert. */
-.app.nurdossier .dossier-inner { padding: 0 clamp(14px, 3vw, 32px) 80px; }
+/* Die Bahn traegt Karte, Kennzahlenraster und Tabellen -- die werden mit
+   Breite besser, nicht schlechter. Fliesstext wird es nicht: eine Zeile
+   ueber 90 Zeichen liest niemand gern. Deshalb ist die Bahn breit und der
+   Fliesstext DARIN begrenzt (siehe .atext unten), statt beides auf die
+   Lesebreite zu zwingen. */
+.app.nurdossier .dossier-inner { padding: 0 clamp(14px, 2.5vw, 40px) 80px; }
 .app.nurdossier .dossier-inner > * {
-  max-width: 1280px; margin-left: auto; margin-right: auto;
+  max-width: 1680px; margin-left: auto; margin-right: auto;
 }
 .app.nurdossier section.sec {
   background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px;
@@ -110,21 +113,23 @@ img { max-width: 100%; }
   box-shadow: var(--shadow-s);
 }
 .app.nurdossier .dosshead {
-  background: transparent; border-bottom: none; padding: 22px 2px 4px;
+  background: transparent; border-bottom: none; padding: 13px 2px 2px;
 }
 .app.nurdossier .navbar {
-  background: var(--paper); padding: 6px 0 12px; border-bottom: none; gap: 5px;
+  background: var(--paper); padding: 4px 0 10px; border-bottom: none; gap: 5px;
 }
 
 /* --- Kopfleiste: die Suche bleibt erreichbar, ohne die Karte ----------- */
 .kopfleiste {
   flex: none; display: flex; align-items: center; gap: 14px;
-  padding: 10px clamp(14px, 3vw, 32px); border-bottom: 1px solid var(--line);
+  padding: 7px clamp(14px, 2.5vw, 40px); border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
 .kopfleiste[hidden] { display: none; }
 .kopfleiste > .searchcard {
-  position: relative; inset: auto; max-width: 1280px; width: 100%;
+  /* Dieselbe Bahn wie der Inhalt darunter, sonst steht die Suche nicht
+     ueber dem Dossier, sondern irgendwo daneben. */
+  position: relative; inset: auto; max-width: 1680px; width: 100%;
   margin: 0 auto; padding: 0; border: none; box-shadow: none; background: none;
   display: flex; align-items: center; gap: 14px;
 }
@@ -227,8 +232,8 @@ img { max-width: 100%; }
   padding: 5px 11px; cursor: pointer;
 }
 .reiterlink:hover { background: var(--accent-soft); border-color: var(--accent); }
-.dossmeta { font-size: 13.5px; color: var(--ink-2); margin-top: 3px; }
-.dossbadge { margin-top: 10px; }
+.dossmeta { font-size: 13.5px; color: var(--ink-2); margin-top: 2px; }
+.dossbadge { flex: none; margin-top: 4px; }
 
 /* ---------- Das Urteil des Potenzialreiters ---------- */
 .urteil {
@@ -291,9 +296,13 @@ img { max-width: 100%; }
 .empty ol { margin: 14px 0 0; padding-left: 18px; }
 .empty li { margin-bottom: 7px; }
 
-.dosshead { padding: 18px 20px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+/* Titel links, Zustand rechts DANEBEN statt darunter -- das Abzeichen auf
+   eigener Zeile kostete eine ganze Zeilenhoehe, ohne etwas zu sagen. */
+.dosshead { padding: 14px 20px 10px; border-bottom: 1px solid var(--line); background: var(--panel-2);
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.dosstitel { min-width: 0; }
 .dosshead .eyebrow { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
-.dosshead h2 { font-size: 19px; margin: 4px 0 10px; line-height: 1.25; }
+.dosshead h2 { font-size: 20px; margin: 2px 0 3px; line-height: 1.2; }
 .headgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
 .headgrid > div { background: var(--panel); padding: 8px 10px; }
 .headgrid dt { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
@@ -373,7 +382,9 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 /* Die Karte wohnt weiterhin an genau EINER Stelle im Dokument und zieht
    zwischen dieser Buehne und der im Kartenreiter um -- zwei Leaflet-
    Instanzen waeren zwei Wahrheiten ueber dieselbe Parzelle. */
-.uebuehne { position: relative; height: clamp(300px, 40vh, 440px); background: var(--panel-2);
+/* Auf der breiten Bahn wird die Karte sonst ein Briefschlitz: ~950 px
+   breit und 440 hoch. Deshalb darf sie hoeher werden. */
+.uebuehne { position: relative; height: clamp(300px, 46vh, 540px); background: var(--panel-2);
   border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
 .uebuehne #map { position: absolute; inset: 0; }
 .uelegende { position: absolute; left: 10px; bottom: 10px; z-index: 500; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -500,7 +511,7 @@ details.more > div { padding-top: 10px; }
 
 .zitat { border-left: 3px solid var(--line); padding: 4px 0 4px 10px; margin: 7px 0; font-size: 12.5px; color: var(--ink-2); font-style: italic; }
 .artikel { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-.note { background: var(--panel-2); border: 1px solid var(--line-2); border-left: 3px solid var(--ink-3); border-radius: 6px; padding: 9px 11px; font-size: 12.5px; color: var(--ink-2); margin: 8px 0; }
+.note { background: var(--panel-2); border: 1px solid var(--line-2); border-left: 3px solid var(--ink-3); border-radius: 6px; padding: 9px 11px; font-size: 12.5px; color: var(--ink-2); margin: 8px 0; max-width: 92ch; }
 .note.warn { border-left-color: var(--warn); background: var(--warn-soft); color: var(--warn); border-color: var(--line-2); }
 .note.stop { border-left-color: var(--stop); background: var(--stop-soft); color: var(--stop); border-color: var(--line-2); }
 .note.ok { border-left-color: var(--ok); background: var(--ok-soft); color: var(--ok); border-color: var(--line-2); }
@@ -2966,9 +2977,15 @@ function headHtml(erg, m1, zz) {
   if (!leer(pz.flaeche_m2)) meta.push(fmt(pz.flaeche_m2, 1) + " m\u00b2");
   if (!leer(pz.parzellennummer)) meta.push("Parzelle " + pz.parzellennummer);
   if (zone) meta.push(zone);
-  return '<div class="dosshead"><div class="eyebrow">Grundst\u00fccksdossier</div>' +
-    "<h2>" + esc(erg.adresse) + "</h2>" +
-    '<div class="dossmeta">' + esc(meta.join("  \u00b7  ")) + "</div>" +
+  // Titel und Zustand nebeneinander, nicht untereinander: das Abzeichen
+  // brauchte eine eigene Zeile und sagte darin nichts, was nicht in eine
+  // freie Ecke gepasst haette.
+  return '<div class="dosshead">' +
+    '<div class="dosstitel">' +
+      '<div class="eyebrow">Grundst\u00fccksdossier</div>' +
+      "<h2>" + esc(erg.adresse) + "</h2>" +
+      '<div class="dossmeta">' + esc(meta.join("  \u00b7  ")) + "</div>" +
+    "</div>" +
     '<div class="dossbadge">' +
       statusBadge(zz, !(erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined)) +
     "</div></div>";

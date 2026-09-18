@@ -109,8 +109,19 @@ def test_inhaltsbreite(s: str) -> None:
     pruefe(len(treffer) == 1, f"Genau eine Regel setzt die Bahnbreite (gefunden: {len(treffer)})")
     if treffer:
         breite = int(treffer[0])
-        pruefe(1100 <= breite <= 1400,
-               f"Bahnbreite {breite}px liegt im Bereich 1100-1400px")
+        # Obergrenze 1800: die Bahn traegt Karte, Kennzahlen und Tabellen,
+        # die mit Breite besser werden. Der Fliesstext DARIN bleibt auf
+        # Lesebreite begrenzt (.atext/.ahinweis/.note in ch), sonst haette
+        # eine breite Bahn unlesbare Absaetze zur Folge.
+        pruefe(1100 <= breite <= 1800,
+               f"Bahnbreite {breite}px liegt im Bereich 1100-1800px")
+    # Ohne Kommentare: ein Kommentar, der eine Klasse ERWAEHNT, ist keine
+    # Regel -- sonst prueft der Test die Prosa statt das Stylesheet.
+    ohne = re.sub(r"/\*.*?\*/", "", stil, flags=re.S)
+    for klasse in (".atext", ".ahinweis", ".note"):
+        regel = re.search(r"^" + re.escape(klasse) + r"\s*\{[^}]*\}", ohne, flags=re.M)
+        pruefe(bool(regel) and "ch" in regel.group(0),
+               f"{klasse} begrenzt die Zeilenlaenge in Zeichen, nicht in Pixel")
 
 
 def test_keine_abschnittsnummern(s: str) -> None:
