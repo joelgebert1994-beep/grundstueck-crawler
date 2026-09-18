@@ -8382,7 +8382,7 @@ function hbuBlock() {
       (leer(e.max_landwert_chf_pro_m2) ? ""
         : " · " + chf(e.max_landwert_chf_pro_m2) + " CHF/m² Grundstück") +
       "</span></div>" +
-      '<p class="hbutext">' + esc(h.begruendung || "") + "</p></div>";
+      '<p class="hbutext">' + satz(h.begruendung || "") + "</p></div>";
   } else {
     karte = '<div class="hbu offen"><div class="hbukopf"><span class="badge warn">' +
       (h.status === "gleichwertig" ? "Praktisch gleichwertig" : "Nicht bestimmbar") +
@@ -8391,13 +8391,13 @@ function hbuBlock() {
         ? '<span class="hbuwert">keine Rangfolge — der Unterschied ist nicht unterscheidbar</span>'
         : '<span class="hbuwert">keine beste Nutzung benennbar</span>') +
       "</div>" +
-      '<p class="hbutext">' + esc(h.grund || "") + "</p></div>";
+      '<p class="hbutext">' + satz(h.grund || "") + "</p></div>";
   }
 
   var vorbehalte = alsListe(h.vorbehalte);
   var vorbehaltBlock = vorbehalte.length
     ? '<div class="note warn"><b>Vorbehalte</b><ul class="plain">' +
-      vorbehalte.map(function (v) { return "<li>" + esc(v) + "</li>"; }).join("") +
+      vorbehalte.map(function (v) { return "<li>" + satz(v) + "</li>"; }).join("") +
       "</ul></div>"
     : "";
 
@@ -8419,7 +8419,7 @@ function hbuBlock() {
           (leer(g.max_landwert_chf) ? ""
             : '<span class="hbuwert">CHF ' + chf(g.max_landwert_chf, true) + "</span>") +
           "</div>" + hbuStufenLeiste(g, g.id === sieger) +
-          (g.grund ? '<div class="hbugrund">' + esc(g.grund) + "</div>" : "") +
+          (g.grund ? '<div class="hbugrund">' + satz(g.grund) + "</div>" : "") +
         "</li>";
       }).join("") + "</ul>"
     : "";
@@ -8436,12 +8436,12 @@ function hbuBlock() {
 
   var hintergrund =
     '<details class="more"><summary>Wie diese Empfehlung zustande kommt</summary><div>' +
-      '<div class="note">' + esc((h.kriterium || {}).begruendung || "") + "</div>" +
+      '<div class="note">' + satz((h.kriterium || {}).begruendung || "") + "</div>" +
       '<div class="note">' + esc(teile.join(" · ")) +
-        (b.hinweis ? " — " + esc(b.hinweis) : "") + "</div>" +
+        (b.hinweis ? " — " + satz(b.hinweis) : "") + "</div>" +
       (alsListe(h.stufen).length
         ? '<ul class="plain">' + alsListe(h.stufen).map(function (st, i) {
-            return "<li>" + (i + 1) + ". " + esc(st.bezeichnung) + "</li>";
+            return "<li>" + (i + 1) + ". " + begriff(st.bezeichnung) + "</li>";
           }).join("") + "</ul>"
         : "") +
     "</div></details>";
