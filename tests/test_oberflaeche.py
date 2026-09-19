@@ -561,6 +561,13 @@ def test_umschrift_diphthong(s: str) -> None:
            "ue nach a oder e bleibt stehen (streuen, bauen, genauer)")
     pruefe("KEIN_UMLAUT" in block,
            "die Wortliste bleibt -- sie faengt Quelle, manuell, aktuell")
+    # Live im Dossier von Rorschach: "punktuell bis 25.0 m Gebaeudehoehe"
+    # stand als "punktuell bis ..." mit Umlaut da. Eine allgemeine Regel
+    # auf "uell" verbietet sich: sie wuerde auch "erfuellt", "Fuellung"
+    # und "Huelle" treffen, die den Umlaut brauchen.
+    pruefe("punktuell" in s[: s.index("function lesbar(")],
+           "punktuell steht in der Wortliste -- sonst wird es zu punktuell "
+           "mit Umlaut")
     # Alle drei Grossschreibungen brauchen dieselbe Ausnahme, sonst
     # entsteht sie nur fuer Kleinbuchstaben.
     pruefe(block.count("(?<![aeAE])") == 3,
@@ -912,6 +919,110 @@ def test_entwurf_reiter(s: str) -> None:
            "die Umgebung wird je Auftrag neu geladen -- sonst zeichnet die "
            "zweite Analyse das Gelaende und die Nachbargebaeude der ersten")
 
+    # 8. Zwei weitere, die erst der Livetest von Schritt A zeigte.
+    #    Ein Fehlschlag darf sich nicht festsetzen: wer den Reiter oeffnet,
+    #    waehrend die Analyse noch laeuft, bekommt eine Absage -- und haette
+    #    sie sonst bis zum Seitenneuladen behalten.
+    laden = s[s.index("function ladeUmgebung("):]
+    laden = laden[: laden.index(chr(10) + "  // =====")]
+    pruefe(laden.count("umgebungFuerJob = fuer;") == 1
+           and "if (d && d.ok) { umgebung = d.umgebung; umgebungFuerJob = fuer; }" in laden,
+           "nur eine erfolgreiche Antwort wird dem Auftrag zugeschrieben")
+    #    Und "hidden" muss hidden bedeuten: display:flex auf der Klasse
+    #    schlaegt sonst das Attribut, die Sonnenleiste stand offen da.
+    pruefe(".s3leiste[hidden] { display: none; }" in s,
+           "die Sonnenleiste bleibt verborgen, solange der Schatten aus ist")
+
+
+def test_messwerkzeuge_dynamisch(s: str) -> None:
+    """Die Messung reagiert waehrend des Zeichnens und bleibt danach veraenderbar.
+
+    Vorher war sie ein Formular in drei Schritten: Modus waehlen, zwei
+    Punkte klicken, Ergebnis in einer Liste lesen. Wer sich vertan hatte,
+    konnte nur alles loeschen. Vorbild ist map.geo.admin.ch: die Zahl
+    laeuft mit der Maus mit, sie steht an der Geometrie, und Stuetzpunkte
+    lassen sich nachtraeglich greifen.
+    """
+    # 1. Es gibt genau EINE Rechnung. Vorschau, Abschluss und
+    #    Nachbearbeitung muessen dieselbe benutzen -- sonst zeigt die
+    #    Vorschau etwas anderes als das Ergebnis.
+    pruefe("function messWerte(art, punkte)" in s,
+           "eine Funktion rechnet Punkte in Zahlen um")
+    for aufrufer, stelle in (
+            ("messAbschliessen", "var w = messWerte(messModus, punkte);"),
+            ("messNeuRechnen", "var w = messWerte(m.art, m.punkte);"),
+            ("zeichneMessungen", "messWerte(messModus, lauf).schilder")):
+        pruefe(stelle in s, f"{aufrufer} rechnet mit messWerte(), nicht selbst")
+    # Die Flaechenformel darf dabei nur einmal im Quelltext stehen.
+    pruefe(s.count("Gauss-Trapezformel") == 1,
+           "die Flaechenformel steht an genau einer Stelle")
+    pruefe("waagrecht projiziert" in s,
+           "und misst weiterhin die waagrechte Projektion, nicht die Hangflaeche")
+
+    # 2. Waehrend des Zeichnens laeuft das Mass mit.
+    pruefe("var messVorschau" in s and "function laufendePunkte()" in s,
+           "der Punkt unter dem Zeiger gehoert zur laufenden Messung")
+    pruefe("if (messVorschau && !messZieht) p.push(messVorschau);" in s,
+           "die Vorschau rechnet mit dem Zeigerpunkt als waere er gesetzt")
+    pruefe("Das Gummiband zum Zeiger gestrichelt" in s,
+           "die noch nicht gesetzte Strecke ist als solche erkennbar")
+
+    # 3. Distanz ist ein Streckenzug, kein Zweipunktmass mehr.
+    pruefe('messModus === "distanz" && messPunkte.length === 2' not in s,
+           "die Distanz endet nicht mehr zwangsweise nach zwei Punkten")
+    pruefe('addEventListener("dblclick"' in s,
+           "der Doppelklick beendet die Messung")
+    # Der Doppelklick setzt vorher zwangslaeufig einen zweiten Punkt auf
+    # dieselbe Stelle. Ohne diese Bereinigung haette jeder Streckenzug
+    # ein Segment der Laenge null.
+    pruefe("messPunkte[messPunkte.length - 2]) < 0.05" in s,
+           "der doppelt gesetzte Punkt faellt weg, bevor gerechnet wird")
+    pruefe('"Σ " + kurz' in s, "bei mehreren Segmenten steht die Summe an der Geometrie")
+
+    # 4. Stuetzpunkte sind anfassbar.
+    pruefe("var messGriffe" in s and "function griffTreffer(" in s,
+           "die Stuetzpunkte sind einzeln treffbar")
+    pruefe("function griffZiehen(" in s and "m.punkte[messZieht.index] = p;" in s,
+           "ein Stuetzpunkt laesst sich verschieben")
+    pruefe("g.mess.punkte.splice(g.index, 0," in s,
+           "auf den Kanten laesst sich ein Punkt einfuegen")
+    pruefe("function griffLoeschen(" in s and "m.punkte.splice(g.index, 1);" in s,
+           "ein einzelner Stuetzpunkt laesst sich loeschen")
+    pruefe("ereignis.altKey" in s, "Alt + Klick ist der Weg dorthin")
+    pruefe("window.messLoeschen" in s and 'data-weg="' in s,
+           "eine ganze Messung laesst sich einzeln loeschen")
+
+    # 5. Der Griff hat Vorrang vor der Kamera -- aber nicht waehrend des
+    #    Zeichnens, sonst greift man beim Setzen in eine fertige Messung.
+    pruefe("!messPunkte.length && griffAnfassen(e)" in s,
+           "ein Griff geht vor dem Drehen, solange keine Messung laeuft")
+    pruefe("if (messZieht || !letzteMaus) return;" in s,
+           "waehrend des Ziehens dreht sich die Kamera nicht mit")
+
+    # 6. Ein Strahl je Bild, nicht je Mausbewegung. Die Szene enthaelt
+    #    Terrain und bis zu neunzig Nachbargebaeude.
+    pruefe("function messTakt()" in s and "      messTakt();" in s,
+           "der Zeiger wird einmal je Bild ausgewertet")
+    pruefe("messZeiger = { clientX: e.clientX, clientY: e.clientY };" in s,
+           "die Mausbewegung merkt sich nur die Position")
+    # Die Messzeichnung entsteht jetzt bis zu sechzigmal je Sekunde neu.
+    # Ohne Aufraeumen waechst der Grafikspeicher unbegrenzt.
+    pruefe("messMuell.forEach(function (x) { x.dispose(); });" in s,
+           "die Geometrien der letzten Zeichnung werden freigegeben")
+
+    # 7. Gespeicherte Messungen werden weiterhin NICHT nachgerechnet.
+    #    Erst wer einen Punkt bewegt, aendert die Zahl -- und das steht dann
+    #    auch dran.
+    anschauen = s[s.index("window.ansichtSetzen = function"):]
+    anschauen = anschauen[:anschauen.index("window.sonneSchalten")]
+    pruefe("messWerte(" not in anschauen,
+           "beim Zurueckholen wird nicht nachgerechnet -- die gespeicherte "
+           "Zahl gilt")
+    pruefe("m.schilder && m.schilder.length" in s,
+           "ohne mitgespeicherte Beschriftung steht das gespeicherte Mass "
+           "in der Mitte, wie bisher")
+    pruefe("m.bearbeitet = true;" in s and "nachbearbeitet" in s,
+           "eine nachtraeglich veraenderte Messung ist als solche erkennbar")
 
 def main() -> int:
     if not SEITE.exists():
@@ -930,7 +1041,7 @@ def main() -> int:
                test_marktsatz_stimmt_mit_der_engine,
                test_qualitaetsauswahl_passt_zur_engine,
                test_quellen_nie_vermischt, test_sechs_marktsegmente,
-               test_entwurf_reiter):
+               test_entwurf_reiter, test_messwerkzeuge_dynamisch):
         fn(s)
 
     if _fehler:

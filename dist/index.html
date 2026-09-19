@@ -876,6 +876,9 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   padding: 1px 5px; font-size: 11px; font-weight: 600;
   font-variant-numeric: tabular-nums; white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+/* "display: flex" auf der Klasse schlaegt das [hidden] des Browsers --
+   die Sonnenleiste stand deshalb offen da, obwohl der Schatten aus war. */
+.s3leiste[hidden] { display: none; }
 .s3leiste { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
   margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--bg-2); }
@@ -899,6 +902,15 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   color: var(--ink-2); }
 .m3liste li { padding: 2px 0; font-variant-numeric: tabular-nums; }
 .m3liste .m3laeuft { color: var(--ink-3); font-style: italic; }
+/* Segmentmasse stehen neben dem Gesamtmass -- kleiner, damit die Summe
+   die Hauptzahl bleibt und die Beschriftung die Geometrie nicht zudeckt. */
+.m3schild.m3klein { font-size: 10px; font-weight: 500; padding: 0 3px;
+  opacity: .92; box-shadow: none; }
+.m3weg { font: inherit; font-size: 12px; line-height: 1; padding: 0 5px;
+  margin-left: 4px; cursor: pointer; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--bg); color: var(--ink-3); }
+.m3weg:hover { border-color: var(--stop); color: var(--stop); }
+.m3bearb { font-size: 10px; color: var(--ink-3); font-style: italic; }
 #view3d-legende { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 2px; font-size: 11px; color: var(--ink-2); }
 #view3d-legende .l3d { display: inline-flex; align-items: center; gap: 6px; }
 #view3d-legende i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
@@ -4039,7 +4051,7 @@ function siaTabelle(w) {
 // Woerter, in denen ae/oe/ue KEIN Umlaut ist. Ohne diese Liste wuerde aus
 // "vollstaendig NEUEN Baukoerpers" ein "NÜN" und aus "aktuellen" ein
 // "aktüllen".
-var KEIN_UMLAUT = /neu|quel|quer|aktuell|eventuell|virtuell|individuell|manuell|steuer|dauer|bauer|teuer|feuer|aero|shoelace|michael|israel/i;
+var KEIN_UMLAUT = /neu|quel|quer|aktuell|eventuell|virtuell|individuell|manuell|punktuell|steuer|dauer|bauer|teuer|feuer|aero|shoelace|michael|israel/i;
 // Ein Grossbuchstabe MITTEN im Wort, neben Kleinbuchstaben, heisst: das
 // ist kein deutsches Fliesstextwort, sondern ein Kuerzel oder ein
 // technischer Name -- "OeZ", "OeBA", "UeG", "BauG". So schreibt die
@@ -6120,7 +6132,7 @@ function secEntwurf(erg) {
         '<button class="m3knopf" data-mess="flaeche">Fläche</button>' +
         '<button class="m3knopf" data-mess="hoehe">Höhe</button>' +
         '<button class="m3knopf" data-mess="punkt">Punkt</button>' +
-        '<button class="m3knopf m3neben" id="mess-abschliessen" hidden>Fläche abschliessen</button>' +
+        '<button class="m3knopf m3neben" id="mess-abschliessen" hidden>Messung beenden</button>' +
         '<button class="m3knopf m3neben" id="mess-reset">Zurücksetzen</button>' +
       "</div>" +
     "</div>" +
@@ -6243,15 +6255,27 @@ function secEntwurf(erg) {
     // wer die Ansicht dreht, bewegt die Maus dabei zwangslaeufig.
     blickpunkt = new THREE.Vector3(0, 0, 0);
 
-    // Drei Gesten, die sich nicht in die Quere kommen duerfen:
-    //   linke Taste ziehen        -> drehen
-    //   rechte Taste / Umschalt   -> Blickpunkt verschieben
-    //   linke Taste klicken       -> messen (nur im Messmodus)
-    // Unterschieden wird an der Taste und am zurueckgelegten Weg. Ohne
-    // die Tastenpruefung loeste auch das Loslassen nach dem Verschieben
-    // eine Messung aus.
+    // Vier Gesten, die sich nicht in die Quere kommen duerfen:
+    //   Stuetzpunkt greifen      -> Messpunkt verschieben (hat Vorrang)
+    //   linke Taste ziehen       -> drehen
+    //   rechte Taste / Umschalt  -> Blickpunkt verschieben
+    //   linke Taste klicken      -> messen (nur im Messmodus)
+    // Unterschieden wird an der Taste, am getroffenen Griff und am
+    // zurueckgelegten Weg. Ohne die Tastenpruefung loeste auch das
+    // Loslassen nach dem Verschieben eine Messung aus.
     renderer.domElement.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     renderer.domElement.addEventListener("pointerdown", function (e) {
+      // Wer einen Stuetzpunkt anfasst, will ihn bewegen -- nicht die
+      // Kamera. Deshalb wird zuerst auf Griffe geprueft und danach gar
+      // nicht mehr gedreht. Waehrend eine Messung laeuft aber nicht:
+      // dann setzt jeder Klick einen Punkt, sonst griffe man beim
+      // Zeichnen versehentlich in eine fertige Messung daneben.
+      if (e.button === 0 && !e.shiftKey && !messPunkte.length && griffAnfassen(e)) {
+        ziehtGerade = false; schiebtGerade = false; klickStart = null;
+        letzteMaus = null;
+        zeigerBild();
+        return;
+      }
       schiebtGerade = e.button === 2 || e.shiftKey;
       ziehtGerade = !schiebtGerade;
       letzteMaus = { x: e.clientX, y: e.clientY };
@@ -6265,11 +6289,30 @@ function secEntwurf(erg) {
       }
       klickStart = null;
     });
+    // Doppelklick beendet den Streckenzug bzw. schliesst das Polygon.
+    // Der zweite Klick hat davor einen Punkt auf denselben Fleck gesetzt;
+    // messAbschliessen() wirft ihn weg.
+    renderer.domElement.addEventListener("dblclick", function (e) {
+      if (!messModus || !messPunkte.length) return;
+      e.preventDefault();
+      messAbschliessen();
+    });
     window.addEventListener("pointerup", function () {
       ziehtGerade = false; schiebtGerade = false;
+      if (messZieht) { messZieht = null; zeigerBild(); }
+    });
+    // Die Zeigerposition wird nur gemerkt. Ausgewertet wird sie einmal je
+    // Bild in messTakt() -- ein Strahl durch Terrain und Nachbarschaft je
+    // Mausbewegung waere Verschwendung.
+    renderer.domElement.addEventListener("pointermove", function (e) {
+      messZeiger = { clientX: e.clientX, clientY: e.clientY };
+    });
+    renderer.domElement.addEventListener("pointerleave", function () {
+      messZeiger = null;
+      if (messVorschau) { messVorschau = null; messFrisch = true; }
     });
     window.addEventListener("pointermove", function (e) {
-      if (!letzteMaus) return;
+      if (messZieht || !letzteMaus) return;
       var dx = e.clientX - letzteMaus.x, dy = e.clientY - letzteMaus.y;
       if (schiebtGerade && blickpunkt) {
         // In der Blickebene verschieben, nicht in Weltachsen -- sonst
@@ -6344,6 +6387,10 @@ function secEntwurf(erg) {
   // Abgleich behielt die Szene bei der zweiten Analyse das Gelaende,
   // die Nachbargebaeude und die Strassen der ERSTEN -- live beobachtet:
   // Rorschach mit dem Terrain von Buchs, inklusive Legende.
+  // Gesetzt wird er NUR nach einer erfolgreichen Antwort. Wer den Reiter
+  // oeffnet, waehrend die Analyse noch laeuft, bekommt "Keine abgeschlossene
+  // Analyse zu dieser job_id" -- und haette diesen Fehlschlag sonst bis zum
+  // Seitenneuladen behalten. Live beobachtet in Buchs.
   var umgebungFuerJob = null;
   var u3dGruppen = {};          // Ebenengruppen, einzeln schaltbar
   var u3dSicht = { terrain: true, gebaeude: true, strassen: true,
@@ -6452,14 +6499,12 @@ function secEntwurf(erg) {
       .then(function (r) { return r.json(); })
       .then(function (d) {
         umgebungLaeuft = false;
-        umgebungFuerJob = fuer;
-        if (d && d.ok) umgebung = d.umgebung;
+        if (d && d.ok) { umgebung = d.umgebung; umgebungFuerJob = fuer; }
         else umgebung = { fehler: (d && d.fehler) || "Umgebung nicht verfügbar." };
         danach();
       })
       .catch(function (e) {
         umgebungLaeuft = false;
-        umgebungFuerJob = fuer;
         umgebung = { fehler: "Umgebung nicht ladbar: " + e };
         danach();
       });
@@ -6674,10 +6719,31 @@ function secEntwurf(erg) {
   // die auch dargestellt wird: Terrain aus dem Hoehenmodell, Gebaeude aus
   // dem Register, Projektkoerper aus der Berechnung. Es gibt keine zweite,
   // unsichtbare Messflaeche.
+  //
+  // Die Bedienung folgt map.geo.admin.ch: nach dem ersten Klick laeuft das
+  // Mass mit der Maus mit, die Zahl steht an der Geometrie statt in einer
+  // Liste daneben, und eine fertige Messung bleibt veraenderbar --
+  // Stuetzpunkte lassen sich greifen, verschieben, einfuegen und loeschen.
+  //
+  // Gerechnet wird an genau einer Stelle: messWerte(). Vorschau, Abschluss
+  // und Nachbearbeitung koennen deshalb gar nicht auseinanderlaufen.
   // =====================================================================
 
   var strahl = new THREE.Raycaster();
   var mausNdc = new THREE.Vector2();
+  var messVorschau = null;   // Punkt unter dem Zeiger, solange gezeichnet wird
+  var messGriffe = [];       // anfassbare Stuetzpunkte fertiger Messungen
+  var messZieht = null;      // {mess, index} waehrend des Ziehens
+  var messUeber = null;      // Griff unter dem Zeiger -- nur fuer den Mauszeiger
+  var messZeiger = null;     // letzte Zeigerposition, im naechsten Bild ausgewertet
+  var messFrisch = false;    // Neuzeichnen faellig?
+
+  function strahlSetzen(ereignis) {
+    var flaeche = renderer.domElement.getBoundingClientRect();
+    mausNdc.x = ((ereignis.clientX - flaeche.left) / flaeche.width) * 2 - 1;
+    mausNdc.y = -((ereignis.clientY - flaeche.top) / flaeche.height) * 2 + 1;
+    strahl.setFromCamera(mausNdc, kamera);
+  }
 
   function messZiele() {
     var ziele = [];
@@ -6687,27 +6753,141 @@ function secEntwurf(erg) {
     return ziele;
   }
 
-  function messKlick(ereignis) {
-    if (!messModus || !renderer) return;
-    var flaeche = renderer.domElement.getBoundingClientRect();
-    mausNdc.x = ((ereignis.clientX - flaeche.left) / flaeche.width) * 2 - 1;
-    mausNdc.y = -((ereignis.clientY - flaeche.top) / flaeche.height) * 2 + 1;
-    strahl.setFromCamera(mausNdc, kamera);
-
+  // Der Punkt der Szene unter dem Zeiger. Linien und Kanten sind
+  // Darstellung, keine Messflaeche -- deshalb nur Meshes.
+  function szenenPunkt(ereignis) {
+    if (!renderer || !kamera) return null;
+    strahlSetzen(ereignis);
     var treffer = strahl.intersectObjects(messZiele(), true).filter(function (t) {
-      // Linien und Kanten sind Darstellung, keine Messflaeche.
       return t.object && t.object.isMesh;
     });
-    if (!treffer.length) {
+    return treffer.length ? treffer[0].point.clone() : null;
+  }
+
+  function griffTreffer(ereignis) {
+    if (!messGriffe.length || !renderer || !kamera) return null;
+    strahlSetzen(ereignis);
+    var netze = messGriffe.map(function (g) { return g.mesh; });
+    var t = strahl.intersectObjects(netze, false);
+    if (!t.length) return null;
+    for (var i = 0; i < messGriffe.length; i++) {
+      if (messGriffe[i].mesh === t[0].object) return messGriffe[i];
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Die eine Rechnung
+  //
+  // Aus Punkten werden Zahlen und Beschriftungen -- sonst nichts. Keine
+  // Zeichnung, kein Seiteneffekt, kein Zustand. Genau deshalb darf sie
+  // waehrend des Ziehens sechzigmal in der Sekunde laufen.
+  // ---------------------------------------------------------------------
+  function waagrechtZu(a, b) { return Math.hypot(b.x - a.x, b.z - a.z); }
+
+  function mitteVon(punkte) {
+    var m = new THREE.Vector3();
+    punkte.forEach(function (p) { m.add(p); });
+    return m.divideScalar(punkte.length);
+  }
+
+  function messWerte(art, punkte) {
+    var schilder = [], kurz = "", lang = "";
+    var i, a, b;
+
+    if (art === "punkt" && punkte.length >= 1) {
+      var k = nachLv95(punkte[0]);
+      kurz = k ? (Math.round(k.hoehe * 10) / 10) + " m ü. M." : "kein Geländebezug";
+      lang = k
+        ? "LV95 " + Math.round(k.e) + " / " + Math.round(k.n) +
+          " · " + (Math.round(k.hoehe * 10) / 10) + " m ü. M." +
+          " · " + (Math.round(punkte[0].y * 10) / 10) + " m über Parzellenmitte"
+        : "Kein Geländebezug — die Szene kennt keinen Höhenbezugspunkt.";
+      schilder.push({ anker: punkte[0], text: kurz, haupt: true });
+
+    } else if (art === "distanz" && punkte.length >= 2) {
+      var summe = 0, schraeg = 0;
+      for (i = 1; i < punkte.length; i++) {
+        a = punkte[i - 1]; b = punkte[i];
+        var w = waagrechtZu(a, b);
+        summe += w;
+        schraeg += a.distanceTo(b);
+        schilder.push({ anker: mitteVon([a, b]), text: w.toFixed(2) + " m",
+                        haupt: punkte.length === 2 });
+      }
+      var dhz = Math.abs(punkte[punkte.length - 1].y - punkte[0].y);
+      kurz = summe.toFixed(2) + " m";
+      // Im Baurecht zaehlt das waagrechte Mass (Grenz- und Gebaeudeabstand).
+      // Das schraege Mass steht daneben, damit klar ist, welches gemeint ist.
+      lang = punkte.length === 2
+        ? "waagrecht " + summe.toFixed(2) + " m · schräg " + schraeg.toFixed(2) +
+          " m · Höhenunterschied " + dhz.toFixed(2) + " m"
+        : "Gesamt waagrecht " + summe.toFixed(2) + " m über " + (punkte.length - 1) +
+          " Segmente · schräg " + schraeg.toFixed(2) + " m · Höhenunterschied " +
+          "Anfang zu Ende " + dhz.toFixed(2) + " m";
+      if (punkte.length > 2) {
+        schilder.push({ anker: punkte[punkte.length - 1], text: "Σ " + kurz, haupt: true });
+      }
+
+    } else if (art === "hoehe" && punkte.length >= 2) {
+      var u = punkte[0], o = punkte[punkte.length - 1];
+      var dh = Math.abs(o.y - u.y);
+      var ku = nachLv95(u), ko = nachLv95(o);
+      kurz = dh.toFixed(2) + " m";
+      lang = "Höhenunterschied " + dh.toFixed(2) + " m · von " +
+        (ku ? ku.hoehe.toFixed(1) : "?") + " auf " +
+        (ko ? ko.hoehe.toFixed(1) : "?") + " m ü. M.";
+      schilder.push({ anker: new THREE.Vector3(u.x, (u.y + o.y) / 2, u.z),
+                      text: kurz, haupt: true });
+
+    } else if (art === "flaeche" && punkte.length >= 3) {
+      var f = 0;
+      for (i = 0; i < punkte.length; i++) {
+        var p1 = punkte[i], p2 = punkte[(i + 1) % punkte.length];
+        // Gauss-Trapezformel auf der Waagrechten (x, -z = Ost, Nord).
+        f += p1.x * (-p2.z) - p2.x * (-p1.z);
+      }
+      var flaecheM2 = Math.abs(f) / 2;
+      var umfang = 0;
+      for (i = 0; i < punkte.length; i++) {
+        a = punkte[i]; b = punkte[(i + 1) % punkte.length];
+        umfang += waagrechtZu(a, b);
+        schilder.push({ anker: mitteVon([a, b]), text: waagrechtZu(a, b).toFixed(1) + " m" });
+      }
+      kurz = Math.round(flaecheM2) + " m²";
+      // Ausdruecklich die waagrechte Projektion: am Hang ist die
+      // Gelaendeflaeche groesser, gerechnet wird im Baurecht aber mit der
+      // Projektion. Wer das verwechselt, bekommt zu viel Ausnuetzung.
+      lang = flaecheM2.toFixed(1) + " m² waagrecht projiziert · Umfang " +
+        umfang.toFixed(1) + " m · " + punkte.length + " Punkte";
+      schilder.push({ anker: mitteVon(punkte), text: kurz, haupt: true });
+    }
+
+    return { kurz: kurz, lang: lang, schilder: schilder };
+  }
+
+  // Die Punkte, die GERADE gelten: gesetzte plus der unter dem Zeiger.
+  // Damit ist die Vorschau dieselbe Rechnung wie das Ergebnis.
+  function laufendePunkte() {
+    var p = messPunkte.slice();
+    if (messVorschau && !messZieht) p.push(messVorschau);
+    return p;
+  }
+
+  function messKlick(ereignis) {
+    if (!messModus || !renderer) return;
+    var p = szenenPunkt(ereignis);
+    if (!p) {
       messHinweis("Kein Punkt getroffen — auf Terrain, Gebäude oder Baukörper klicken.");
       return;
     }
-
-    messPunkte.push(treffer[0].point.clone());
+    messPunkte.push(p);
+    // Punkt und Hoehe sind fertig, sobald sie vollstaendig sind. Distanz
+    // und Flaeche laufen weiter, bis der Doppelklick sie beendet -- ein
+    // Streckenzug hat nun einmal mehr als zwei Stuetzpunkte.
     if (messModus === "punkt") { messAbschliessen(); return; }
-    if (messModus === "distanz" && messPunkte.length === 2) { messAbschliessen(); return; }
     if (messModus === "hoehe" && messPunkte.length === 2) { messAbschliessen(); return; }
-    zeichneMessungen();
+    messFrisch = true;
     messTafel();
   }
 
@@ -6721,78 +6901,123 @@ function secEntwurf(erg) {
   }
 
   function messAbschliessen() {
-    if (!messPunkte.length) return;
-    var punkte = messPunkte.slice();
-    var eintrag = null;
-
-    if (messModus === "punkt") {
-      var k = nachLv95(punkte[0]);
-      eintrag = k ? {
-        art: "punkt", punkte: punkte,
-        kurz: Math.round(k.hoehe * 10) / 10 + " m ü. M.",
-        lang: "LV95 " + Math.round(k.e) + " / " + Math.round(k.n) +
-              " · " + (Math.round(k.hoehe * 10) / 10) + " m ü. M." +
-              " · " + (Math.round(punkte[0].y * 10) / 10) + " m über Parzellenmitte"
-      } : null;
-
-    } else if (messModus === "distanz" && punkte.length >= 2) {
-      var a = punkte[0], b = punkte[1];
-      var schraeg = a.distanceTo(b);
-      var waagrecht = Math.hypot(b.x - a.x, b.z - a.z);
-      var senkrecht = Math.abs(b.y - a.y);
-      eintrag = {
-        art: "distanz", punkte: punkte,
-        kurz: waagrecht.toFixed(2) + " m",
-        // Im Baurecht zaehlt das waagrechte Mass (Grenz- und Gebaeudeabstand).
-        // Das schraege Mass steht daneben, damit klar ist, welches gemeint ist.
-        lang: "waagrecht " + waagrecht.toFixed(2) + " m · schräg " + schraeg.toFixed(2) +
-              " m · Höhenunterschied " + senkrecht.toFixed(2) + " m"
-      };
-
-    } else if (messModus === "hoehe" && punkte.length >= 2) {
-      var u = punkte[0], o = punkte[1];
-      var dh = Math.abs(o.y - u.y);
-      var ku = nachLv95(u), ko = nachLv95(o);
-      eintrag = {
-        art: "hoehe", punkte: punkte,
-        kurz: dh.toFixed(2) + " m",
-        lang: "Höhenunterschied " + dh.toFixed(2) + " m · von " +
-              (ku ? ku.hoehe.toFixed(1) : "?") + " auf " +
-              (ko ? ko.hoehe.toFixed(1) : "?") + " m ü. M."
-      };
-
-    } else if (messModus === "flaeche" && punkte.length >= 3) {
-      var f = 0;
-      for (var i = 0; i < punkte.length; i++) {
-        var p1 = punkte[i], p2 = punkte[(i + 1) % punkte.length];
-        // Gauss-Trapezformel auf der Waagrechten (x, -z = Ost, Nord).
-        f += p1.x * (-p2.z) - p2.x * (-p1.z);
-      }
-      var flaecheM2 = Math.abs(f) / 2;
-      var umfang = 0;
-      for (var j = 0; j < punkte.length; j++) {
-        var q1 = punkte[j], q2 = punkte[(j + 1) % punkte.length];
-        umfang += Math.hypot(q2.x - q1.x, q2.z - q1.z);
-      }
-      eintrag = {
-        art: "flaeche", punkte: punkte,
-        kurz: Math.round(flaecheM2) + " m²",
-        // Ausdruecklich die waagrechte Projektion: am Hang ist die
-        // Gelaendeflaeche groesser, gerechnet wird im Baurecht aber mit der
-        // Projektion. Wer das verwechselt, bekommt zu viel Ausnuetzung.
-        lang: flaecheM2.toFixed(1) + " m² waagrecht projiziert · Umfang " +
-              umfang.toFixed(1) + " m · " + punkte.length + " Punkte"
-      };
+    // Ein Doppelklick setzt zwangslaeufig zwei Punkte an dieselbe Stelle.
+    // Der zweite ist nicht gemeint -- er faellt weg, bevor gerechnet wird.
+    while (messPunkte.length > 1 &&
+           messPunkte[messPunkte.length - 1].distanceTo(messPunkte[messPunkte.length - 2]) < 0.05) {
+      messPunkte.pop();
     }
+    if (!messPunkte.length) return;
 
-    if (eintrag) {
+    var punkte = messPunkte.slice();
+    var w = messWerte(messModus, punkte);
+    if (w.kurz) {
       messZaehler += 1;
-      eintrag.nr = messZaehler;
-      messungen.push(eintrag);
+      messungen.push({ nr: messZaehler, art: messModus, punkte: punkte,
+                       kurz: w.kurz, lang: w.lang, schilder: w.schilder });
+    } else {
+      messHinweis(messModus === "flaeche"
+        ? "Für eine Fläche braucht es mindestens drei Punkte."
+        : "Für eine Distanz braucht es mindestens zwei Punkte.");
     }
     messPunkte = [];
-    zeichneMessungen();
+    messFrisch = true;
     messTafel();
+  }
+
+  // Nach einer Verschiebung gilt die neue Geometrie -- also wird neu
+  // gerechnet. Das ist kein Widerspruch zum Grundsatz, gespeicherte
+  // Messungen nicht nachzurechnen: dort hat sich nichts geaendert, hier
+  // hat der Benutzer den Punkt selbst bewegt.
+  function messNeuRechnen(m) {
+    var w = messWerte(m.art, m.punkte);
+    if (!w.kurz) return false;
+    m.kurz = w.kurz;
+    m.lang = w.lang;
+    m.schilder = w.schilder;
+    m.bearbeitet = true;
+    return true;
+  }
+
+  function messMindestpunkte(art) {
+    if (art === "flaeche") return 3;
+    if (art === "punkt") return 1;
+    return 2;
+  }
+
+  // Alt + Klick loescht einen Stuetzpunkt. Bleiben zu wenige uebrig, gibt
+  // es die Messung nicht mehr -- das wird gesagt, nicht stillschweigend
+  // durch eine Ersatzgeometrie verdeckt.
+  function griffLoeschen(g) {
+    var m = g.mess;
+    if (g.neu) return;
+    if (m.punkte.length <= messMindestpunkte(m.art)) {
+      // Erst loeschen, dann begruenden: messLoeschen() schreibt die Tafel
+      // neu und setzt dabei den Hinweis auf die Anleitung zurueck.
+      window.messLoeschen(m.nr);
+      messHinweis("Messung " + m.nr + " gelöscht — mit " + (m.punkte.length - 1) +
+        " Stützpunkt(en) gäbe es keine " + (MESS_NAME[m.art] || "Messung") + " mehr.");
+      return;
+    }
+    m.punkte.splice(g.index, 1);
+    messNeuRechnen(m);
+    messFrisch = true;
+    messTafel();
+  }
+
+  function griffAnfassen(ereignis) {
+    var g = griffTreffer(ereignis);
+    if (!g) return false;
+    if (ereignis.altKey) { griffLoeschen(g); return true; }
+    if (g.neu) {
+      // Halbe Kugel auf der Kante: sie wird beim Anfassen zum echten
+      // Stuetzpunkt und haengt danach an der Maus.
+      g.mess.punkte.splice(g.index, 0, g.mesh.position.clone());
+      messNeuRechnen(g.mess);
+    }
+    messZieht = { mess: g.mess, index: g.index };
+    messFrisch = true;
+    return true;
+  }
+
+  function griffZiehen(ereignis) {
+    var p = szenenPunkt(ereignis);
+    if (!p) return;
+    var m = messZieht.mess;
+    if (messZieht.index >= m.punkte.length) return;
+    m.punkte[messZieht.index] = p;
+    messNeuRechnen(m);
+    messFrisch = true;
+    messTafel();
+  }
+
+  // Einmal je Bild ausgewertet, nicht einmal je Mausbewegung: ein Strahl
+  // durch Terrain und neunzig Nachbargebaeude ist nicht gratis.
+  function messTakt() {
+    if (messZeiger) {
+      var ev = messZeiger;
+      messZeiger = null;
+      if (messZieht) {
+        griffZiehen(ev);
+      } else {
+        var vorher = messUeber;
+        messUeber = griffTreffer(ev);
+        if (vorher !== messUeber) zeigerBild();
+        if (messModus) {
+          var neu = messUeber ? null : szenenPunkt(ev);
+          var gleich = (!neu && !messVorschau) ||
+            (neu && messVorschau && neu.distanceToSquared(messVorschau) < 0.0001);
+          if (!gleich) { messVorschau = neu; messFrisch = true; }
+        }
+      }
+    }
+    if (messFrisch) { messFrisch = false; zeichneMessungen(); }
+  }
+
+  function zeigerBild() {
+    if (!renderer) return;
+    renderer.domElement.style.cursor =
+      messZieht ? "grabbing" : messUeber ? "move" : messModus ? "crosshair" : "grab";
   }
 
   function messHinweis(text) {
@@ -6802,39 +7027,77 @@ function secEntwurf(erg) {
 
   var MESS_FARBE = { distanz: "#0369a1", flaeche: "#1f7a4d", hoehe: "#b45309", punkt: "#b3324a" };
 
+  // Geometrien und Materialien der letzten Zeichnung. Sie wird bei jeder
+  // Mausbewegung erneuert -- ohne Aufraeumen waechst der Grafikspeicher.
+  var messMuell = [];
+  function merken(x) { messMuell.push(x); return x; }
+
   function zeichneMessungen() {
     if (!gruppe3d) return;
-    if (messGruppe) { gruppe3d.remove(messGruppe); }
+    if (messGruppe) gruppe3d.remove(messGruppe);
+    messMuell.forEach(function (x) { x.dispose(); });
+    messMuell = [];
     messGruppe = new THREE.Group();
     gruppe3d.add(messGruppe);
     messSchilder = [];
+    messGriffe = [];
 
-    function punktKugel(p, farbe) {
-      var k = new THREE.Mesh(
-        new THREE.SphereGeometry(Math.max(0.35, (szeneRahmen ? szeneRahmen.spanne : 150) * 0.004), 10, 8),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(farbe) }));
+    var r = Math.max(0.5, (szeneRahmen ? szeneRahmen.spanne : 150) * 0.006);
+
+    // Griffe liegen ueber der Szene: depthTest aus. Sonst verschwindet der
+    // Stuetzpunkt in der Hauswand, an der er gerade gemessen wurde -- und
+    // laesst sich nicht mehr anfassen.
+    function kugel(p, farbe, halb, obenauf) {
+      var geo = merken(new THREE.SphereGeometry(halb ? r * 0.55 : r, 12, 10));
+      var mat = merken(new THREE.MeshBasicMaterial({
+        color: new THREE.Color(farbe), transparent: halb, opacity: halb ? 0.5 : 1,
+        depthTest: !obenauf
+      }));
+      var k = new THREE.Mesh(geo, mat);
       k.position.copy(p);
+      if (obenauf) k.renderOrder = 10;
       messGruppe.add(k);
+      return k;
     }
 
-    function zug(punkte, farbe, schliessen) {
+    function zug(punkte, farbe, schliessen, gestrichelt) {
       var liste = punkte.slice();
       if (schliessen && liste.length > 2) liste.push(liste[0]);
       if (liste.length < 2) return;
-      messGruppe.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(liste),
-        new THREE.LineBasicMaterial({ color: new THREE.Color(farbe) })));
+      var geo = merken(new THREE.BufferGeometry().setFromPoints(liste));
+      var mat = merken(gestrichelt
+        ? new THREE.LineDashedMaterial({ color: new THREE.Color(farbe), dashSize: r * 2, gapSize: r })
+        : new THREE.LineBasicMaterial({ color: new THREE.Color(farbe) }));
+      var l = new THREE.Line(geo, mat);
+      if (gestrichelt) l.computeLineDistances();
+      messGruppe.add(l);
     }
 
-    function mitte(punkte) {
-      var m = new THREE.Vector3();
-      punkte.forEach(function (p) { m.add(p); });
-      return m.divideScalar(punkte.length);
+    function flaechenNetz(punkte, farbe) {
+      if (punkte.length < 3) return;
+      var shape = new THREE.Shape();
+      punkte.forEach(function (p, i) {
+        if (i === 0) shape.moveTo(p.x, -p.z); else shape.lineTo(p.x, -p.z);
+      });
+      var geo = merken(new THREE.ShapeGeometry(shape));
+      var mat = merken(new THREE.MeshBasicMaterial({
+        color: new THREE.Color(farbe), transparent: true, opacity: 0.16,
+        side: THREE.DoubleSide, depthWrite: false
+      }));
+      var netz = new THREE.Mesh(geo, mat);
+      netz.rotation.x = -Math.PI / 2;
+      // Knapp ueber dem hoechsten Stuetzpunkt, damit die Fuellung nicht im
+      // Gelaende steckt. Gemessen wird weiterhin waagrecht projiziert.
+      netz.position.y = Math.max.apply(null, punkte.map(function (p) { return p.y; })) + 0.05;
+      messGruppe.add(netz);
     }
 
     messungen.forEach(function (m) {
       var farbe = MESS_FARBE[m.art] || "#0369a1";
-      m.punkte.forEach(function (p) { punktKugel(p, farbe); });
+      if (m.art === "flaeche") flaechenNetz(m.punkte, farbe);
+      m.punkte.forEach(function (p, i) {
+        messGriffe.push({ mesh: kugel(p, farbe, false, true), mess: m, index: i, neu: false });
+      });
       if (m.art === "hoehe" && m.punkte.length === 2) {
         // Beim Hoehenmass ist die senkrechte Strecke das Mass -- also auch
         // die, die gezeichnet wird.
@@ -6842,15 +7105,56 @@ function secEntwurf(erg) {
         zug([u, new THREE.Vector3(u.x, o.y, u.z), o], farbe, false);
       } else {
         zug(m.punkte, farbe, m.art === "flaeche");
+        // Halbe Kugeln auf den Kanten: anfassen fuegt dort einen
+        // Stuetzpunkt ein. Bei Hoehe und Punkt gibt es nichts einzufuegen.
+        if (m.art === "distanz" || m.art === "flaeche") {
+          var letzte = m.art === "flaeche" ? m.punkte.length : m.punkte.length - 1;
+          for (var i = 0; i < letzte; i++) {
+            var a = m.punkte[i], b = m.punkte[(i + 1) % m.punkte.length];
+            messGriffe.push({ mesh: kugel(mitteVon([a, b]), farbe, true, true),
+                              mess: m, index: i + 1, neu: true });
+          }
+        }
       }
-      messSchilder.push({ anker: mitte(m.punkte), text: m.nr + ": " + m.kurz, farbe: farbe });
+      // Gespeicherte Messungen bringen keine Schilder mit -- ihre Zahlen
+      // sind uebernommen, nicht nachgerechnet. Dann steht das gespeicherte
+      // Mass in der Mitte, wie bisher.
+      var schilder = m.schilder && m.schilder.length
+        ? m.schilder
+        : [{ anker: mitteVon(m.punkte), text: m.kurz, haupt: true }];
+      schilder.forEach(function (sch) {
+        messSchilder.push({
+          anker: sch.anker,
+          text: sch.haupt ? m.nr + ": " + sch.text : sch.text,
+          farbe: farbe, klein: !sch.haupt
+        });
+      });
     });
 
-    // Die laufende, noch nicht abgeschlossene Messung.
-    if (messPunkte.length) {
+    // Die laufende, noch nicht abgeschlossene Messung -- mitsamt dem Punkt
+    // unter dem Zeiger. Sie rechnet mit derselben Funktion wie das
+    // Ergebnis, es kann also keine andere Zahl herauskommen.
+    var lauf = laufendePunkte();
+    if (messModus && lauf.length) {
       var lf = MESS_FARBE[messModus] || "#0369a1";
-      messPunkte.forEach(function (p) { punktKugel(p, lf); });
-      zug(messPunkte, lf, false);
+      if (messModus === "flaeche") flaechenNetz(lauf, lf);
+      messPunkte.forEach(function (p) { kugel(p, lf, false, true); });
+      if (messVorschau && !messZieht) kugel(messVorschau, lf, true, true);
+      if (messModus === "hoehe" && lauf.length === 2) {
+        zug([lauf[0], new THREE.Vector3(lauf[0].x, lauf[1].y, lauf[0].z), lauf[1]], lf, false);
+      } else {
+        zug(messPunkte, lf, false);
+        // Das Gummiband zum Zeiger gestrichelt: gesetzt ist es noch nicht.
+        if (messVorschau && messPunkte.length) {
+          zug([messPunkte[messPunkte.length - 1], messVorschau], lf, false, true);
+          if (messModus === "flaeche" && messPunkte.length >= 2) {
+            zug([messVorschau, messPunkte[0]], lf, false, true);
+          }
+        }
+      }
+      messWerte(messModus, lauf).schilder.forEach(function (sch) {
+        messSchilder.push({ anker: sch.anker, text: sch.text, farbe: lf, klein: !sch.haupt });
+      });
     }
   }
 
@@ -6860,7 +7164,10 @@ function secEntwurf(erg) {
   function messSchilderZeichnen() {
     var schicht = document.getElementById("view3d-schilder");
     if (!schicht || !kamera || !renderer) return;
-    if (!messSchilder.length) { schicht.innerHTML = ""; return; }
+    if (!messSchilder.length) {
+      if (schicht.innerHTML) schicht.innerHTML = "";
+      return;
+    }
 
     var b = renderer.domElement;
     var html = "";
@@ -6871,8 +7178,9 @@ function secEntwurf(erg) {
       if (v.z > 1) return;                    // hinter der Kamera
       var x = (v.x * 0.5 + 0.5) * b.clientWidth;
       var y = (-v.y * 0.5 + 0.5) * b.clientHeight;
-      html += '<span class="m3schild" style="left:' + x.toFixed(0) + "px;top:" +
-        y.toFixed(0) + "px;border-color:" + sch.farbe + '">' + esc(sch.text) + "</span>";
+      html += '<span class="m3schild' + (sch.klein ? " m3klein" : "") + '" style="left:' +
+        x.toFixed(0) + "px;top:" + y.toFixed(0) + "px;border-color:" + sch.farbe + '">' +
+        esc(sch.text) + "</span>";
     });
     schicht.innerHTML = html;
   }
@@ -6887,11 +7195,22 @@ function secEntwurf(erg) {
     }
     var zeilen = messungen.map(function (m) {
       return '<li><b style="color:' + (MESS_FARBE[m.art] || "#0369a1") + '">' + m.nr +
-        "</b> " + esc(MESS_NAME[m.art] || m.art) + ": " + esc(m.lang) + "</li>";
+        "</b> " + esc(MESS_NAME[m.art] || m.art) + ": " + esc(m.lang) +
+        (m.bearbeitet ? ' <span class="m3bearb">nachbearbeitet</span>' : "") +
+        ' <button class="m3weg" data-weg="' + m.nr + '" title="Messung löschen">×</button></li>';
     }).join("");
     if (messPunkte.length) {
       zeilen += '<li class="m3laeuft">' + esc(MESS_NAME[messModus] || "") + ": " +
         messPunkte.length + " Punkt(e) gesetzt — " + esc(MESS_ANLEITUNG[messModus] || "") + "</li>";
+    }
+    if (messungen.length) {
+      // Einfuegen gibt es nur, wo es Kanten gibt. Bei Hoehe und Punkt
+      // stuende sonst eine Anleitung fuer etwas, das gar nicht da ist.
+      var mitKanten = messungen.some(function (m) {
+        return m.art === "distanz" || m.art === "flaeche";
+      });
+      zeilen += '<li class="m3laeuft">Stützpunkte lassen sich ziehen, Alt + Klick löscht einen.' +
+        (mitKanten ? ' Halbe Kugeln auf den Kanten fügen einen Punkt ein.' : "") + "</li>";
     }
     tafel.innerHTML = '<ul class="m3liste">' + zeilen + "</ul>";
     messHinweis(messModus ? MESS_ANLEITUNG[messModus] : "");
@@ -6899,10 +7218,10 @@ function secEntwurf(erg) {
 
   var MESS_NAME = { distanz: "Distanz", flaeche: "Fläche", hoehe: "Höhe", punkt: "Punkt" };
   var MESS_ANLEITUNG = {
-    distanz: "Zwei Punkte anklicken.",
-    flaeche: "Punkte anklicken, dann „Fläche abschliessen“ (mindestens 3).",
-    hoehe: "Unten und oben anklicken — gemessen wird der Höhenunterschied.",
-    punkt: "Einen Punkt anklicken."
+    distanz: "Klicken setzt Punkte, die Distanz läuft mit. Doppelklick beendet.",
+    flaeche: "Klicken setzt Punkte, die Fläche läuft mit. Doppelklick schliesst.",
+    hoehe: "Unten anklicken, dann oben — der Unterschied läuft mit.",
+    punkt: "Der Zeiger zeigt die Höhe, Klicken hält sie fest."
   };
 
   // -------------------------------------------------------------------
@@ -7032,27 +7351,50 @@ function secEntwurf(erg) {
   window.setzeMessModus = function (art) {
     messModus = messModus === art ? null : art;
     messPunkte = [];
-    if (renderer) renderer.domElement.style.cursor = messModus ? "crosshair" : "grab";
+    messVorschau = null;
+    messZieht = null;
+    zeigerBild();
     document.querySelectorAll(".m3knopf").forEach(function (k) {
       k.classList.toggle("an", k.dataset.mess === messModus);
     });
+    // Distanz und Flaeche laufen weiter, bis man sie beendet -- beide
+    // brauchen den Knopf, nicht nur die Flaeche. Der Doppelklick tut
+    // dasselbe; der Knopf ist der sichtbare Weg dorthin.
     var ab = document.getElementById("mess-abschliessen");
-    if (ab) ab.hidden = messModus !== "flaeche";
+    if (ab) {
+      ab.hidden = messModus !== "flaeche" && messModus !== "distanz";
+      ab.textContent = messModus === "flaeche" ? "Fläche schliessen" : "Messung beenden";
+    }
     zeichneMessungen();
     messTafel();
     return messModus;
   };
 
   window.messAbschliessenJetzt = function () {
-    if (messModus === "flaeche" && messPunkte.length < 3) {
-      messHinweis("Für eine Fläche braucht es mindestens drei Punkte.");
+    if (!messModus) return;
+    if (messPunkte.length < messMindestpunkte(messModus)) {
+      messHinweis(messModus === "flaeche"
+        ? "Für eine Fläche braucht es mindestens drei Punkte."
+        : "Für eine Distanz braucht es mindestens zwei Punkte.");
       return;
     }
     messAbschliessen();
   };
 
+  // Eine einzelne Messung entfernen. Der Zaehler laeuft weiter -- Nummern
+  // werden nicht recycelt, sonst meinte "Messung 2" nach dem Loeschen
+  // ploetzlich etwas anderes als im Gespraech zuvor.
+  window.messLoeschen = function (nr) {
+    nr = parseInt(nr, 10);
+    messungen = messungen.filter(function (m) { return m.nr !== nr; });
+    if (messZieht && messZieht.mess && messZieht.mess.nr === nr) messZieht = null;
+    zeichneMessungen();
+    messTafel();
+  };
+
   window.messZuruecksetzen = function () {
     messungen = []; messPunkte = []; messZaehler = 0;
+    messVorschau = null; messZieht = null; messUeber = null;
     zeichneMessungen();
     messTafel();
     messHinweis(messModus ? MESS_ANLEITUNG[messModus] : "");
@@ -7289,6 +7631,9 @@ function secEntwurf(erg) {
       );
       kamera.lookAt(z0.x, z0.y, z0.z);
       renderer.render(szene, kamera);
+      // Zeiger auswerten und, falls noetig, die Messung neu zeichnen --
+      // einmal je Bild, nicht einmal je Mausbewegung.
+      messTakt();
       messSchilderZeichnen();
     })();
   }
@@ -7348,6 +7693,12 @@ function verdrahte3DSteuerung() {
   });
   einmal("mess-abschliessen", "click", function () { window.messAbschliessenJetzt(); });
   einmal("mess-reset", "click", function () { window.messZuruecksetzen(); });
+  // Die Zeilen der Liste werden bei jeder Aenderung neu geschrieben --
+  // deshalb haengt der Klick an der Liste, nicht an den Knoepfen.
+  einmal("mess-liste", "click", function (e) {
+    var k = e.target.closest ? e.target.closest(".m3weg") : null;
+    if (k && window.messLoeschen) window.messLoeschen(k.dataset.weg);
+  });
 }
 
 /* Die Liste "was jedem Szenario noch fehlt" stand frueher hier. Sie war
