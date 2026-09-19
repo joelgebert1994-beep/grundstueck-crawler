@@ -6189,7 +6189,22 @@ function secEntwurf(erg) {
   function bereitMachen() {
     var el = behaelter();
     if (!el || typeof THREE === "undefined") return false;
-    if (renderer) return true;
+    if (renderer) {
+      // renderDossier() baut bei jeder Analyse das ganze Dossier neu --
+      // dabei wird auch #view3d durch ein frisches, leeres Element
+      // ersetzt. Die Leinwand haengt dann noch am alten, entfernten
+      // Container, und die Buehne bleibt fuer immer leer. Live
+      // beobachtet bei der zweiten Analyse in derselben Sitzung.
+      if (renderer.domElement.parentNode !== el) {
+        el.appendChild(renderer.domElement);
+        if (el.clientWidth && el.clientHeight) {
+          kamera.aspect = el.clientWidth / el.clientHeight;
+          kamera.updateProjectionMatrix();
+          renderer.setSize(el.clientWidth, el.clientHeight);
+        }
+      }
+      return true;
+    }
     szene = new THREE.Scene();
     szene.background = new THREE.Color(
       getComputedStyle(document.body).getPropertyValue("--bg-2").trim() || "#f2f0ec");
@@ -6325,6 +6340,11 @@ function secEntwurf(erg) {
   // ---------------------------------------------------------------------
   var umgebung = null;          // Antwort von /umgebung
   var umgebungLaeuft = false;
+  // Zu WELCHEM Auftrag die geladene Umgebung gehoert. Ohne diesen
+  // Abgleich behielt die Szene bei der zweiten Analyse das Gelaende,
+  // die Nachbargebaeude und die Strassen der ERSTEN -- live beobachtet:
+  // Rorschach mit dem Terrain von Buchs, inklusive Legende.
+  var umgebungFuerJob = null;
   var u3dGruppen = {};          // Ebenengruppen, einzeln schaltbar
   var u3dSicht = { terrain: true, gebaeude: true, strassen: true,
                    grundstueck: true, projekt: true };
@@ -6418,20 +6438,28 @@ function secEntwurf(erg) {
   }
 
   function ladeUmgebung(danach) {
-    if (umgebung || umgebungLaeuft || !jobIdAktuell) { danach(); return; }
+    if (!jobIdAktuell) { danach(); return; }
+    if (umgebungFuerJob !== jobIdAktuell) {
+      // Neue Analyse: was geladen ist, gehoert zu einer anderen Parzelle.
+      umgebung = null;
+    }
+    if (umgebung || umgebungLaeuft) { danach(); return; }
     umgebungLaeuft = true;
+    var fuer = jobIdAktuell;
     var hinweis = document.getElementById("view3d-legende");
     if (hinweis) hinweis.innerHTML = '<span class="l3d">Umgebung wird geladen …</span>';
     fetch("/api/umgebung?job_id=" + encodeURIComponent(jobIdAktuell))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         umgebungLaeuft = false;
+        umgebungFuerJob = fuer;
         if (d && d.ok) umgebung = d.umgebung;
         else umgebung = { fehler: (d && d.fehler) || "Umgebung nicht verfügbar." };
         danach();
       })
       .catch(function (e) {
         umgebungLaeuft = false;
+        umgebungFuerJob = fuer;
         umgebung = { fehler: "Umgebung nicht ladbar: " + e };
         danach();
       });

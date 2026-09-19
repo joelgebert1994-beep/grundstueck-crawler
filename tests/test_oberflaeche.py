@@ -902,6 +902,16 @@ def test_entwurf_reiter(s: str) -> None:
            "und wird beim Oeffnen des Reiters gezeichnet -- bisher stiess nur "
            "die Szenarienwahl das Zeichnen an")
 
+    # 7. Zwei Fehler, die erst auffielen, als die Ansicht erreichbar war.
+    #    Beide traten bei der ZWEITEN Analyse in derselben Sitzung auf.
+    pruefe("renderer.domElement.parentNode !== el" in s,
+           "die Leinwand wird an den neuen Container gehaengt -- renderDossier "
+           "ersetzt #view3d bei jeder Analyse, die alte Leinwand haengt sonst "
+           "an einem entfernten Element und die Buehne bleibt leer")
+    pruefe("var umgebungFuerJob" in s and "umgebungFuerJob !== jobIdAktuell" in s,
+           "die Umgebung wird je Auftrag neu geladen -- sonst zeichnet die "
+           "zweite Analyse das Gelaende und die Nachbargebaeude der ersten")
+
 
 def main() -> int:
     if not SEITE.exists():
