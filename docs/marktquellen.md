@@ -188,6 +188,50 @@ und werden nur deshalb nicht genutzt, weil es die Grösse nicht gibt.
 
 **Das ist der grösste Einzelgewinn — und er kostet keinen Vertrag.**
 
+### Umgesetzt am 18.09.2026
+
+Die sechs Segmente stehen. Gemessen am Radar-Bestand, schweizweit:
+
+| Segment | verwertbar | Systemvorschlag | Zweitkennzahl |
+|---|---|---|---|
+| Wohnung Neubau | 0 | — | — |
+| Wohnung Bestand | 1 | — | — |
+| **Einfamilienhaus** | **1277** | **1'290'000 CHF** | 7'368 CHF/m² aus 1229 |
+| **Renditeliegenschaft** | **154** | **1'500'000 CHF** | 5'000 CHF/m² aus 140 |
+| Bauland | 96 | 846 CHF/m² | — |
+| Mietzins | 5 | — | — |
+
+An einer konkreten Adresse, nach Ausweitung auf die PLZ-Region:
+
+| Ort | EFH | MFH | Bauland |
+|---|---|---|---|
+| Aarau | **12** | 0 | 1 |
+| Buchs (AG) | **12** | 0 | 1 |
+| Rorschach | **28** | **8** | 3 |
+
+Vorher: 0 verwertbare Referenzen in jedem Segment an jedem dieser Orte.
+
+**Zwei Entscheidungen, die dabei getroffen wurden:**
+
+1. `OBJEKTART_HAUS` („Haus", Art im Inserat unbestimmt) zählt zum
+   Einfamilienhaus. Das ist eine Entscheidung, keine Messung: 1245 von 1380
+   Häusern tragen genau dieses Wort, sie liegenzulassen hiesse 90 % des
+   Segments wegzuwerfen. Die Auswertung weist aus, wie viele aus welcher
+   Gruppe kommen.
+
+2. **Ein Wohnungsinserat zählt nicht mehr als Neubaureferenz.** Bis hierher
+   galt es als solche — zu grosszügig, und der eigene Kommentar des Moduls
+   sagt warum: ein Angebot beantwortet „was kostet dieser Bestand", nicht
+   „für wie viel lassen sich hier neu gebaute Wohnungen verkaufen". Seit es
+   das Segment Wohnung Bestand gibt, hat es ein eigenes Fach. Verkauf sinkt
+   damit von 1 auf 0 verwertbare Referenzen schweizweit — ein Wert, der
+   ohnehin keine Aussage trug.
+
+**Keine Rendite für MFH.** Von 173 MFH-Inseraten führen drei einen
+Mietzins. Eine Bruttorendite aus drei Beobachtungen wäre eine Zahl ohne
+Grundlage. Die belastbare Zweitkennzahl ist der Preis je m² Wohnfläche,
+und die steht da.
+
 ### Reihenfolge, die sich daraus ergibt
 
 1. Grössen **EFH** und **MFH/Rendite** einführen → macht rund 1475 bereits

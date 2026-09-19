@@ -342,7 +342,9 @@ def _markt_und_kosten(analyse: "Analyse", daten: dict) -> dict:
         g: mdt.werte_mit_ausweitung(
             alle_objekte, g, gemeinde=gemeinde, plz=plz,
             objektart=daten.get("referenz_objektart") or None)
-        for g in (mdt.GROESSE_VERKAUF, mdt.GROESSE_MIETE, mdt.GROESSE_BODEN)
+        # Alle Segmente, nicht nur die drei, die die Wirtschaftlichkeit
+        # heute verwendet -- der Marktreiter zeigt sie vollstaendig.
+        for g in mdt.GROESSEN_REIHENFOLGE
     }
     lage = {g: r for g, (r, _) in ausgewertet.items()}
     gebiete = {g: gebiet for g, (_, gebiet) in ausgewertet.items()}
@@ -1515,7 +1517,9 @@ class Handler(BaseHTTPRequestHandler):
         ausgewertet = {
             g: mdt.werte_mit_ausweitung(objekte, g, gemeinde=gemeinde, plz=plz,
                                         objektart=einzel("objektart"))
-            for g in (mdt.GROESSE_VERKAUF, mdt.GROESSE_MIETE, mdt.GROESSE_BODEN)
+            # Alle Segmente, nicht nur die drei, die die Wirtschaftlichkeit
+        # heute verwendet -- der Marktreiter zeigt sie vollstaendig.
+        for g in mdt.GROESSEN_REIHENFOLGE
         }
         # Die Objektliste kann vierstellig werden. Geliefert wird deshalb eine
         # begrenzte Auswahl plus die Gesamtzahl -- die Auswertung selbst

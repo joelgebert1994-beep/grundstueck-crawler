@@ -784,6 +784,53 @@ def test_quellen_nie_vermischt(s: str) -> None:
            "Ebene 3 zeigt, woher die VERWENDETEN Referenzen stammen")
 
 
+def test_sechs_marktsegmente(s: str) -> None:
+    """Sechs Segmente, und drei davon rechnen nicht mit.
+
+    Der Grund fuer die Aufteilung steht in den Daten: der AkquiseRadar
+    fuehrt 1245 "Haus" und 173 "Mehrfamilienhaus", aber nur 2 "Wohnung".
+    Mit einer einzigen Groesse "Verkaufspreis CHF/m2" blieb davon EINE
+    verwertbar -- nicht weil die Objekte schlecht sind, sondern weil das
+    Fach fehlte, in das sie gehoeren.
+    """
+    block = s[s.index("function marktBlock("):]
+    block = block[: block.index(chr(10) + "function ", 10)]
+
+    # Die Reihenfolge ist die der Engine (GROESSEN_REIHENFOLGE).
+    namen = re.findall(r'markt(?:Groesse|Segment)\([^,]+, "([^"]+)"', block)
+    erwartet = ["Wohnung Neubau", "Wohnung Bestand", "Einfamilienhaus",
+                "Renditeliegenschaft", "Bauland", "Mietzins"]
+    pruefe(namen == erwartet,
+           f"sechs Segmente in der Reihenfolge {erwartet} (gefunden: {namen})")
+
+    # Genau drei tragen ein Eingabefeld -- die drei, mit denen die
+    # Wirtschaftlichkeit rechnet. Ein Feld, das nichts bewirkt, waere ein
+    # Versprechen ohne Deckung.
+    mitFeld = re.findall(r'marktGroesse\([^;]*?"(w-[a-z]+)"', block, re.S)
+    pruefe(sorted(mitFeld) == ["w-boden", "w-miete", "w-verkauf"],
+           f"genau Wohnung Neubau, Bauland und Mietzins haben ein Feld "
+           f"(gefunden: {sorted(mitFeld)})")
+    pruefe(block.count("marktSegment(") == 3,
+           "die drei Referenzsegmente haben keines")
+
+    seg = s[s.index("function marktSegment("):]
+    seg = seg[: seg.index(chr(10) + "function ", 10)]
+    pruefe('"badge mute">Referenz' in seg,
+           "ein Referenzsegment ist als solches gekennzeichnet")
+    pruefe("Systemvorschlag" in seg and "Gerechnet mit" not in seg,
+           "es zeigt den Systemvorschlag, nicht 'Gerechnet mit' -- es wird "
+           "ja nichts damit gerechnet")
+    pruefe("zweitkennzahl" in seg,
+           "die Zweitkennzahl (CHF je m2) ordnet den Gesamtpreis ein")
+    pruefe("Angebotspreis" in seg and "nicht der, der bezahlt wurde" in seg,
+           "Angebotspreise sind auch hier ausdruecklich Angebotspreise")
+
+    ohne_kommentar = re.sub(r"/\*.*?\*/", "", seg, flags=re.S)
+    ohne_kommentar = re.sub(r"^\s*//.*$", "", ohne_kommentar, flags=re.M)
+    pruefe(not re.search(r"\d['’]?\d{3}", ohne_kommentar),
+           "im Referenzsegment steht keine eingebaute Zahl")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -800,7 +847,7 @@ def main() -> int:
                test_marktauswertung_zwei_wege, test_markt_ohne_standortdaten,
                test_marktsatz_stimmt_mit_der_engine,
                test_qualitaetsauswahl_passt_zur_engine,
-               test_quellen_nie_vermischt):
+               test_quellen_nie_vermischt, test_sechs_marktsegmente):
         fn(s)
 
     if _fehler:
