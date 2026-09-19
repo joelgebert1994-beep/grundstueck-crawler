@@ -48,12 +48,16 @@ def lies() -> str:
 
 
 def test_reiter(s: str) -> None:
-    """Sechs Reiter, in dieser Reihenfolge -- die Navigation des Dossiers."""
+    """Acht Reiter, in dieser Reihenfolge -- die Navigation des Dossiers.
+
+    "3D-Entwurf" steht nach "Potenzial": erst verstehen, was zulaessig
+    ist, dann ausprobieren, was daraus entstehen koennte.
+    """
     block = s[s.index("var REITER = ["):]
     block = block[: block.index("];")]
     namen = re.findall(r'\["([a-z]+)", "', block)
-    erwartet = ["uebersicht", "baurecht", "karte", "potenzial", "markt",
-                "wirtschaft", "quellen"]
+    erwartet = ["uebersicht", "baurecht", "karte", "potenzial", "entwurf",
+                "markt", "wirtschaft", "quellen"]
     pruefe(namen == erwartet, f"Reiterfolge {erwartet} (gefunden: {namen})")
 
     # Jede in REITER genannte Sektion muss auch gebaut werden, sonst
@@ -831,6 +835,74 @@ def test_sechs_marktsegmente(s: str) -> None:
            "im Referenzsegment steht keine eingebaute Zahl")
 
 
+def test_entwurf_reiter(s: str) -> None:
+    """Die 3D-Ansicht gab es schon -- gefunden hat sie niemand.
+
+    Sie lag 2770 Pixel tief im Potenzialreiter, war 380 Pixel hoch und
+    verschwand vollstaendig, sobald kein Szenario berechenbar war. Live
+    geprueft: bei einem Sondernutzungsplan existierte #view3d gar nicht,
+    obwohl Gelaende, 90 Nachbargebaeude, Parzelle und Baubereich vorlagen.
+    """
+    block = s[s.index("function secEntwurf("):]
+    block = block[: block.index(chr(10) + "function ", 10)]
+
+    # 1. Genau EINE Buehne im Dokument. Zwei waeren zwei Leinwaende fuer
+    #    einen Renderer -- die zweite bliebe fuer immer schwarz.
+    pruefe(s.count('id="view3d"') == 1,
+           f"genau eine 3D-Buehne im Dokument (gefunden: {s.count(chr(34) + 'view3d' + chr(34))})")
+    pruefe('id="view3d"' in block, "und sie steht im Entwurfsreiter")
+    szen = s[s.index("function secSzenarien("):]
+    szen = szen[: szen.index(chr(10) + "function ", 10)]
+    pruefe("view3d" not in szen,
+           "secSzenarien traegt die Buehne NICHT mehr -- verschoben, nicht verdoppelt")
+    pruefe('reiterLink("entwurf"' in szen,
+           "vom Potenzialreiter fuehrt ein Weg zur 3D-Ansicht")
+
+    # 2. Der Abschnitt haengt NICHT am Szenarienstand. Das ist der Kern.
+    pruefe("parzellengeometrie" in block,
+           "gepruoft wird die Parzellenkontur -- ohne Raum kein Raumbild")
+    pruefe("Kein belastbares Entwicklungsszenario berechnet" in block,
+           "fehlt ein Szenario, sagt der Reiter das -- statt zu verschwinden")
+    pruefe("nicht erfunden" in block,
+           "und er sagt ausdruecklich, dass kein Koerper erfunden wird")
+    # Ein frueher Ausstieg darf es nur fuer die fehlende Parzelle geben.
+    # Gezaehlt werden die Abschnittsrueckgaben, nicht jedes return in
+    # einem map()-Rumpf.
+    abschnitte = block.count("return '<section")
+    pruefe(abschnitte == 2,
+           f"genau zwei Rueckgabewege: ohne Parzelle und sonst "
+           f"(gefunden: {abschnitte})")
+
+    # 3. Die vorhandenen Werkzeuge ziehen mit um, statt neu gebaut zu werden.
+    for teil in ('d3schalter("terrain"', 'd3schalter("gebaeude"', 'd3schalter("projekt"',
+                 'data-mess="distanz"', 'id="sonne-an"', 'id="view3d-legende"'):
+        pruefe(teil in block, f"{teil} ist mitgezogen")
+
+    # 4. Freie Navigation.
+    pruefe("window.setze3DBlick" in s and "var BLICK = {" in s,
+           "feste Blickrichtungen sind waehlbar")
+    for r in ("sued", "west", "nord", "ost", "oben", "start"):
+        pruefe(f'data-blick="{r}"' in block, f"Blickrichtung {r}")
+    pruefe("var blickpunkt" in s and "blickpunkt.set(0, 0, 0)" in s,
+           "der Blickpunkt ist verschiebbar und zuruecksetzbar")
+    pruefe("kamera.lookAt(z0.x, z0.y, z0.z)" in s,
+           "die Kamera kreist um den Blickpunkt, nicht mehr fest um den Nullpunkt")
+
+    # 5. Die Messung darf dabei nicht kaputtgehen.
+    pruefe("messModus && e.button === 0" in s,
+           "gemessen wird nur mit der linken Taste -- sonst loeste auch das "
+           "Loslassen nach dem Verschieben eine Messung aus")
+    pruefe("schiebtGerade = e.button === 2 || e.shiftKey" in s,
+           "verschoben wird mit rechter Taste oder Umschalt")
+
+    # 6. Eine verborgene Buehne ist 0 x 0 gross. Ohne Nachmessen beim
+    #    Sichtbarwerden bliebe die Szene leer.
+    pruefe("window.passe3DAn" in s, "die Buehne misst sich beim Sichtbarwerden nach")
+    pruefe('name === "entwurf" && window.zeichne3D' in s,
+           "und wird beim Oeffnen des Reiters gezeichnet -- bisher stiess nur "
+           "die Szenarienwahl das Zeichnen an")
+
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -847,7 +919,8 @@ def main() -> int:
                test_marktauswertung_zwei_wege, test_markt_ohne_standortdaten,
                test_marktsatz_stimmt_mit_der_engine,
                test_qualitaetsauswahl_passt_zur_engine,
-               test_quellen_nie_vermischt, test_sechs_marktsegmente):
+               test_quellen_nie_vermischt, test_sechs_marktsegmente,
+               test_entwurf_reiter):
         fn(s)
 
     if _fehler:

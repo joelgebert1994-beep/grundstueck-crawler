@@ -841,7 +841,10 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .d3opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
   color: var(--ink-2); cursor: pointer; }
 .d3spaeter .d3bald { font-size: 11px; color: var(--ink-3); font-style: italic; }
-#view3d { width: 100%; height: 380px; border: 1px solid var(--line); border-radius: 10px;
+/* Die Buehne der Projektstudie. 380 px waren eine Vorschau; wer einen
+   Baukoerper im Gelaende beurteilen soll, braucht Flaeche. */
+#view3d { width: 100%; height: clamp(460px, 64vh, 800px);
+  border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; background: var(--bg-2); cursor: grab; touch-action: none; }
 #view3d:active { cursor: grabbing; }
 
@@ -2691,6 +2694,7 @@ var REITER = [
   ["baurecht", "Baurecht", ["sec-baurecht", "sec-restriktionen"]],
   ["karte", "Karte", ["sec-karte"]],
   ["potenzial", "Potenzial", ["sec-potenzial", "sec-szenarien", "sec-screening"]],
+  ["entwurf", "3D-Entwurf", ["sec-entwurf"]],
   ["markt", "Markt", ["sec-markt"]],
   ["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"]],
   ["quellen", "Daten & Quellen", ["sec-grundstueck", "sec-standort", "sec-quellen"]]
@@ -2768,6 +2772,19 @@ function zeigeReiter(name) {
     } else {
       parkeKarte();
     }
+  }
+
+  // Die 3D-Buehne war bis zu diesem Augenblick verborgen und damit 0 x 0
+  // gross. Erst jetzt kennt sie ihre Masse. Und gezeichnet werden muss
+  // sie hier auch: bisher stiess nur die Szenarienwahl das Zeichnen an --
+  // gab es kein Szenario, blieb die Szene fuer immer leer, obwohl
+  // Gelaende, Parzelle und Baubereich laengst vorlagen.
+  if (name === "entwurf" && window.zeichne3D && ergebnisAktuell) {
+    setTimeout(function () {
+      if (window.passe3DAn) window.passe3DAn();
+      window.zeichne3D(typeof aktivesSzenario !== "undefined" ? aktivesSzenario : null);
+      verdrahte3DSteuerung();
+    }, 0);
   }
 
   var inner = document.getElementById("dossier-inner");
@@ -3104,6 +3121,7 @@ function renderDossier(erg) {
     secBaurecht(erg, m1, zz) + secRestriktionen(m1) +
     secKarte() +
     secPotenzial(erg) + secSzenarien(erg) + scrBlock() +
+    secEntwurf(erg) +
     secMarkt(erg) + secWirtschaft(erg) +
     secGrundstueck(m1) + secStandort(m1) + secQuellen(erg);
   var zsNeu = document.getElementById("zs-neu");
@@ -6019,13 +6037,83 @@ function secSzenarien(erg) {
   return '<section class="sec" id="sec-szenarien">' + kopf +
     '<div class="note">Jedes Szenario ist aus dem G1-Baubereich, dem Bestand und den Zonenkennzahlen abgeleitet — keine frei entworfene Architektur. Wähle ein Szenario, um seine Baukörper auf der Karte und in 3D zu sehen.</div>' +
     waehler +
-    '<h4 class="subhead">3D &mdash; Baukörper aus den berechneten Geometrien</h4>' +
+    '<div class="note">Die räumliche Ansicht dieser Szenarien steht jetzt im eigenen ' +
+    'Reiter <b>3D-Entwurf</b> — dort mit grosser Bühne und freier Navigation. ' +
+    reiterLink("entwurf", "Zum 3D-Entwurf") + "</div>" +
+    budgetBlock + tabelle +
+    '<h4 class="subhead">Die Szenarien im Einzelnen</h4>' + karten +
+    "</section>";
+}
+
+/* --- 3D-Entwurf: die raeumliche Projektstudie ------------------------
+
+   Der Bereich gab es schon -- nur lag er 2770 Pixel tief im Reiter
+   Potenzial, war 380 Pixel hoch und verschwand vollstaendig, sobald kein
+   Szenario berechenbar war. Gelaende, 90 Nachbargebaeude, Parzelle und
+   Baubereich waren also da und wurden nie gefunden.
+
+   Hier wird nichts neu gezeichnet. Dieselbe Szene, dieselben Ebenen,
+   dieselben Messwerkzeuge -- nur an einer Stelle, an der man sie sieht.
+
+   WICHTIG: Dieser Abschnitt haengt NICHT am Szenarienstand. Gelaende,
+   Umgebung, Parzelle und Baubereich sind auch dann belastbar, wenn kein
+   Entwicklungsszenario gerechnet werden konnte. Nur der Projektkoerper
+   fehlt dann -- und das steht da, statt dass die ganze Ansicht
+   verschwindet. */
+function secEntwurf(erg) {
+  var kopf = '<div class="sechead"><h3>3D-Entwurf</h3>' +
+    '<span class="right"><span class="badge mute">Projektstudie</span></span></div>';
+
+  // Ohne Parzellengeometrie gibt es keinen Raum, in dem etwas stehen
+  // koennte. Das ist der einzige Fall, in dem hier nichts zu zeigen ist.
+  var parzelle = ((erg.modul1_geodaten || {}).kataster || {}).parzellengeometrie;
+  if (!parzelle || !parzelle.length) {
+    return '<section class="sec" id="sec-entwurf">' + kopf +
+      '<div class="antwort wartet"><div class="akopf">' +
+      '<span class="gross klein">Keine Parzellengeometrie</span></div>' +
+      '<p class="atext">Ohne die amtliche Parzellenkontur lässt sich kein Raum ' +
+      'darstellen. Alles Weitere in diesem Reiter baut darauf auf.</p></div></section>';
+  }
+
+  var sz = erg.szenarien || {};
+  var hatSzenario = sz.status === "berechnet" && szenarienHabenWerte(erg);
+
+  // Kein erfundener Baukoerper. Der Hinweis nennt den Grund und sagt,
+  // was trotzdem zu sehen ist -- eine leere Buehne ohne Erklaerung waere
+  // dasselbe Versteckspiel wie vorher, nur an anderer Stelle.
+  var hinweisOhneKoerper = hatSzenario ? "" :
+    '<div class="note warn"><b>Kein belastbares Entwicklungsszenario berechnet — ' +
+    '3D-Baukörper daher nicht dargestellt.</b> Grundstück, Gelände, bestehende ' +
+    'Gebäude und der Baubereich stammen aus den amtlichen Daten und werden ' +
+    'weiterhin gezeigt. Ein Projektkörper wird nicht erfunden.</div>';
+
+  // Die Szenarienwahl nur dort, wo es etwas zu waehlen gibt.
+  var wahl = !hatSzenario ? "" :
+    '<div class="szwahl" id="entwurf-szwahl">' +
+    alsListe(sz.vergleich).map(function (z) {
+      var badge = MACHBARKEIT_BADGE[z.machbarkeit] || [z.machbarkeit, "mute"];
+      return '<button class="szbtn" data-szenario="' + esc(z.id) + '">' + esc(z.bezeichnung) +
+        '<span class="badge ' + badge[1] + '">' + esc(badge[0]) + "</span></button>";
+    }).join("") + "</div>";
+
+  return '<section class="sec" id="sec-entwurf">' + kopf +
+    '<div class="note">Eine <b>Projektstudie</b>, keine Baubewilligung. Jedes Volumen ist ' +
+    'das Extrudat eines real berechneten Polygons mit der berechneten Höhe — ist keine ' +
+    'Höhe bekannt, wird der Körper flach dargestellt statt geraten.</div>' +
+    wahl + hinweisOhneKoerper +
     '<div class="d3steuer">' +
       '<div class="d3gruppe"><span class="d3titel">Umgebung</span>' +
         d3schalter("terrain", "Terrain") + d3schalter("gebaeude", "Gebäude") +
         d3schalter("strassen", "Strassen") + "</div>" +
       '<div class="d3gruppe"><span class="d3titel">Projekt</span>' +
         d3schalter("grundstueck", "Grundstück") + d3schalter("projekt", "Baukörper") + "</div>" +
+      '<div class="d3gruppe"><span class="d3titel">Blickrichtung</span>' +
+        '<button class="m3knopf" data-blick="sued">Süd</button>' +
+        '<button class="m3knopf" data-blick="west">West</button>' +
+        '<button class="m3knopf" data-blick="nord">Nord</button>' +
+        '<button class="m3knopf" data-blick="ost">Ost</button>' +
+        '<button class="m3knopf" data-blick="oben">Aufsicht</button>' +
+        '<button class="m3knopf m3neben" data-blick="start">Zurücksetzen</button>' + "</div>" +
       '<div class="d3gruppe"><span class="d3titel">Analyse</span>' +
         '<label class="d3opt"><input type="checkbox" id="sonne-an">Sonne &amp; Schatten</label>' +
         '<button class="m3knopf" data-mess="distanz">Distanz</button>' +
@@ -6049,10 +6137,10 @@ function secSzenarien(erg) {
     '<div class="m3tafel"><span class="m3hinweis" id="mess-hinweis"></span>' +
       '<div id="mess-liste"></div></div>' +
     '<div id="view3d-legende"></div>' +
-    '<div class="note">Ziehen dreht die Ansicht, Scrollen zoomt. Jedes Volumen ist das Extrudat eines real berechneten Polygons mit der berechneten Höhe &mdash; ist keine Höhe bekannt, wird der Körper flach dargestellt statt geraten.</div>' +
-    budgetBlock + tabelle +
-    '<h4 class="subhead">Die Szenarien im Einzelnen</h4>' + karten +
-    "</section>";
+    '<div class="note">Ziehen dreht, Scrollen zoomt, <b>Rechtsklick ziehen</b> oder ' +
+    '<b>Umschalt + ziehen</b> verschiebt den Blickpunkt. Der Mittelpunkt liegt beim ' +
+    'Grundstück.</div>' +
+  "</section>";
 }
 
 /* --- 3D-Ansicht: Baukoerper aus den berechneten Geometrien ---
@@ -6063,6 +6151,14 @@ function secSzenarien(erg) {
 (function () {
   var szene = null, kamera = null, renderer = null, gruppe3d = null, animation = null;
   var drehung = 0.6, neigung = 0.9, zoom = 1.0, ziehtGerade = false, letzteMaus = null;
+  // Der Punkt, um den die Kamera kreist. Er lag fest auf (0,0,0) -- dem
+  // Parzellenmittelpunkt. Als Startpunkt ist das genau richtig, aber wer
+  // eine Projektstudie beurteilt, will auch den Nachbarn ansehen, ohne
+  // die Parzelle zu verlieren. Deshalb ist er jetzt verschiebbar und
+  // laesst sich jederzeit zuruecksetzen.
+  var blickpunkt = null;      // THREE.Vector3, erst nach bereitMachen()
+  var schiebtGerade = false;  // Rechtsklick oder Umschalt: verschieben statt drehen
+  var START = { drehung: 0.6, neigung: 0.9, zoom: 1.0 };
   var umgebungslicht = null, sonnenlicht = null, klickStart = null;
 
   // Der Rahmen der laufenden Szene. Messung und Schattenkamera brauchen ihn:
@@ -6130,28 +6226,54 @@ function secSzenarien(erg) {
 
     // Ziehen dreht, Klicken misst. Unterschieden wird am zurueckgelegten Weg:
     // wer die Ansicht dreht, bewegt die Maus dabei zwangslaeufig.
+    blickpunkt = new THREE.Vector3(0, 0, 0);
+
+    // Drei Gesten, die sich nicht in die Quere kommen duerfen:
+    //   linke Taste ziehen        -> drehen
+    //   rechte Taste / Umschalt   -> Blickpunkt verschieben
+    //   linke Taste klicken       -> messen (nur im Messmodus)
+    // Unterschieden wird an der Taste und am zurueckgelegten Weg. Ohne
+    // die Tastenpruefung loeste auch das Loslassen nach dem Verschieben
+    // eine Messung aus.
+    renderer.domElement.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     renderer.domElement.addEventListener("pointerdown", function (e) {
-      ziehtGerade = true;
+      schiebtGerade = e.button === 2 || e.shiftKey;
+      ziehtGerade = !schiebtGerade;
       letzteMaus = { x: e.clientX, y: e.clientY };
-      klickStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+      klickStart = e.button === 0 && !e.shiftKey
+        ? { x: e.clientX, y: e.clientY, t: Date.now() } : null;
     });
     renderer.domElement.addEventListener("pointerup", function (e) {
-      if (klickStart && messModus) {
+      if (klickStart && messModus && e.button === 0) {
         var weg = Math.hypot(e.clientX - klickStart.x, e.clientY - klickStart.y);
         if (weg < 5 && Date.now() - klickStart.t < 700) messKlick(e);
       }
       klickStart = null;
     });
-    window.addEventListener("pointerup", function () { ziehtGerade = false; });
+    window.addEventListener("pointerup", function () {
+      ziehtGerade = false; schiebtGerade = false;
+    });
     window.addEventListener("pointermove", function (e) {
-      if (!ziehtGerade || !letzteMaus) return;
-      drehung += (e.clientX - letzteMaus.x) * 0.006;
-      neigung = Math.max(0.12, Math.min(1.45, neigung - (e.clientY - letzteMaus.y) * 0.005));
+      if (!letzteMaus) return;
+      var dx = e.clientX - letzteMaus.x, dy = e.clientY - letzteMaus.y;
+      if (schiebtGerade && blickpunkt) {
+        // In der Blickebene verschieben, nicht in Weltachsen -- sonst
+        // laeuft die Szene je nach Drehwinkel seitwaerts davon.
+        var weite = (szeneRahmen ? szeneRahmen.spanne : 150) * zoom * 0.0022;
+        blickpunkt.x -= (dx * Math.cos(drehung) - dy * Math.sin(drehung)) * weite;
+        blickpunkt.z -= (dx * Math.sin(drehung) + dy * Math.cos(drehung)) * weite;
+      } else if (ziehtGerade) {
+        drehung += dx * 0.006;
+        // Bis knapp unter den Horizont und bis fast senkrecht von oben.
+        neigung = Math.max(0.04, Math.min(1.52, neigung - dy * 0.005));
+      }
       letzteMaus = { x: e.clientX, y: e.clientY };
     });
     renderer.domElement.addEventListener("wheel", function (e) {
       e.preventDefault();
-      zoom = Math.max(0.45, Math.min(3.2, zoom * (e.deltaY > 0 ? 1.1 : 0.9)));
+      // Weiter als bisher: naeher heran an einen einzelnen Baukoerper,
+      // weiter heraus fuer den Quartierzusammenhang.
+      zoom = Math.max(0.12, Math.min(6.0, zoom * (e.deltaY > 0 ? 1.1 : 0.9)));
     }, { passive: false });
     window.addEventListener("resize", function () {
       if (!renderer || !behaelter()) return;
@@ -6947,6 +7069,49 @@ function secSzenarien(erg) {
     ladeUmgebung(function () { zeichneSzene(szenarioId); });
   };
 
+  /* Feste Blickrichtungen.
+
+     "Frei drehbar" heisst nicht, dass man jede Ansicht erst suchen muss.
+     Vier Himmelsrichtungen und die Aufsicht sind die Perspektiven, aus
+     denen ein Projekt beurteilt wird -- Sued zeigt die Besonnung, die
+     Aufsicht zeigt die Lage im Baubereich. */
+  var BLICK = {
+    sued:  { drehung: 0.0,             neigung: 0.45 },
+    west:  { drehung: Math.PI / 2,     neigung: 0.45 },
+    nord:  { drehung: Math.PI,         neigung: 0.45 },
+    ost:   { drehung: -Math.PI / 2,    neigung: 0.45 },
+    oben:  { drehung: 0.0,             neigung: 1.50 },
+    start: { drehung: START.drehung,   neigung: START.neigung, zoom: START.zoom, zurueck: true }
+  };
+  window.setze3DBlick = function (name) {
+    var b = BLICK[name];
+    if (!b) return;
+    drehung = b.drehung;
+    neigung = b.neigung;
+    if (b.zoom !== undefined) zoom = b.zoom;
+    // Nur "Zuruecksetzen" holt den Blickpunkt zur Parzelle zurueck. Wer
+    // eine Richtung waehlt, will den Ausschnitt behalten, den er sich
+    // gerade zurechtgeschoben hat.
+    if (b.zurueck && blickpunkt) blickpunkt.set(0, 0, 0);
+  };
+
+  /* Die Buehne misst sich nur beim Anlegen und bei resize.
+
+     Solange der Reiter verborgen ist, ist der Container 0 x 0 -- ein
+     Renderer, der so angelegt wird, bleibt leer, bis jemand das Fenster
+     zieht. Dasselbe Problem wie bei Leaflet, dieselbe Loesung: beim
+     Sichtbarwerden einmal nachmessen. */
+  window.passe3DAn = function () {
+    var el = behaelter();
+    if (!renderer || !el || !el.clientWidth || !el.clientHeight) return false;
+    if (renderer.domElement.width === el.clientWidth
+        && renderer.domElement.height === el.clientHeight) return true;
+    kamera.aspect = el.clientWidth / el.clientHeight;
+    kamera.updateProjectionMatrix();
+    renderer.setSize(el.clientWidth, el.clientHeight);
+    return true;
+  };
+
   window.setze3DSicht = function (schluessel, an) {
     u3dSicht[schluessel] = an;
     if (u3dGruppen[schluessel]) u3dGruppen[schluessel].visible = an;
@@ -7088,12 +7253,13 @@ function secSzenarien(erg) {
     (function schleife() {
       animation = requestAnimationFrame(schleife);
       var d = spanne * 1.15 * zoom;
+      var z0 = blickpunkt || { x: 0, y: 0, z: 0 };
       kamera.position.set(
-        Math.sin(drehung) * Math.cos(neigung) * d,
-        Math.sin(neigung) * d,
-        Math.cos(drehung) * Math.cos(neigung) * d
+        z0.x + Math.sin(drehung) * Math.cos(neigung) * d,
+        z0.y + Math.sin(neigung) * d,
+        z0.z + Math.cos(drehung) * Math.cos(neigung) * d
       );
-      kamera.lookAt(0, 0, 0);
+      kamera.lookAt(z0.x, z0.y, z0.z);
       renderer.render(szene, kamera);
       messSchilderZeichnen();
     })();
@@ -7108,6 +7274,13 @@ function d3schalter(schluessel, beschriftung) {
 // Die Schalter wirken direkt auf die Szenengruppen -- kein Neuaufbau, nur
 // Sichtbarkeit. Deshalb reagiert die Ansicht ohne Verzoegerung.
 function verdrahte3DSteuerung() {
+  document.querySelectorAll("[data-blick]").forEach(function (b) {
+    if (b._verdrahtet) return;
+    b._verdrahtet = true;
+    b.addEventListener("click", function () {
+      if (window.setze3DBlick) window.setze3DBlick(b.dataset.blick);
+    });
+  });
   document.querySelectorAll(".d3box").forEach(function (box) {
     if (box._verdrahtet) return;
     box._verdrahtet = true;
