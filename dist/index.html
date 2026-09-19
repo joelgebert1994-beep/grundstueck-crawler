@@ -8225,6 +8225,102 @@ function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt) {
   "</div>";
 }
 
+/* Ein Marktsegment, das (noch) in keine Rechnung eingeht.
+
+   Einfamilienhaus, Renditeliegenschaft und Wohnung Bestand sind
+   Referenzsegmente: sie ordnen den Markt ein, aber die
+   Wirtschaftlichkeit rechnet heute mit Neubauwohnung, Bauland und Miete.
+   Deshalb haben sie kein Eingabefeld -- ein Feld, das nichts bewirkt,
+   waere ein Versprechen ohne Deckung.
+
+   Die grosse Zahl ist hier der SYSTEMVORSCHLAG und nicht "gerechnet
+   mit": es wird ja nichts damit gerechnet. Gibt es keinen, bleibt das
+   Feld offen -- die Bandbreite ist dann die ganze Aussage.
+
+   Gerechnet wird auch hier nichts: jede Zahl stammt aus der
+   Serverantwort. */
+function marktSegment(schluessel, label, einheit, alsMillionen) {
+  var lage = wLage(schluessel);
+  if (!lage) return "";
+  var objekte = alsListe(lage.objekte);
+  var sicher = lage.sicherheit || (lage.anzahl ? "mittel" : "keine_daten");
+  var mind = lage.mindestanforderung || {};
+  var zahl = function (v) {
+    return alsMillionen ? chf(v, true) : chf(v);
+  };
+
+  var spanne = !lage.spanne ? null
+    : (lage.spanne[0] === lage.spanne[1]
+        ? zahl(lage.spanne[0]) + " " + einheit
+        : zahl(lage.spanne[0]) + "–" + zahl(lage.spanne[1]) + " " + einheit);
+
+  // Die Zweitkennzahl ordnet den Gesamtpreis ein -- sie ersetzt ihn nicht
+  // und geht in keine Rechnung ein.
+  var z = lage.zweitkennzahl;
+  var zweit = !z ? "" :
+    ebeneZeile(begriff(z.bezeichnung),
+      chf(z.median) + " " + lesbar(z.einheit),
+      null,
+      z.anzahl + " von " + z.von + (z.von === 1 ? " Referenz" : " Referenzen") +
+      (z.spanne ? " · " + chf(z.spanne[0]) + "–" + chf(z.spanne[1]) : ""));
+
+  var gebiet = wGebiet(schluessel) || {};
+  var gebietZeile = !gebiet.bezeichnung ? "" :
+    ebeneZeile("Ausgewertet für",
+      ((gebiet.text ? gebiet.text + " " : "") + gebiet.bezeichnung).replace(/^\s+/, ""),
+      gebiet.ausgeweitet ? ["ausgeweitet", "warn"] : null);
+
+  var gruende = alsListe(lage.begruendung);
+  var gruendeHtml = gruende.length
+    ? '<ul class="mgrgruende">' + gruende.map(function (b) {
+        return "<li>" + satz(b) + "</li>";
+      }).join("") + "</ul>"
+    : "";
+
+  var angebote = (lage.nach_preisart || {}).angebot || 0;
+  var preisartZeile = !angebote ? "" :
+    '<div class="note warn">' + angebote + " von " + (lage.anzahl || 0) +
+    (angebote === 1 ? " Referenz ist ein <b>Angebotspreis</b>"
+                    : " Referenzen sind <b>Angebotspreise</b>") +
+    " aus Inseraten, kein beurkundeter Abschluss. Das ist der Preis, der " +
+    "verlangt wird — nicht der, der bezahlt wurde.</div>";
+
+  var mindZeile = (mind.erfuellt === false && lage.anzahl)
+    ? '<div class="note">Kein Systemvorschlag: ' + (mind.vorhanden || 0) + " von " +
+      (mind.min_objekte || 3) + " nötigen Referenzen. Die Bandbreite ist hier die " +
+      "ganze Aussage.</div>"
+    : "";
+
+  var details = objekte.length
+    ? '<details class="more"><summary>Welche Objekte dahinterstehen — ' +
+      objekte.length + "</summary><div>" +
+      quellenBlock(objekte, "Woher diese Referenzen stammen") +
+      "</div></details>"
+    : "";
+
+  return '<div class="mgr">' +
+    '<div class="mgrkopf"><b>' + esc(label) + "</b>" +
+      '<span class="badge mute">Referenz</span>' +
+      '<span class="right">' + sicherheitsMeter(sicher) + "</span></div>" +
+    '<div class="mgrhaupt">' +
+      '<div class="mgrwert"><div class="lbl">Systemvorschlag</div>' +
+        '<div class="val' + (leer(lage.systemvorschlag) ? " na" : "") + '">' +
+        (leer(lage.systemvorschlag) ? "nicht bestimmbar"
+          : zahl(lage.systemvorschlag) + ' <span class="einheit">' + esc(einheit) + "</span>") +
+        "</div>" +
+        '<div class="fuss">' + (lage.anzahl || 0) +
+          ((lage.anzahl === 1) ? " geeignete Referenz" : " geeignete Referenzen") +
+        "</div></div>" +
+    "</div>" +
+    '<div class="ezeilen">' +
+      ebeneZeile("Spanne", spanne) +
+      zweit +
+      gebietZeile +
+    "</div>" +
+    gruendeHtml + mindZeile + preisartZeile + details +
+  "</div>";
+}
+
 function marktBlock(erg) {
   var e = wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
@@ -8261,12 +8357,15 @@ function marktBlock(erg) {
 
   return (wErgebnis && wErgebnis.marktlage_fehler
       ? '<div class="note warn">' + esc(wErgebnis.marktlage_fehler) + "</div>" : "") +
-    marktGroesse((e.verkauf || {}).preis || nurReferenz("verkauf"), "Verkaufspreis",
+    marktGroesse((e.verkauf || {}).preis || nurReferenz("verkauf"), "Wohnung Neubau",
                  "CHF/m²", wLage("verkauf"), "w-verkauf", wEingaben.verkauf_chf_pro_m2, "50") +
+    marktSegment("wohnung_bestand", "Wohnung Bestand", "CHF/m²", false) +
+    marktSegment("efh", "Einfamilienhaus", "CHF", true) +
+    marktSegment("mfh", "Renditeliegenschaft", "CHF", true) +
+    marktGroesse((e.land || {}).bodenpreis || nurReferenz("boden"), "Bauland",
+                 "CHF/m²", wLage("boden"), "w-boden", wEingaben.bodenpreis_chf_pro_m2, "50") +
     marktGroesse((e.miete || {}).ansatz || nurReferenz("miete"), "Mietzins",
                  "CHF/m²/Jahr", wLage("miete"), "w-miete", wEingaben.miete_chf_pro_m2_jahr, "5") +
-    marktGroesse((e.land || {}).bodenpreis || nurReferenz("boden"), "Bodenpreis",
-                 "CHF/m²", wLage("boden"), "w-boden", wEingaben.bodenpreis_chf_pro_m2, "50") +
     ((e.land || {}).ansatz_bedeutung
       ? '<div class="note">' + esc(e.land.ansatz_bedeutung) + "</div>" : "") +
     grundlagen;
@@ -8893,7 +8992,11 @@ function secMarkt(erg) {
         ebeneKopf(3, "Meine Annahmen", "Womit wird gerechnet?") +
         '<div class="egrund">Was Sie hier setzen, hat immer Vorrang vor jedem ' +
         'Systemvorschlag. Ohne verwertbare Referenzen gibt es keinen Vorschlag — dann ist ' +
-        'der Wert ausschliesslich Ihre Annahme, und das Dossier weist ihn auch so aus.</div>' +
+        'der Wert ausschliesslich Ihre Annahme, und das Dossier weist ihn auch so aus.' +
+        '<br>Drei Segmente gehen heute in die Wirtschaftlichkeit ein und haben ein ' +
+        'Eingabefeld: <b>Wohnung Neubau</b>, <b>Bauland</b> und <b>Mietzins</b>. Die ' +
+        'übrigen sind mit <b>Referenz</b> gekennzeichnet — sie ordnen den Markt ein, ' +
+        'rechnen aber nicht mit.</div>' +
         '<div id="w-markt">' + marktBlock(erg) + "</div>" +
       "</div>" +
     "</div>" +

@@ -311,16 +311,30 @@ def test_uebergabe() -> None:
 
 
 def test_marktlage() -> None:
-    print("=== Marktlage: alle drei Groessen auf einmal ===")
+    print("=== Marktlage: alle Segmente auf einmal ===")
     objekte = [
-        objekt(bezeichnung="Verkauf A", preis_chf_pro_m2=9000),
-        objekt(bezeichnung="Verkauf B", preis_chf_pro_m2=9200),
+        # Beurkundet -- sonst zaehlt es als Bestand und nicht als Neubau.
+        objekt(bezeichnung="Verkauf A", preis_chf_pro_m2=9000,
+               objektart="Eigentumswohnung", preisart=md.PREISART_ABSCHLUSS),
+        objekt(bezeichnung="Verkauf B", preis_chf_pro_m2=9200,
+               objektart="Eigentumswohnung", preisart=md.PREISART_ABSCHLUSS),
         objekt(bezeichnung="Miete A", preis_chf_pro_m2=None, mietzins_chf_pro_m2_jahr=260),
         objekt(bezeichnung="Bauland", objektart="Bauland", preis_chf_pro_m2=None,
                bodenpreis_chf_pro_m2=950),
+        objekt(bezeichnung="Haus", objektart="Einfamilienhaus",
+               preis_chf_pro_m2=None, preis_chf=1_350_000),
+        objekt(bezeichnung="Rendite", objektart="Mehrfamilienhaus",
+               preis_chf_pro_m2=None, preis_chf=3_900_000),
     ]
     lage = md.marktlage(objekte)
-    pruefe(set(lage) == {"verkauf", "miete", "boden"}, "alle drei Groessen ausgewertet")
+    pruefe(set(lage) == set(md.GROESSEN_REIHENFOLGE),
+           f"alle sechs Segmente ausgewertet ({sorted(lage)})")
+    pruefe(list(lage) == list(md.GROESSEN_REIHENFOLGE),
+           "und in fester Reihenfolge -- die Oberflaeche verlaesst sich darauf")
+    pruefe(len(lage["efh"].objekte) == 1, f"1 EFH-Referenz ({len(lage['efh'].objekte)})")
+    pruefe(len(lage["mfh"].objekte) == 1, f"1 MFH-Referenz ({len(lage['mfh'].objekte)})")
+    pruefe(len(lage["efh"].objekte) == 1 and lage["efh"].objekte[0].bezeichnung == "Haus",
+           "das Haus zaehlt zum EFH, nicht zur Renditeliegenschaft")
     pruefe(len(lage["verkauf"].objekte) == 2, f"2 Verkaufsreferenzen ({len(lage['verkauf'].objekte)})")
     pruefe(len(lage["miete"].objekte) == 1, "1 Mietreferenz")
     pruefe(len(lage["boden"].objekte) == 1, "1 Bodenreferenz")
@@ -383,11 +397,21 @@ def test_eignung() -> None:
     pruefe("nicht der Verkaufspreis neu gebauter" in (grund or ""),
            "und der Grund sagt warum")
 
+    # Geaendert mit den neuen Segmenten: auch ein WOHNUNGSINSERAT ist ein
+    # Bestandspreis. Frueher galt es als Verkaufsreferenz -- das war zu
+    # grosszuegig, und seit es das Segment Wohnung Bestand gibt, hat es
+    # ein eigenes Fach.
     wohnung = objekt(bezeichnung="ETW aus dem Inserat", objektart="Eigentumswohnung",
                      herkunftsart=md.HERKUNFT_EXTERN, preisart=md.PREISART_ANGEBOT,
                      preis_chf_pro_m2=9000)
-    pruefe(md.eignung(wohnung, md.GROESSE_VERKAUF) is None,
-           "ein Wohnungsinserat dagegen schon -- dort ist der Preis je m2 gemeint")
+    grund_wohnung = md.eignung(wohnung, md.GROESSE_VERKAUF)
+    pruefe(grund_wohnung is not None and "Wohnung Bestand" in grund_wohnung,
+           "auch ein Wohnungsinserat ist ein Bestandspreis und verweist aufs "
+           "richtige Segment")
+    pruefe(md.eignung(wohnung, md.GROESSE_WOHNUNG_BESTAND) is None,
+           "dort ist es zugelassen")
+    pruefe(md.eignung(wohnung, md.GROESSE_EFH) is not None,
+           "aber nicht im Segment Einfamilienhaus")
 
     abschluss = objekt(bezeichnung="Beurkundet", objektart="Mehrfamilienhaus",
                        herkunftsart=md.HERKUNFT_EXTERN, preisart=md.PREISART_ABSCHLUSS,
@@ -467,11 +491,13 @@ def test_plz_und_preisart() -> None:
     pruefe("andere PLZ" in r.ausgeschlossen[0]["grund"], "und der Grund nennt die PLZ")
 
     # Reine Angebotsdaten koennen nie 'hoch' werden.
-    # Wohnungsinserate -- sonst greift schon die Eignungsregel.
+    # Gemessen im Segment Wohnung BESTAND: dorthin gehoeren Wohnungs-
+    # inserate, seit "Verkauf" ausschliesslich Neubau meint. Die Aussage
+    # dieses Tests ist der Sicherheitsgrad, nicht das Segment.
     angebote = [objekt(bezeichnung=f"A{i}", preis_chf_pro_m2=9000 + i * 20,
                        objektart="Eigentumswohnung", preisart=md.PREISART_ANGEBOT)
                 for i in range(8)]
-    nur_angebot = md.werte_referenzen_aus(angebote, md.GROESSE_VERKAUF)
+    nur_angebot = md.werte_referenzen_aus(angebote, md.GROESSE_WOHNUNG_BESTAND)
     pruefe(nur_angebot.sicherheit == md.SICHERHEIT_MITTEL,
            f"8 enge, aktuelle Angebotspreise ergeben hoechstens mittel ({nur_angebot.sicherheit})")
     pruefe(any("beurkundeter Abschluss" in b for b in nur_angebot.begruendung),
@@ -479,8 +505,9 @@ def test_plz_und_preisart() -> None:
 
     mit_abschluss = md.werte_referenzen_aus(
         angebote + [objekt(bezeichnung="Beurkundet", preis_chf_pro_m2=9080,
+                           objektart="Eigentumswohnung",
                            preisart=md.PREISART_ABSCHLUSS)],
-        md.GROESSE_VERKAUF)
+        md.GROESSE_WOHNUNG_BESTAND)
     pruefe(mit_abschluss.sicherheit == md.SICHERHEIT_HOCH,
            f"mit einem beurkundeten Abschluss wird hoch erreichbar ({mit_abschluss.sicherheit})")
     pruefe(mit_abschluss.nach_preisart()[md.PREISART_ANGEBOT] == 8,
@@ -532,9 +559,10 @@ def test_aussenkante_marktdaten() -> None:
     gebiet = antwort.get("referenzgebiet") or {}
     pruefe(gebiet.get("plz") == "5033",
            f"Das Referenzgebiet nennt die PLZ ({gebiet.get('plz')})")
-    pruefe("je_groesse" in gebiet and set(gebiet["je_groesse"]) ==
-           {md.GROESSE_VERKAUF, md.GROESSE_MIETE, md.GROESSE_BODEN},
-           "und fuer jede Marktgroesse, welches Gebiet ausgewertet wurde")
+    pruefe("je_groesse" in gebiet
+           and set(gebiet["je_groesse"]) == set(md.GROESSEN_REIHENFOLGE),
+           "und fuer jedes Segment, welches Gebiet ausgewertet wurde "
+           f"({sorted(gebiet.get('je_groesse') or {})})")
 
     lage = antwort.get("marktlage") or {}
     fehlend = [f"{g}.{k}" for g in lage for k in

@@ -61,16 +61,56 @@ HERKUNFT_GEBIMO = "gebimo"
 HERKUNFT_MANUELL = "manuell"
 _HERKUNFTSARTEN = {HERKUNFT_EXTERN, HERKUNFT_GEBIMO, HERKUNFT_MANUELL}
 
-# Die drei Marktgroessen, fuer die es Referenzen gibt.
-GROESSE_VERKAUF = "verkauf"
+# Die Marktsegmente, fuer die es Referenzen gibt.
+#
+# Sechs statt drei -- und der Grund steht in den Daten: der AkquiseRadar
+# fuehrt 1245 "Haus", 173 "Mehrfamilienhaus" und 121 "Bauland", aber nur
+# 2 "Wohnung". Mit einer einzigen Groesse "Verkaufspreis CHF/m2" bleiben
+# davon 1 verwertbar, weil ein Objektangebot kein Neubauwohnungspreis ist
+# und zu Recht abgewiesen wird. Die Objekte sind also nicht unbrauchbar --
+# es fehlte das Fach, in das sie gehoeren.
+#
+# Die drei alten Schluessel bleiben unveraendert. Sie stehen in gespeicherten
+# Antworten, in der Oberflaeche und in der Wirtschaftlichkeit; sie
+# umzubenennen waere eine Aenderung an fuenf Stellen fuer null Gewinn.
+GROESSE_VERKAUF = "verkauf"                  # Wohnung NEUBAU, CHF/m2
 GROESSE_MIETE = "miete"
-GROESSE_BODEN = "boden"
+GROESSE_BODEN = "boden"                      # Bauland, CHF/m2 Grundstueck
+GROESSE_WOHNUNG_BESTAND = "wohnung_bestand"  # Wohnung BESTAND, CHF/m2
+GROESSE_EFH = "efh"                          # Einfamilienhaus, Preis gesamt
+GROESSE_MFH = "mfh"                          # Renditeliegenschaft, Preis gesamt
 
 _GROESSEN: dict[str, tuple[str, str, str]] = {
     # schluessel: (Feld im Vergleichsobjekt, Einheit, Klartext)
-    GROESSE_VERKAUF: ("preis_chf_pro_m2", "CHF/m2", "Verkaufspreis"),
+    GROESSE_VERKAUF: ("preis_chf_pro_m2", "CHF/m2", "Wohnung Neubau"),
+    GROESSE_WOHNUNG_BESTAND: ("preis_chf_pro_m2", "CHF/m2", "Wohnung Bestand"),
+    GROESSE_EFH: ("preis_chf", "CHF", "Einfamilienhaus"),
+    GROESSE_MFH: ("preis_chf", "CHF", "Renditeliegenschaft"),
+    GROESSE_BODEN: ("bodenpreis_chf_pro_m2", "CHF/m2", "Bauland"),
     GROESSE_MIETE: ("mietzins_chf_pro_m2_jahr", "CHF/m2/Jahr", "Mietzins"),
-    GROESSE_BODEN: ("bodenpreis_chf_pro_m2", "CHF/m2", "Bodenpreis"),
+}
+
+# Die Reihenfolge, in der die Segmente gehoeren -- vom Feinen zum Groben.
+# An EINER Stelle, damit Oberflaeche und Endpunkte nicht auseinanderlaufen.
+GROESSEN_REIHENFOLGE = (
+    GROESSE_VERKAUF, GROESSE_WOHNUNG_BESTAND, GROESSE_EFH,
+    GROESSE_MFH, GROESSE_BODEN, GROESSE_MIETE,
+)
+
+# Eine zweite, NACHGEORDNETE Kennzahl je Segment.
+#
+# Ein Einfamilienhaus wird zum Gesamtpreis gehandelt -- das ist die Zahl,
+# mit der jemand in ein Gespraech geht. Der Preis je m2 Wohnflaeche ordnet
+# ihn ein, ersetzt ihn aber nicht. Beides in EINE Groesse zu werfen hiesse,
+# zwei Einheiten zu mitteln.
+#
+# Fuer die Renditeliegenschaft waere die belastbare Zweitkennzahl die
+# Bruttorendite. Sie steht hier NICHT: von 173 MFH-Inseraten fuehren drei
+# einen Mietzins. Eine Rendite aus drei Beobachtungen waere eine Zahl ohne
+# Grundlage -- also gibt es sie nicht, und der Grund steht im Dossier.
+_ZWEITGROESSEN: dict[str, tuple[str, str, str]] = {
+    GROESSE_EFH: ("preis_chf_pro_m2", "CHF/m2", "je m2 Wohnflaeche"),
+    GROESSE_MFH: ("preis_chf_pro_m2", "CHF/m2", "je m2 Wohnflaeche"),
 }
 
 # Wie belastbar ist die ERFASSTE ANGABE? Nicht: wie gut ist das Objekt.
@@ -181,9 +221,22 @@ MAX_ALTER_MONATE = 24
 # Ausgeschlossene Objekte verschwinden nicht -- sie werden mit Grund
 # ausgewiesen und lassen sich von Hand korrigieren.
 PLAUSIBEL: dict[str, tuple[float, float]] = {
-    GROESSE_VERKAUF: (1_000.0, 30_000.0),      # CHF/m2 Wohnflaeche
-    GROESSE_MIETE: (60.0, 900.0),              # CHF/m2/Jahr
-    GROESSE_BODEN: (50.0, 20_000.0),           # CHF/m2 Grundstueck
+    GROESSE_VERKAUF: (1_000.0, 30_000.0),          # CHF/m2 Wohnflaeche
+    GROESSE_WOHNUNG_BESTAND: (1_000.0, 30_000.0),  # dieselbe Einheit
+    GROESSE_MIETE: (60.0, 900.0),                  # CHF/m2/Jahr
+    GROESSE_BODEN: (50.0, 20_000.0),               # CHF/m2 Grundstueck
+    # Gesamtpreise. Weit gefasst und ausdruecklich KEINE Marktaussage:
+    # gemessen am Radar-Bestand reicht die Spanne bei Haeusern von
+    # 64'050 (1. Perzentil) bis 9.5 Mio. (99.), mit einzelnen Ausreissern
+    # daneben -- darunter ein Inserat mit "1". Genau solche faengt das hier.
+    GROESSE_EFH: (50_000.0, 50_000_000.0),
+    GROESSE_MFH: (100_000.0, 200_000_000.0),
+}
+
+# Grenzen fuer die Zweitkennzahl, gleiche Begruendung.
+PLAUSIBEL_ZWEIT: dict[str, tuple[float, float]] = {
+    GROESSE_EFH: (500.0, 40_000.0),
+    GROESSE_MFH: (500.0, 40_000.0),
 }
 
 # Objektarten in einer kleinen, festen Sprache. Die Portale schreiben
@@ -457,6 +510,32 @@ class Vergleichsfilter:
 # Die Referenz-Auswertung
 # ---------------------------------------------------------------------------
 
+# Welche Objektarten taugen fuer welches Segment?
+#
+# Was hier NICHT steht, ist ebenso wichtig wie was dasteht: ein Segment
+# ohne Eintrag laesst alles zu. Die Miete zum Beispiel wird nicht nach
+# Objektart gefiltert -- ein Mietzins je m2 ist ein Mietzins je m2.
+#
+# OBJEKTART_HAUS ("Haus", Art im Inserat unbestimmt) zaehlt zum
+# Einfamilienhaus. Das ist eine Entscheidung und keine Messung: die
+# Portale schreiben "Haus" fuer das, was fachlich ein EFH ist, und 1245
+# von 1380 Haeusern im Bestand tragen genau dieses Wort. Sie deshalb
+# liegenzulassen hiesse, 90 % des Segments wegzuwerfen. Wie viele aus
+# welcher Gruppe kommen, weist die Auswertung aus.
+_EIGNUNG: dict[str, tuple[frozenset[str], str]] = {
+    GROESSE_WOHNUNG_BESTAND: (
+        frozenset({OBJEKTART_WOHNUNG}),
+        "im Segment Wohnung Bestand zaehlen nur Wohnungen."),
+    GROESSE_EFH: (
+        frozenset({OBJEKTART_EFH, OBJEKTART_HAUS}),
+        "im Segment Einfamilienhaus zaehlen nur Haeuser."),
+    GROESSE_MFH: (
+        frozenset({OBJEKTART_MFH}),
+        "im Segment Renditeliegenschaft zaehlen nur Mehrfamilien- und "
+        "Renditeobjekte -- ein Einfamilienhaus ist keine Renditeliegenschaft."),
+}
+
+
 def eignung(obj: Vergleichsobjekt, groesse: str) -> Optional[str]:
     """Darf dieses Objekt fuer DIESE Marktgroesse verwendet werden?
 
@@ -474,21 +553,42 @@ def eignung(obj: Vergleichsobjekt, groesse: str) -> Optional[str]:
     dort entscheidet der Benutzer, was er als Vergleich heranzieht -- so wie
     die Benutzerannahme ueberall in diesem Werkzeug Vorrang hat.
     """
-    if groesse != GROESSE_VERKAUF:
+    if groesse != GROESSE_VERKAUF and groesse not in _EIGNUNG:
         return None
+    # Von Hand erfasste Referenzen bleiben immer zugelassen -- siehe oben.
     if obj.herkunftsart in (HERKUNFT_MANUELL, HERKUNFT_GEBIMO):
         return None
-    if obj.preisart == PREISART_ABSCHLUSS:
-        return None
     art = obj.objektart_normal
-    if art == OBJEKTART_WOHNUNG:
+
+    if groesse == GROESSE_VERKAUF:
+        # Ein beurkundeter Abschluss bleibt zugelassen, unabhaengig von der
+        # Objektart: dort ist bezahlt worden, was dasteht.
+        if obj.preisart == PREISART_ABSCHLUSS:
+            return None
+        # Bis hierher galt ein WOHNUNGSINSERAT als Verkaufsreferenz. Das war
+        # zu grosszuegig, und der eigene Kommentar dieses Moduls sagt warum:
+        # ein Angebot beantwortet "was kostet dieser Bestand", nicht "fuer
+        # wie viel lassen sich hier neu gebaute Wohnungen verkaufen". Das
+        # gilt fuer eine bestehende Wohnung genauso wie fuer ein Haus.
+        # Seit es das Segment Wohnung Bestand gibt, hat dieses Inserat
+        # ausserdem ein eigenes Fach -- es geht nichts verloren.
+        if art == OBJEKTART_WOHNUNG:
+            return (
+                "Angebotspreis einer Wohnung -- das ist der Preis einer BESTEHENDEN "
+                "Wohnung, nicht der Verkaufspreis neu gebauter Wohnungen. Er zaehlt "
+                "im Segment Wohnung Bestand."
+            )
+        return (
+            f"Angebotspreis fuer ein ganzes Objekt ({obj.objektart or 'Art unbekannt'}) -- "
+            "das ist der Preis des Bestands, nicht der Verkaufspreis neu gebauter "
+            "Wohnungen. Als Verkaufsreferenz taugen beurkundete Abschluesse oder eine "
+            "eigene Annahme."
+        )
+
+    erlaubt, wortlaut = _EIGNUNG[groesse]
+    if art in erlaubt:
         return None
-    return (
-        f"Angebotspreis fuer ein ganzes Objekt ({obj.objektart or 'Art unbekannt'}) -- "
-        "das ist der Preis des Bestands, nicht der Verkaufspreis neu gebauter "
-        "Wohnungen. Als Verkaufsreferenz taugen Wohnungspreise oder beurkundete "
-        "Abschluesse."
-    )
+    return f"{obj.objektart or 'Art unbekannt'} -- {wortlaut}"
 
 
 def plausibel(wert: float, groesse: str) -> Optional[str]:
@@ -663,6 +763,45 @@ class Marktreferenz:
             zaehler[o.herkunftsart] = zaehler.get(o.herkunftsart, 0) + 1
         return zaehler
 
+    def zweitkennzahl(self) -> Optional[dict[str, Any]]:
+        """Eine nachgeordnete Kennzahl zum selben Segment -- oder None.
+
+        Beim Einfamilienhaus und bei der Renditeliegenschaft ist der
+        GESAMTPREIS die Aussage; der Preis je m2 Wohnflaeche ordnet ihn
+        ein. Beides in eine Groesse zu werfen hiesse, zwei Einheiten zu
+        mitteln.
+
+        Gerechnet wird auf genau den Objekten, die auch die Hauptkennzahl
+        tragen -- es gibt keinen zweiten Auswertungsweg und damit auch
+        keine zweite Stichprobe, die daneben liegen koennte.
+
+        Ausdruecklich OHNE Systemvorschlag: diese Zahl geht in keine
+        Rechnung ein. Sie erklaert, sie entscheidet nicht.
+        """
+        eintrag = _ZWEITGROESSEN.get(self.groesse)
+        if not eintrag:
+            return None
+        feld, einheit, bezeichnung = eintrag
+        grenzen = PLAUSIBEL_ZWEIT.get(self.groesse)
+        werte = []
+        for o in self.objekte:
+            w = getattr(o, feld, None)
+            if w is None:
+                continue
+            if grenzen and not (grenzen[0] <= w <= grenzen[1]):
+                continue
+            werte.append(float(w))
+        if not werte:
+            return None
+        return {
+            "bezeichnung": bezeichnung,
+            "einheit": einheit,
+            "anzahl": len(werte),
+            "von": len(self.objekte),
+            "median": round(statistics.median(werte), 2),
+            "spanne": [min(werte), max(werte)],
+        }
+
     def to_dict(self) -> dict[str, Any]:
         spanne = self.spanne
         return {
@@ -693,6 +832,7 @@ class Marktreferenz:
             "ausgeschlossen_nach_art": self.ausschluss_nach_art(),
             "punktwert_belastbar": (self.mindestanforderung_erfuellt
                                     and self.sicherheit in (SICHERHEIT_HOCH, SICHERHEIT_MITTEL)),
+            "zweitkennzahl": self.zweitkennzahl(),
         }
 
     def als_marktwert(self, benutzerannahme: Optional[float] = None):
@@ -916,9 +1056,10 @@ def marktlage(
     objekte: Iterable[Vergleichsobjekt],
     filter_: Optional[Vergleichsfilter] = None,
 ) -> dict[str, Marktreferenz]:
-    """Alle drei Marktgroessen auf einmal."""
+    """Alle Marktsegmente auf einmal, in fester Reihenfolge."""
     objekte = list(objekte)
-    return {g: werte_referenzen_aus(objekte, g, filter_) for g in _GROESSEN}
+    return {g: werte_referenzen_aus(objekte, g, filter_)
+            for g in GROESSEN_REIHENFOLGE}
 
 
 # ---------------------------------------------------------------------------
