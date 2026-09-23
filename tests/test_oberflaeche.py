@@ -998,8 +998,9 @@ def test_messwerkzeuge_dynamisch(s: str) -> None:
     #    Zeichnens, sonst greift man beim Setzen in eine fertige Messung.
     pruefe("!messPunkte.length && griffAnfassen(e)" in s,
            "ein Griff geht vor dem Drehen, solange keine Messung laeuft")
-    pruefe("if (messZieht || !letzteMaus) return;" in s,
-           "waehrend des Ziehens dreht sich die Kamera nicht mit")
+    pruefe("if (messZieht || entwurfZieht || !letzteMaus) return;" in s,
+           "waehrend des Ziehens dreht sich die Kamera nicht mit -- weder beim "
+           "Messpunkt noch beim Projektkoerper")
 
     # 6. Ein Strahl je Bild, nicht je Mausbewegung. Die Szene enthaelt
     #    Terrain und bis zu neunzig Nachbargebaeude.
@@ -1026,6 +1027,145 @@ def test_messwerkzeuge_dynamisch(s: str) -> None:
     pruefe("m.bearbeitet = true;" in s and "nachbearbeitet" in s,
            "eine nachtraeglich veraenderte Messung ist als solche erkennbar")
 
+def test_koerper_greifbar_und_bemassbar(s: str) -> None:
+    """Der Projektkoerper laesst sich greifen, schieben, drehen, bemassen.
+
+    Der Schritt davor erzeugte ein Volumen, das man nur ansehen konnte.
+    Hier wird daraus eine Massenstudie: anfassen, verschieben, drehen,
+    Masse aendern -- und dabei ununterbrochen sehen, was die Engine dazu
+    sagt.
+    """
+    # 1. Drei Gesten, die sich nicht gegenseitig ausloesen duerfen. Die
+    #    Reihenfolge im Quelltext IST die Vorrangregel.
+    pruefe(s.index("griffAnfassen(e)") < s.index("entwurfAnfassen(e)"),
+           "der Messgriff hat Vorrang vor dem Entwurfsgriff")
+    pruefe("!messModus && entwurfAnfassen(e)" in s,
+           "im Messmodus gehoert die Geste der Messung -- kein Koerper bewegt sich")
+    pruefe("if (messZieht || entwurfZieht || !letzteMaus) return;" in s,
+           "waehrend des Ziehens steht die Kamera still")
+    # Nur der GEWAEHLTE Koerper ist verschiebbar. Sonst verschoebe ein
+    # missglueckter Kameraschwenk den Entwurf -- der teurere Fehler.
+    pruefe("entwurfKoerperTreffer(ereignis) === k.id" in s,
+           "geschoben wird nur der ausgewaehlte Koerper")
+
+    # 2. Verschoben wird auf einer waagrechten Ebene, nicht am Strahltreffer.
+    #    Sonst spraenge der Koerper, sobald der Zeiger ein Nachbardach
+    #    streift -- und rutschte je nach Kamerawinkel seitwaerts weg.
+    pruefe("function ebenenPunkt(y)" in s and "r.direction.y" in s,
+           "der Zugpunkt ist der Schnitt des Strahls mit einer waagrechten Ebene")
+    pruefe("versatz: [k.mitte[0] - q[0], k.mitte[1] - q[1]]" in s,
+           "beim Anfassen wird der Griffversatz gemerkt -- der Koerper springt nicht "
+           "unter den Zeiger")
+    # Keine Korrektur, kein Einrasten, kein Zuruecksetzen.
+    pruefe("Keine Korrektur, kein Einrasten, kein Zurueckspringen" in s,
+           "der Koerper geht dorthin, wo die Maus ihn hinzieht")
+
+    # 3. Gerechnet wird in den Koerperachsen, nicht in Weltachsen.
+    pruefe("function koerperAchsen(k)" in s,
+           "der Koerper hat eigene Achsen (Breite, Tiefe)")
+    pruefe("function koerperPunkt(k, dx, dy)" in s,
+           "Griffe sitzen in Koerperkoordinaten")
+    # Beim Bemassen bleibt die gegenueberliegende Kante stehen.
+    pruefe("fest: g.fest || null" in s and "z.fest[0] + achse[0] * vz * neu / 2" in s,
+           "beim Bemassen bleibt die gegenueberliegende Kante stehen")
+
+    # 4. Vier Massgriffe und ein abgesetzter Drehgriff.
+    for art in ('"breite+"', '"breite-"', '"tiefe+"', '"tiefe-"', '"drehen"'):
+        pruefe(art in s, f"Griff {art} vorhanden")
+    pruefe("k.drehung = Math.atan2(p[1] - k.mitte[1], p[0] - k.mitte[0]) - Math.PI / 2;" in s,
+           "gedreht wird zur Maus hin, um die eigene Mitte")
+
+    # 5. Bemassung an der Geometrie, nicht nur im Formular.
+    pruefe('k.breite.toFixed(1) + " m"' in s and 'k.tiefe.toFixed(1) + " m"' in s,
+           "Breite und Tiefe stehen an den Kanten")
+    pruefe('text: Math.round(k.drehung * 180 / Math.PI) + "°"' in s,
+           "der Drehwinkel steht live am Griff")
+    pruefe("entwurfSchilder.push" in s,
+           "die Beschriftung laeuft ueber die vorhandene Schilderschicht mit")
+
+    # 6. Eingabefelder und Szene duerfen nicht gegeneinander arbeiten.
+    pruefe("window.entwurfSetzen = function (feld, roh)" in s,
+           "Breite, Tiefe, Drehung, Geschosse und Geschosshoehe sind eingebbar")
+    for feld in ("breite", "tiefe", "drehung", "geschosse", "geschosshoehe"):
+        pruefe(f'"{feld}"' in s, f"Feld {feld}")
+    # Die Tafel wird beim Ziehen NICHT neu gebaut -- ein neu geschriebenes
+    # Eingabefeld verliert den Fokus mitten im Tippen.
+    pruefe("function entwurfWerte()" in s and "function entwurfFelder()" in s,
+           "Zahlen und Felder werden getrennt nachgezogen")
+    pruefe("if (el === document.activeElement) return;" in s,
+           "das gerade bearbeitete Feld bleibt unberuehrt")
+    pruefe("entwurfTafel()" not in s[s.index("function entwurfZiehen("):
+                                     s.index("// --- Fachliche Pruefung")],
+           "beim Ziehen wird die Tafel nicht neu aufgebaut")
+    # Die Liste oben zeigt dieselbe Aussage wie die Tafel darunter. Stand
+    # der Zeileninhalt nur im Aufbau, sagte die Liste "erfuellt", waehrend
+    # die Tafel schon "ragt hinaus" meldete -- live beobachtet.
+    pruefe("function ekZeile(k)" in s and 'document.querySelectorAll("[data-inhalt]")' in s,
+           "die Listenzeile wird beim Ziehen mitgezogen")
+
+    # 7. Fuenf Pruefungen, jede mit drei Zustaenden -- und jede nur dort,
+    #    wo die Engine tatsaechlich etwas liefert.
+    for fn in ("pruefeBaubereich", "pruefeGrenzabstand", "pruefeRestriktion",
+               "pruefeGeschosse", "pruefeHoehe"):
+        pruefe(f"function {fn}(k)" in s, f"{fn} vorhanden")
+    pruefe(s.count('art: "unbestimmt"') >= 1 and "function unbestimmt(kurz, text)" in s,
+           "„nicht bestimmbar“ ist ein eigener Zustand, keine Notluege")
+    pruefe("verletzt: [\"verletzt\", \"stop\"]" in s,
+           "und „verletzt“ ein dritter")
+    # Der Grenzabstand kommt aus dem Kantenprotokoll der Engine, nicht aus
+    # einer eigenen Herleitung.
+    pruefe("effektive_kanten_abstaende" in s and "g1.kantenprotokoll" in s,
+           "der geforderte Grenzabstand kommt je Kante aus der GEZEICHNETEN "
+           "Anordnung -- das oberste Kantenprotokoll fuehrt bei einer "
+           "Bandbreite den grossen Abstand, waehrend der gezeichnete "
+           "Baubereich mit dem kleinen gerechnet ist")
+    # Live in Buchs: derselbe Koerper lag "vollstaendig im Baubereich" und
+    # verletzte zugleich den Grenzabstand. Beide Pruefungen hatten recht --
+    # sie massen gegen verschiedene Anordnungen.
+    pruefe("anordnung: g1Name" in s and "entwurfRaum.anordnungen > 1" in s,
+           "bei mehreren zulaessigen Anordnungen sagt die Pruefung, welche "
+           "sie gemessen hat und dass es weitere gibt")
+    # Das Protokoll fuehrt den Abstand, aber KEINE Geometrie. Die Kante nr
+    # liegt zwischen den Ringpunkten nr und nr+1 -- diese Zuordnung wird an
+    # der mitgelieferten Laenge geprueft, statt ihr zu vertrauen.
+    pruefe("Math.abs(laenge - kt.laenge_m) > 0.5" in s,
+           "die Zuordnung Kante-zu-Ringpunkt wird an der Laenge geprueft -- lieber „nicht bestimmbar“ als gegen die falsche Kante gemessen")
+    pruefe("restriktionsflaechen_fuer_g1" in s,
+           "geprueft wird gegen die Flaechen, die G1 tatsaechlich abgezogen hat")
+    # Die Hoehe ist ausdruecklich NICHT die kantonale Messweise.
+    pruefe("Geschosse × Geschosshöhe ab Terrain — nicht " in s
+           and "kantonaler Messweise" in s,
+           "die Hoehenpruefung sagt ausdruecklich, dass sie NICHT die kantonale "
+           "Messweise ist -- Attika, Dach und Terrainbezug bleiben aussen vor")
+    # 8. Eckenpruefung allein genuegt nicht: ein Rechteck kann mit allen
+    #    vier Ecken drinliegen und trotzdem ueber eine einspringende Ecke
+    #    hinausragen.
+    pruefe("function ringGanzIn(innen, aussen)" in s and "ringeKreuzen(innen, aussen)" in s,
+           "„im Baubereich“ prueft Ecken UND Kantenkreuzungen")
+    pruefe("function ringeUeberlappen(a, b)" in s,
+           "Ueberlappung mit Restriktionsflaechen ist erschoepfend geprueft")
+
+    # 9. Das Gelaende. Der Koerper sitzt auf EINER Hoehe -- am Hang eine
+    #    Vereinfachung, die ausgewiesen wird statt verschwiegen.
+    pruefe("function koerperBasis(k)" in s and "terrainHoeheAn(entwurfRaum.terrain" in s,
+           "die Standhoehe kommt aus dem vorhandenen Gelaendemodell")
+    pruefe("function gelaendeSpanne(k)" in s and "Unterschied" in s,
+           "das Gefaelle unter dem Fussabdruck wird ausgewiesen")
+    pruefe("ein Terrassierungs- " in s,
+           "und ausdruecklich als Massenstudie eingeordnet")
+
+    # 10. Ein Strahl je Bild, auch beim Ziehen -- kein Serveraufruf.
+    pruefe("if (entwurfZieht) {\n        entwurfZiehen(ev);" in s,
+           "gezogen wird im Bildtakt, nicht bei jeder Mausbewegung")
+    bereich = s[s.index("function entwurfZiehen("): s.index("// --- Fachliche Pruefung")]
+    pruefe("fetch(" not in bereich and "apiAbruf" not in bereich,
+           "waehrend des Ziehens geht keine Anfrage an den Server")
+
+    # 11. Der Merker je Ereignis, nicht je Element: sonst verschwindet der
+    #     zweite Horcher auf derselben Tafel stillschweigend.
+    pruefe('var merker = "_verdrahtet_" + ereignis;' in s,
+           "einmal() merkt sich Element UND Ereignis")
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -1043,7 +1183,8 @@ def main() -> int:
                test_marktsatz_stimmt_mit_der_engine,
                test_qualitaetsauswahl_passt_zur_engine,
                test_quellen_nie_vermischt, test_sechs_marktsegmente,
-               test_entwurf_reiter, test_messwerkzeuge_dynamisch):
+               test_entwurf_reiter, test_messwerkzeuge_dynamisch,
+               test_koerper_greifbar_und_bemassbar):
         fn(s)
 
     if _fehler:

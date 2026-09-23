@@ -931,6 +931,7 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px;
   margin-bottom: 4px; cursor: pointer; font-variant-numeric: tabular-nums; }
 .ekliste li.an { border-color: var(--accent); background: var(--accent-soft); }
+.ekinhalt { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ekdetail { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px 20px; padding: 10px 12px; border: 1px solid var(--line);
   border-radius: 8px; background: var(--bg-2); }
@@ -942,6 +943,13 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .ekpl { flex: 0 0 8.5em; color: var(--ink-3); font-size: 11px; }
 .ekpt { flex: 1 1 100%; margin-left: 8.5em; font-size: 10.5px; color: var(--ink-3);
   line-height: 1.4; }
+.ekfeld { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
+.ekfeld input { font: inherit; font-size: 12px; width: 5.5em; padding: 2px 5px;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
+  color: var(--ink); font-variant-numeric: tabular-nums; }
+.ekfeld input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ekeinheit { font-size: 11px; color: var(--ink-3); }
+.ektrenner { height: 1px; background: var(--line); margin: 8px 0 6px; }
 .ekfuss { font-size: 11px; color: var(--ink-3); margin-top: 6px; line-height: 1.45; }
 @media (max-width: 560px) { .ekpt { margin-left: 0; } }
 #view3d-legende { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 2px; font-size: 11px; color: var(--ink-2); }
@@ -6315,6 +6323,14 @@ function secEntwurf(erg) {
         zeigerBild();
         return;
       }
+      // Im Messmodus gehoert die Geste der Messung. Sonst: Griff oder
+      // gewaehlter Koerper vor der Kamera -- aber NUR diese beiden, damit
+      // ein Kameraschwenk nie versehentlich einen Entwurf verschiebt.
+      if (e.button === 0 && !e.shiftKey && !messModus && entwurfAnfassen(e)) {
+        ziehtGerade = false; schiebtGerade = false; klickStart = null;
+        letzteMaus = null;
+        return;
+      }
       schiebtGerade = e.button === 2 || e.shiftKey;
       ziehtGerade = !schiebtGerade;
       letzteMaus = { x: e.clientX, y: e.clientY };
@@ -6343,6 +6359,13 @@ function secEntwurf(erg) {
     window.addEventListener("pointerup", function () {
       ziehtGerade = false; schiebtGerade = false;
       if (messZieht) { messZieht = null; zeigerBild(); }
+      if (entwurfZieht) {
+        entwurfZieht = null;
+        zeigerBild();
+        // Erst beim Loslassen die Felder auf runde Werte bringen -- waehrend
+        // des Ziehens waere das ein Einrasten.
+        entwurfFelder();
+      }
     });
     // Die Zeigerposition wird nur gemerkt. Ausgewertet wird sie einmal je
     // Bild in messTakt() -- ein Strahl durch Terrain und Nachbarschaft je
@@ -6355,7 +6378,7 @@ function secEntwurf(erg) {
       if (messVorschau) { messVorschau = null; messFrisch = true; }
     });
     window.addEventListener("pointermove", function (e) {
-      if (messZieht || !letzteMaus) return;
+      if (messZieht || entwurfZieht || !letzteMaus) return;
       var dx = e.clientX - letzteMaus.x, dy = e.clientY - letzteMaus.y;
       if (schiebtGerade && blickpunkt) {
         // In der Blickebene verschieben, nicht in Weltachsen -- sonst
@@ -6540,17 +6563,19 @@ function secEntwurf(erg) {
     if (hinweis) hinweis.innerHTML = '<span class="l3d">Umgebung wird geladen …</span>';
     fetch("/api/umgebung?job_id=" + encodeURIComponent(jobIdAktuell))
       .then(function (r) { return r.json(); })
+      // Zwei Stufen mit Absicht: die Fehlerbehandlung gilt NUR dem Abruf.
+      // Stand danach() im selben .catch, machte ein Programmierfehler beim
+      // Zeichnen aus sich selbst eine Meldung "Umgebung nicht ladbar" --
+      // und rief danach() gleich noch ein zweites Mal auf. Live beobachtet.
       .then(function (d) {
         umgebungLaeuft = false;
         if (d && d.ok) { umgebung = d.umgebung; umgebungFuerJob = fuer; }
         else umgebung = { fehler: (d && d.fehler) || "Umgebung nicht verfügbar." };
-        danach();
-      })
-      .catch(function (e) {
+      }, function (e) {
         umgebungLaeuft = false;
         umgebung = { fehler: "Umgebung nicht ladbar: " + e };
-        danach();
-      });
+      })
+      .then(function () { danach(); });
   }
 
   // =====================================================================
@@ -7042,12 +7067,20 @@ function secEntwurf(erg) {
     if (messZeiger) {
       var ev = messZeiger;
       messZeiger = null;
-      if (messZieht) {
+      if (entwurfZieht) {
+        entwurfZiehen(ev);
+      } else if (messZieht) {
         griffZiehen(ev);
       } else {
-        var vorher = messUeber;
+        var vorher = messUeber, vorherE = entwurfUeber;
         messUeber = griffTreffer(ev);
-        if (vorher !== messUeber) zeigerBild();
+        // Was unter dem Zeiger anfassbar WAERE: ein Griff des gewaehlten
+        // Koerpers oder der gewaehlte Koerper selbst.
+        entwurfUeber = (messModus || messUeber) ? null
+          : (entwurfGriffTreffer(ev) ? "griff"
+             : (entwurfGewaehlt && entwurfKoerperTreffer(ev) === entwurfGewaehlt
+                ? "koerper" : null));
+        if (vorher !== messUeber || vorherE !== entwurfUeber) zeigerBild();
         if (messModus) {
           var neu = messUeber ? null : szenenPunkt(ev);
           var gleich = (!neu && !messVorschau) ||
@@ -7062,7 +7095,9 @@ function secEntwurf(erg) {
   function zeigerBild() {
     if (!renderer) return;
     renderer.domElement.style.cursor =
-      messZieht ? "grabbing" : messUeber ? "move" : messModus ? "crosshair" : "grab";
+      (messZieht || entwurfZieht) ? "grabbing"
+      : (messUeber || entwurfUeber) ? "move"
+      : messModus ? "crosshair" : "grab";
   }
 
   function messHinweis(text) {
@@ -7279,7 +7314,8 @@ function secEntwurf(erg) {
   //
   // Bis hierher war die Ansicht ein Betrachter. Ab hier wird entwickelt:
   // ein Volumen entsteht auf der realen Parzelle, im realen Gelaende,
-  // zwischen den realen Nachbarn.
+  // zwischen den realen Nachbarn -- und laesst sich greifen, schieben,
+  // drehen und bemassen.
   //
   // Die Darstellung folgt der Referenz aus der Projektentwicklung: der
   // Bestand bleibt koerperhaft und stumpf, der Entwurf ist ein
@@ -7292,23 +7328,36 @@ function secEntwurf(erg) {
   // eine Folie ueber der Szene, auch dort, wo ein Gebaeude davorsteht.
   // Das ist der Ueberlagerungscharakter der Referenz -- und der einzige
   // Weg, eine Aufstockung zu zeigen, ohne den Bestand auszublenden.
+  //
+  // Drei Gesten, die sich NICHT gegenseitig ausloesen duerfen:
+  //   Messmodus an      -> jeder Klick gehoert der Messung, sonst nichts
+  //   Koerper gewaehlt  -> Ziehen auf ihm schiebt, Ziehen am Griff dreht
+  //                        oder bemasst
+  //   sonst             -> Ziehen dreht die Kamera, Klicken waehlt aus
+  // Verschoben wird erst, was ausgewaehlt ist. Sonst verschoebe ein
+  // missglueckter Kameraschwenk den Entwurf -- der teurere Fehler.
   // =====================================================================
 
   // Nur, wenn die Engine keine Geschosshoehe fuehrt. Dann steht die
   // Annahme in der Tafel -- eine eingebaute Zahl ohne Ausweis waere
   // dasselbe wie eine erfundene.
   var ENTWURF_ERSATZHOEHE = 3.0;
+  var ENTWURF_MIN_MASS = 2.0;    // unter zwei Metern ist es kein Baukoerper
 
   var entwuerfe = [];          // die Koerper dieser Studie
   var entwurfGewaehlt = null;  // id des markierten Koerpers
   var entwurfZaehler = 0;
   var entwurfGruppe = null;
-  var entwurfTreffer = [];     // {mesh, id} -- anklickbare Flaechen
+  var entwurfTreffer = [];     // {mesh, id} -- anklickbare Koerperflaechen
+  var entwurfGriffe = [];      // {mesh, art} -- Griffe des gewaehlten Koerpers
+  var entwurfZieht = null;     // laufende Zieh-Geste
+  var entwurfUeber = null;     // Griff oder Koerper unter dem Zeiger
   var entwurfMuell = [];       // Geometrien der letzten Zeichnung
   var entwurfFuerJob = null;   // zu welcher Analyse die Koerper gehoeren
-  // Der Raum, in dem gebaut wird: Parzelle und Baubereich in lokalen
-  // Metern. Gesetzt in zeichneSzene() aus denselben Werten wie die
-  // gezeichnete Geometrie -- eine zweite Herleitung gaebe es hier nicht.
+  // Der Raum, in dem gebaut wird: Parzelle, Baubereich, Kanten mit ihren
+  // Sollabstaenden und die in G1 abgezogenen Restriktionsflaechen -- alles
+  // in lokalen Metern. Gesetzt in zeichneSzene() aus denselben Werten wie
+  // die gezeichnete Geometrie; eine zweite Herleitung gaebe es hier nicht.
   var entwurfRaum = null;
   // Eigene Beschriftungen: messSchilder wird bei jeder Mausbewegung neu
   // aufgebaut, die Koerperschilder wuerden dabei verschwinden.
@@ -7329,6 +7378,62 @@ function secEntwurf(erg) {
       if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) drin = !drin;
     }
     return drin;
+  }
+
+  // Schneiden sich zwei Strecken? Orientierungstest, ohne Sonderfaelle
+  // fuer Beruehrungen -- eine Beruehrung auf den Millimeter kommt bei
+  // Katasterkoordinaten praktisch nicht vor und waere ohnehin ein Grenzfall.
+  function streckenKreuzen(a1, a2, b1, b2) {
+    function ori(p, q, r) {
+      return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    }
+    var d1 = ori(a1, a2, b1), d2 = ori(a1, a2, b2);
+    var d3 = ori(b1, b2, a1), d4 = ori(b1, b2, a2);
+    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+  }
+
+  function ringeKreuzen(a, b) {
+    for (var i = 0; i < a.length; i++) {
+      var a1 = a[i], a2 = a[(i + 1) % a.length];
+      for (var j = 0; j < b.length; j++) {
+        if (streckenKreuzen(a1, a2, b[j], b[(j + 1) % b.length])) return true;
+      }
+    }
+    return false;
+  }
+
+  // Liegt der innere Ring VOLLSTAENDIG im aeusseren? Eckenpruefung allein
+  // reicht nicht: ein Rechteck kann mit allen vier Ecken drinliegen und
+  // trotzdem ueber eine einspringende Ecke hinausragen.
+  function ringGanzIn(innen, aussen) {
+    for (var i = 0; i < innen.length; i++) {
+      if (!imPolygon(innen[i][0], innen[i][1], aussen)) return false;
+    }
+    return !ringeKreuzen(innen, aussen);
+  }
+
+  // Ueberlappen sich zwei Ringe? Drei Faelle: Ecke von a in b, Ecke von b
+  // in a, oder gekreuzte Kanten. Zusammen sind sie erschoepfend.
+  function ringeUeberlappen(a, b) {
+    for (var i = 0; i < a.length; i++) if (imPolygon(a[i][0], a[i][1], b)) return true;
+    for (var j = 0; j < b.length; j++) if (imPolygon(b[j][0], b[j][1], a)) return true;
+    return ringeKreuzen(a, b);
+  }
+
+  function abstandPunktStrecke(px, pz, ax, az, bx, bz) {
+    var dx = bx - ax, dz = bz - az;
+    var laenge = dx * dx + dz * dz;
+    var t = laenge > 0 ? ((px - ax) * dx + (pz - az) * dz) / laenge : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + t * dx), pz - (az + t * dz));
+  }
+
+  function abstandRingZuStrecke(ring, a, b) {
+    var min = Infinity;
+    for (var i = 0; i < ring.length; i++) {
+      min = Math.min(min, abstandPunktStrecke(ring[i][0], ring[i][1], a[0], a[1], b[0], b[1]));
+    }
+    return min;
   }
 
   function ringMitte(ring) {
@@ -7367,17 +7472,53 @@ function secEntwurf(erg) {
                     Math.max.apply(null, zs) - Math.min.apply(null, zs));
   }
 
-  // Die vier Ecken in lokalen Metern (x, z).
-  function koerperEcken(k) {
+  // Die oertlichen Achsen des Koerpers: ex laeuft in der Breite, ey in der
+  // Tiefe. Alles Greifen und Bemassen rechnet darin -- deshalb rutscht
+  // nichts seitwaerts weg, wenn die Kamera gedreht wurde.
+  function koerperAchsen(k) {
     var c = Math.cos(k.drehung), s = Math.sin(k.drehung);
-    var hb = k.breite / 2, ht = k.tiefe / 2;
+    return { ex: [c, s], ey: [-s, c] };
+  }
+
+  function koerperEcken(k) {
+    var a = koerperAchsen(k), hb = k.breite / 2, ht = k.tiefe / 2;
     return [[-hb, -ht], [hb, -ht], [hb, ht], [-hb, ht]].map(function (p) {
-      return [k.mitte[0] + p[0] * c - p[1] * s, k.mitte[1] + p[0] * s + p[1] * c];
+      return [k.mitte[0] + p[0] * a.ex[0] + p[1] * a.ey[0],
+              k.mitte[1] + p[0] * a.ex[1] + p[1] * a.ey[1]];
     });
+  }
+
+  function koerperPunkt(k, dx, dy) {
+    var a = koerperAchsen(k);
+    return [k.mitte[0] + dx * a.ex[0] + dy * a.ey[0],
+            k.mitte[1] + dx * a.ex[1] + dy * a.ey[1]];
   }
 
   function koerperHoehe(k) { return k.geschosse * k.geschosshoehe; }
   function koerperGrundflaeche(k) { return k.breite * k.tiefe; }
+  function koerperGeschossflaeche(k) { return koerperGrundflaeche(k) * k.geschosse; }
+
+  // Die Hoehe, auf der der Koerper steht. Sie haengt allein an der Lage,
+  // nicht an der Kamera -- beim Drehen der Ansicht springt nichts.
+  function koerperBasis(k) {
+    if (!entwurfRaum || !entwurfRaum.terrain) return 0;
+    var h = terrainHoeheAn(entwurfRaum.terrain,
+                           k.mitte[0] + entwurfRaum.mx, -k.mitte[1] + entwurfRaum.my);
+    return (h === null || h === undefined ? entwurfRaum.basis : h) - entwurfRaum.basis;
+  }
+
+  // Wie stark faellt das Gelaende unter dem Fussabdruck? Der Koerper sitzt
+  // auf EINER Hoehe -- das ist fuer eine Massenstudie richtig, aber am Hang
+  // eine Vereinfachung. Sie wird ausgewiesen statt verschwiegen.
+  function gelaendeSpanne(k) {
+    if (!entwurfRaum || !entwurfRaum.terrain) return null;
+    var hs = koerperEcken(k).map(function (e) {
+      return terrainHoeheAn(entwurfRaum.terrain, e[0] + entwurfRaum.mx, -e[1] + entwurfRaum.my);
+    }).filter(function (h) { return h !== null && h !== undefined; });
+    if (hs.length < 2) return null;
+    var min = Math.min.apply(null, hs), max = Math.max.apply(null, hs);
+    return { min: min, max: max, unterschied: max - min };
+  }
 
   // --- Was die Engine dazu sagt ---------------------------------------
 
@@ -7402,7 +7543,7 @@ function secEntwurf(erg) {
     return null;
   }
 
-  // --- Anlegen --------------------------------------------------------
+  // --- Anlegen und Verwalten ------------------------------------------
 
   window.entwurfHinzufuegen = function () {
     if (!entwurfRaum) return null;
@@ -7410,7 +7551,7 @@ function secEntwurf(erg) {
       ? entwurfRaum.baubereich : entwurfRaum.parzelle;
     if (!grund || grund.length < 3) return null;
 
-    var gh = engineGeschosshoehe();
+    var gh = engineGeschosshoehe(), gz = engineGeschosse();
     var spanne = ringSpanne(grund);
     var k = {
       id: "k" + (++entwurfZaehler),
@@ -7421,10 +7562,10 @@ function secEntwurf(erg) {
       breite: Math.max(6, Math.min(20, spanne * 0.55)),
       tiefe: Math.max(5, Math.min(14, spanne * 0.38)),
       drehung: laengsteKanteWinkel(grund),
-      geschosse: engineGeschosse() || 3,
+      geschosse: gz || 3,
       geschosshoehe: gh || ENTWURF_ERSATZHOEHE,
       hoeheAngenommen: gh === null,
-      geschosseAngenommen: engineGeschosse() === null
+      geschosseAngenommen: gz === null
     };
 
     // Schrumpfen, bis der Koerper in den Grund passt. Klappt das nicht --
@@ -7432,7 +7573,7 @@ function secEntwurf(erg) {
     // stehen und die Pruefung sagt, dass er hinausragt. Kein stilles
     // Verschieben an eine vermeintlich richtige Stelle.
     for (var i = 0; i < 14; i++) {
-      if (koerperEcken(k).every(function (e) { return imPolygon(e[0], e[1], grund); })) break;
+      if (ringGanzIn(koerperEcken(k), grund)) break;
       k.breite *= 0.86; k.tiefe *= 0.86;
       if (k.breite < 3 || k.tiefe < 3) break;
     }
@@ -7449,11 +7590,13 @@ function secEntwurf(erg) {
   window.entwurfLoeschen = function (id) {
     entwuerfe = entwuerfe.filter(function (k) { return k.id !== id; });
     if (entwurfGewaehlt === id) entwurfGewaehlt = null;
+    if (entwurfZieht && entwurfZieht.k && entwurfZieht.k.id === id) entwurfZieht = null;
     zeichneEntwuerfe();
     entwurfTafel();
   };
 
   window.entwurfWaehlen = function (id) {
+    if ((id || null) === entwurfGewaehlt) return;
     entwurfGewaehlt = id || null;
     zeichneEntwuerfe();
     entwurfTafel();
@@ -7464,54 +7607,227 @@ function secEntwurf(erg) {
     return null;
   }
 
-  // --- Auswahl in der Szene -------------------------------------------
+  // Aenderung aus der Seitenleiste. Reine Geometrie-Arithmetik -- kein
+  // Serveraufruf, keine fachliche Aussage.
+  window.entwurfSetzen = function (feld, roh) {
+    var k = entwurfVon(entwurfGewaehlt);
+    if (!k) return;
+    var wert = parseFloat(String(roh).replace(",", "."));
+    if (!isFinite(wert)) return;
+    if (feld === "breite" || feld === "tiefe") k[feld] = Math.max(ENTWURF_MIN_MASS, wert);
+    else if (feld === "drehung") k.drehung = wert * Math.PI / 180;
+    else if (feld === "geschosse") k.geschosse = Math.max(1, Math.round(wert));
+    else if (feld === "geschosshoehe") {
+      k.geschosshoehe = Math.max(2.0, wert);
+      // Wer die Hoehe selbst setzt, uebernimmt sie -- die Marke "angenommen"
+      // waere dann falsch.
+      k.hoeheAngenommen = false;
+    } else return;
+    zeichneEntwuerfe();
+    entwurfWerte();
+  };
 
-  function entwurfKlick(ereignis) {
-    if (!entwurfTreffer.length) {
-      if (entwurfGewaehlt) window.entwurfWaehlen(null);
-      return;
-    }
+  // --- Greifen, Schieben, Drehen, Bemassen -----------------------------
+
+  // Der Punkt, an dem der Strahl eine waagrechte Ebene trifft. Genau das
+  // ist der richtige Bezug fuers Schieben: er haengt nur an der Maus und
+  // an der Kamera, nie am Gelaende unter dem Zeiger. Ein Koerper, der am
+  // Strahltreffer klebte, spraenge beim Ueberfahren eines Nachbardachs.
+  function ebenenPunkt(y) {
+    var r = strahl.ray;
+    if (Math.abs(r.direction.y) < 1e-6) return null;
+    var t = (y - r.origin.y) / r.direction.y;
+    if (t <= 0) return null;
+    var p = r.origin.clone().addScaledVector(r.direction, t);
+    return [p.x, p.z];
+  }
+
+  function entwurfGriffTreffer(ereignis) {
+    if (!entwurfGriffe.length) return null;
     strahlSetzen(ereignis);
-    var netze = entwurfTreffer.map(function (t) { return t.mesh; });
-    var t = strahl.intersectObjects(netze, false);
-    var id = null;
-    if (t.length) {
-      for (var i = 0; i < entwurfTreffer.length; i++) {
-        if (entwurfTreffer[i].mesh === t[0].object) { id = entwurfTreffer[i].id; break; }
-      }
+    var t = strahl.intersectObjects(entwurfGriffe.map(function (g) { return g.mesh; }), false);
+    if (!t.length) return null;
+    for (var i = 0; i < entwurfGriffe.length; i++) {
+      if (entwurfGriffe[i].mesh === t[0].object) return entwurfGriffe[i];
     }
-    if (id !== entwurfGewaehlt) window.entwurfWaehlen(id);
+    return null;
+  }
+
+  function entwurfKoerperTreffer(ereignis) {
+    if (!entwurfTreffer.length) return null;
+    strahlSetzen(ereignis);
+    var t = strahl.intersectObjects(entwurfTreffer.map(function (x) { return x.mesh; }), false);
+    if (!t.length) return null;
+    for (var i = 0; i < entwurfTreffer.length; i++) {
+      if (entwurfTreffer[i].mesh === t[0].object) return entwurfTreffer[i].id;
+    }
+    return null;
+  }
+
+  // Wird hier true zurueckgegeben, ist die Geste vergeben: die Kamera
+  // bleibt stehen und es wird nicht gemessen.
+  function entwurfAnfassen(ereignis) {
+    var k = entwurfVon(entwurfGewaehlt);
+    if (!k) return false;
+    var y = koerperBasis(k);
+
+    var g = entwurfGriffTreffer(ereignis);
+    if (g) {
+      var p = ebenenPunkt(y);
+      if (!p) return false;
+      entwurfZieht = { art: g.art, k: k, start: p,
+                       breite0: k.breite, tiefe0: k.tiefe, drehung0: k.drehung,
+                       fest: g.fest || null };
+      zeigerBild();
+      return true;
+    }
+
+    // Nur der GEWAEHLTE Koerper laesst sich schieben. Sonst verschoebe ein
+    // missglueckter Kameraschwenk den Entwurf.
+    if (entwurfKoerperTreffer(ereignis) === k.id) {
+      var q = ebenenPunkt(y);
+      if (!q) return false;
+      entwurfZieht = { art: "schieben", k: k,
+                       versatz: [k.mitte[0] - q[0], k.mitte[1] - q[1]] };
+      zeigerBild();
+      return true;
+    }
+    return false;
+  }
+
+  function entwurfZiehen(ereignis) {
+    var z = entwurfZieht, k = z.k;
+    strahlSetzen(ereignis);
+    var p = ebenenPunkt(koerperBasis(k));
+    if (!p) return;
+
+    if (z.art === "schieben") {
+      // Keine Korrektur, kein Einrasten, kein Zurueckspringen: der Koerper
+      // geht genau dorthin, wo die Maus ihn hinzieht.
+      k.mitte = [p[0] + z.versatz[0], p[1] + z.versatz[1]];
+
+    } else if (z.art === "drehen") {
+      // Der Griff sitzt in Richtung der Tiefenachse, also um 90 Grad
+      // gegenueber der Drehung versetzt.
+      k.drehung = Math.atan2(p[1] - k.mitte[1], p[0] - k.mitte[0]) - Math.PI / 2;
+
+    } else {
+      // Bemassen: die GEGENUEBERLIEGENDE Kante bleibt stehen, der Koerper
+      // waechst zur Maus hin. So bleibt die Seite, auf die man gerade
+      // schaut, dort wo sie war.
+      var a = koerperAchsen(k);
+      var achse = (z.art === "breite+" || z.art === "breite-") ? a.ex : a.ey;
+      var vz = (z.art === "breite+" || z.art === "tiefe+") ? 1 : -1;
+      var neu = ((p[0] - z.fest[0]) * achse[0] + (p[1] - z.fest[1]) * achse[1]) * vz;
+      neu = Math.max(ENTWURF_MIN_MASS, neu);
+      if (z.art === "breite+" || z.art === "breite-") k.breite = neu;
+      else k.tiefe = neu;
+      k.mitte = [z.fest[0] + achse[0] * vz * neu / 2, z.fest[1] + achse[1] * vz * neu / 2];
+    }
+    zeichneEntwuerfe();
+    entwurfWerte();
+    entwurfFelder();
   }
 
   // --- Fachliche Pruefung, soweit sie rein geometrisch ist -------------
   //
-  // Nur Aussagen, die aus zwei vorliegenden Geometrien folgen. Alles, was
-  // vom Reglement abhaengt -- anrechenbare Geschossflaeche, Ausnuetzung,
-  // Gebaeudehoehe nach kantonaler Messweise -- gehoert der Engine und
-  // steht hier als "noch nicht gerechnet", nicht als Zahl.
+  // Nur Aussagen, die aus vorliegenden Geometrien eindeutig folgen. Alles,
+  // was vom Reglement abhaengt -- anrechenbare Geschossflaeche, Ausnuetzung,
+  // Gebaeudehoehe nach kantonaler Messweise -- gehoert der Engine und steht
+  // hier als "nicht im Browser gerechnet", nicht als Zahl.
+
+  function unbestimmt(kurz, text) { return { art: "unbestimmt", kurz: kurz, text: text }; }
 
   function pruefeBaubereich(k) {
     var bb = entwurfRaum && entwurfRaum.baubereich;
     if (!bb || bb.length < 3) {
-      return { art: "unbestimmt", kurz: "nicht bestimmbar",
-               text: "Für diese Parzelle ist kein Baubereich berechnet — die Lage " +
-                     "des Körpers ist damit nicht geprüft." };
+      return unbestimmt("nicht bestimmbar",
+        "Für diese Parzelle ist kein Baubereich berechnet — die Lage des Körpers " +
+        "ist damit nicht geprüft.");
     }
     var ecken = koerperEcken(k);
-    var draussen = ecken.filter(function (e) { return !imPolygon(e[0], e[1], bb); }).length;
-    if (!draussen) {
-      return { art: "ok", kurz: "innerhalb", text: "Alle vier Ecken liegen im Baubereich." };
+    if (ringGanzIn(ecken, bb)) {
+      return { art: "ok", kurz: "innerhalb", text: "Der Fussabdruck liegt vollständig im Baubereich." };
     }
+    var draussen = ecken.filter(function (e) { return !imPolygon(e[0], e[1], bb); }).length;
     return { art: "verletzt", kurz: "ragt hinaus",
-             text: draussen + " von 4 Ecken liegen ausserhalb des Baubereichs. Der Körper " +
-                   "bleibt, wo er steht — korrigiert wird nichts von selbst." };
+             text: (draussen ? draussen + " von 4 Ecken liegen ausserhalb" :
+                    "Der Umriss schneidet den Rand") + " des Baubereichs. Der Körper bleibt, " +
+                   "wo er steht — korrigiert wird nichts von selbst." };
+  }
+
+  // Je Parzellenkante kennt die Engine den angewendeten Grenzabstand
+  // (kantenprotokoll). Der tatsaechliche Abstand des Fussabdrucks dazu ist
+  // reine Geometrie -- damit ist die Aussage eindeutig, ohne eine einzige
+  // baurechtliche Annahme.
+  function pruefeGrenzabstand(k) {
+    var kanten = (entwurfRaum && entwurfRaum.kanten) || [];
+    var mit = kanten.filter(function (kt) { return kt.soll > 0; });
+    if (!mit.length) {
+      return unbestimmt("nicht bestimmbar",
+        "Die Engine führt für keine Parzellenkante einen Grenzabstand.");
+    }
+    var ecken = koerperEcken(k);
+    var schlimmste = null;
+    mit.forEach(function (kt) {
+      var ist = abstandRingZuStrecke(ecken, kt.a, kt.b);
+      var luft = ist - kt.soll;
+      if (!schlimmste || luft < schlimmste.luft) {
+        schlimmste = { luft: luft, ist: ist, soll: kt.soll, nr: kt.nr };
+      }
+    });
+    var s = schlimmste;
+    // Gemessen wird gegen die Anordnung, deren Baubereich gezeichnet ist.
+    // Gibt es mehrere zulaessige, gehoert das gesagt -- sonst liest sich
+    // ein Ergebnis wie DIE Antwort, obwohl es eine von zweien ist.
+    var woher = entwurfRaum.anordnung
+      ? " Gerechnet mit der Anordnung „" + klartext(entwurfRaum.anordnung) + "“" +
+        (entwurfRaum.anordnungen > 1
+          ? " — die Engine führt " + entwurfRaum.anordnungen + " zulässige Anordnungen, " +
+            "eine andere ergäbe andere Abstände." : ".")
+      : "";
+    var gemessen = "engste Stelle " + s.ist.toFixed(2) + " m an Kante " + s.nr +
+                   ", gefordert " + s.soll.toFixed(2) + " m";
+    if (s.luft >= 0) {
+      return { art: "ok", kurz: s.ist.toFixed(1) + " / " + s.soll.toFixed(1) + " m",
+               text: gemessen + " — eingehalten über alle " + mit.length + " Kanten." + woher };
+    }
+    return { art: "verletzt", kurz: s.ist.toFixed(1) + " statt " + s.soll.toFixed(1) + " m",
+             text: gemessen + " — unterschritten um " + Math.abs(s.luft).toFixed(2) + " m." + woher };
+  }
+
+  // Geprueft wird gegen die Flaechen, die G1 TATSAECHLICH abgezogen hat.
+  // Die Baulinie selbst ist eine Linie; welche Seite Baugebiet ist, hat die
+  // Engine hergeleitet -- diese Herleitung wird hier benutzt und nicht
+  // wiederholt.
+  function pruefeRestriktion(k) {
+    var flaechen = (entwurfRaum && entwurfRaum.restriktionen) || [];
+    if (!flaechen.length) {
+      return unbestimmt("nicht bestimmbar",
+        "Es liegt keine geprüfte Restriktionsfläche vor. Eine leere Liste kann " +
+        "bedeuten, dass keine besteht oder dass die Abfrage nicht durchlief — das " +
+        "unterscheidet die Datenschicht heute nicht.");
+    }
+    var ecken = koerperEcken(k);
+    var getroffen = flaechen.filter(function (f) { return ringeUeberlappen(ecken, f.ring); });
+    if (!getroffen.length) {
+      return { art: "ok", kurz: "frei",
+               text: "Der Fussabdruck berührt keine der " + flaechen.length +
+                     " abgezogenen Restriktionsflächen." };
+    }
+    var namen = getroffen.map(function (f) { return f.typ; }).filter(function (v, i, a) {
+      return a.indexOf(v) === i;
+    });
+    return { art: "verletzt", kurz: "überlagert",
+             text: "Der Fussabdruck überlagert " + getroffen.length + " Restriktionsfläche(n): " +
+                   namen.join(", ") + "." };
   }
 
   function pruefeGeschosse(k) {
     var zulaessig = engineGeschosse();
     if (zulaessig === null) {
-      return { art: "unbestimmt", kurz: "nicht bestimmbar",
-               text: "Die Engine führt für diese Zone keine zulässige Geschosszahl." };
+      return unbestimmt("nicht bestimmbar",
+        "Die Engine führt für diese Zone keine zulässige Geschosszahl.");
     }
     if (k.geschosse <= zulaessig) {
       return { art: "ok", kurz: k.geschosse + " von " + zulaessig,
@@ -7519,6 +7835,40 @@ function secEntwurf(erg) {
     }
     return { art: "verletzt", kurz: k.geschosse + " statt " + zulaessig,
              text: "Die Engine rechnet mit " + zulaessig + " Geschossen." };
+  }
+
+  // Verglichen wird die Studienhoehe (Geschosse x Geschosshoehe) mit der
+  // Zonenangabe. Das ist ausdruecklich NICHT die kantonale Messweise --
+  // Attika, Dach und Terrainbezug bleiben aussen vor. Deshalb steht das
+  // auch dran.
+  function pruefeHoehe(k) {
+    var max = entwurfRaum && entwurfRaum.hoeheMax;
+    if (!max) {
+      return unbestimmt("nicht bestimmbar",
+        "Die Zone führt keine Gebäude- oder Gesamthöhe.");
+    }
+    var h = koerperHoehe(k);
+    var zusatz = " Gemessen wird hier Geschosse × Geschosshöhe ab Terrain — nicht " +
+                 "nach kantonaler Messweise.";
+    if (h <= max + 1e-9) {
+      return { art: "ok", kurz: h.toFixed(2) + " / " + max.toFixed(1) + " m",
+               text: "Die Zone lässt " + max.toFixed(1) + " m zu." + zusatz };
+    }
+    return { art: "verletzt", kurz: h.toFixed(2) + " statt " + max.toFixed(1) + " m",
+             text: "Die Zone lässt " + max.toFixed(1) + " m zu, überschritten um " +
+                   (h - max).toFixed(2) + " m." + zusatz };
+  }
+
+  function allePruefungen(k) {
+    return [["Baubereich", pruefeBaubereich(k)],
+            ["Grenzabstand", pruefeGrenzabstand(k)],
+            ["Baulinie / Restriktion", pruefeRestriktion(k)],
+            ["Geschosse", pruefeGeschosse(k)],
+            ["Höhe", pruefeHoehe(k)]];
+  }
+
+  function istVerletzt(k) {
+    return allePruefungen(k).some(function (p) { return p[1].art === "verletzt"; });
   }
 
   // --- Zeichnen -------------------------------------------------------
@@ -7543,11 +7893,12 @@ function secEntwurf(erg) {
     entwurfGruppe = new THREE.Group();
     ziel.add(entwurfGruppe);
     entwurfTreffer = [];
+    entwurfGriffe = [];
     entwurfSchilder = [];
     if (!entwuerfe.length || !entwurfRaum) return;
 
     var f = entwurfFarben();
-
+    var r = Math.max(0.7, (szeneRahmen ? szeneRahmen.spanne : 150) * 0.008);
     function merkeE(x) { entwurfMuell.push(x); return x; }
 
     function schleife(punkte, y, farbe, deckkraft) {
@@ -7563,40 +7914,49 @@ function secEntwurf(erg) {
       entwurfGruppe.add(l);
     }
 
-    function senkrechte(a, b, farbe) {
+    function strecke(a, b, farbe, deckkraft) {
       var geo = merkeE(new THREE.BufferGeometry().setFromPoints([a, b]));
-      var mat = merkeE(new THREE.LineBasicMaterial({ color: new THREE.Color(farbe), depthTest: false }));
+      var mat = merkeE(new THREE.LineBasicMaterial({
+        color: new THREE.Color(farbe), depthTest: false,
+        transparent: deckkraft < 1, opacity: deckkraft === undefined ? 1 : deckkraft
+      }));
       var l = new THREE.Line(geo, mat);
       l.renderOrder = 6;
       entwurfGruppe.add(l);
     }
 
+    // Griffe liegen ueber allem: sonst verschwindet der Anfasser in der
+    // eigenen Wand und laesst sich nicht mehr greifen.
+    function griff(p, y, farbe, art, fest, gross) {
+      var geo = merkeE(new THREE.SphereGeometry(gross ? r : r * 0.8, 14, 10));
+      var mat = merkeE(new THREE.MeshBasicMaterial({ color: new THREE.Color(farbe), depthTest: false }));
+      var m = new THREE.Mesh(geo, mat);
+      m.position.set(p[0], y, p[1]);
+      m.renderOrder = 12;
+      entwurfGruppe.add(m);
+      entwurfGriffe.push({ mesh: m, art: art, fest: fest || null });
+      return m;
+    }
+
     entwuerfe.forEach(function (k) {
-      var pruef = pruefeBaubereich(k);
+      var pruef = allePruefungen(k);
+      var verletzt = pruef.some(function (p) { return p[1].art === "verletzt"; });
       var gewaehlt = k.id === entwurfGewaehlt;
-      var farbe = pruef.art === "verletzt" ? f.stop : (gewaehlt ? f.wahl : f.linie);
+      var farbe = verletzt ? f.stop : (gewaehlt ? f.wahl : f.linie);
       var ecken = koerperEcken(k);
       var hoehe = koerperHoehe(k);
+      var y0 = koerperBasis(k);
 
-      // Der Boden, auf dem er steht: die Gelaendehoehe in der Mitte.
-      // Ein Koerper, der in der Luft haengt oder im Hang steckt, ist als
-      // Machbarkeitsbild wertlos.
-      var y0 = entwurfRaum.terrain
-        ? (terrainHoeheAn(entwurfRaum.terrain, k.mitte[0] + entwurfRaum.mx,
-                          -k.mitte[1] + entwurfRaum.my) || entwurfRaum.basis) - entwurfRaum.basis
-        : 0;
-
-      // Sehr schwache Fuellung: sie gibt dem Drahtmodell Koerper, ohne
-      // den Bestand darunter zu verdecken. Sie traegt auch die Auswahl --
-      // eine Linie trifft man mit der Maus nicht.
-      var enRing = ecken.map(function (e) { return [e[0], -e[1]]; });
+      // Sehr schwache Fuellung: sie gibt dem Drahtmodell Koerper, ohne den
+      // Bestand darunter zu verdecken. Sie traegt auch die Auswahl -- eine
+      // Linie trifft man mit der Maus nicht.
       var shape = new THREE.Shape();
-      enRing.forEach(function (p, i) {
-        if (i === 0) shape.moveTo(p[0], p[1]); else shape.lineTo(p[0], p[1]);
+      ecken.forEach(function (e, i) {
+        if (i === 0) shape.moveTo(e[0], -e[1]); else shape.lineTo(e[0], -e[1]);
       });
       var geo = merkeE(new THREE.ExtrudeGeometry(shape, { depth: hoehe, bevelEnabled: false }));
       var mat = merkeE(new THREE.MeshBasicMaterial({
-        color: new THREE.Color(pruef.art === "verletzt" ? f.stop : f.fuell),
+        color: new THREE.Color(verletzt ? f.stop : f.fuell),
         transparent: true, opacity: gewaehlt ? 0.20 : 0.13,
         depthWrite: false, side: THREE.DoubleSide
       }));
@@ -7615,17 +7975,58 @@ function secEntwurf(erg) {
         schleife(ecken, y0 + g * k.geschosshoehe, farbe, 0.45);
       }
       ecken.forEach(function (e) {
-        senkrechte(new THREE.Vector3(e[0], y0, e[1]),
-                   new THREE.Vector3(e[0], y0 + hoehe, e[1]), farbe);
+        strecke(new THREE.Vector3(e[0], y0, e[1]),
+                new THREE.Vector3(e[0], y0 + hoehe, e[1]), farbe, 1);
       });
 
+      // Bemassung an der Geometrie, wie bei den Messwerkzeugen: Breite an
+      // der Vorderkante, Tiefe an der Seitenkante, Hoehe an der Ecke.
+      var vorne = koerperPunkt(k, 0, k.tiefe / 2);
+      var seite = koerperPunkt(k, k.breite / 2, 0);
+      entwurfSchilder.push({ anker: new THREE.Vector3(vorne[0], y0 + 0.4, vorne[1]),
+                             text: k.breite.toFixed(1) + " m", farbe: farbe, klein: true });
+      entwurfSchilder.push({ anker: new THREE.Vector3(seite[0], y0 + 0.4, seite[1]),
+                             text: k.tiefe.toFixed(1) + " m", farbe: farbe, klein: true });
+      entwurfSchilder.push({ anker: new THREE.Vector3(ecken[0][0], y0 + hoehe / 2, ecken[0][1]),
+                             text: hoehe.toFixed(2) + " m", farbe: farbe, klein: true });
       entwurfSchilder.push({
-        anker: new THREE.Vector3(k.mitte[0], y0 + hoehe + 2, k.mitte[1]),
-        text: k.name + " · " + k.breite.toFixed(1) + " × " + k.tiefe.toFixed(1) +
-              " m · " + k.geschosse + " G",
+        anker: new THREE.Vector3(k.mitte[0], y0 + hoehe + Math.max(2, hoehe * 0.12), k.mitte[1]),
+        text: k.name + " · " + k.geschosse + " G · " +
+              fmt(koerperGeschossflaeche(k), 0) + " m² GF" + (verletzt ? " · verletzt" : ""),
         farbe: farbe, klein: !gewaehlt
       });
+
+      if (!gewaehlt) return;
+
+      // --- Griffe des gewaehlten Koerpers -----------------------------
+      griff(koerperPunkt(k, k.breite / 2, 0), y0, farbe, "breite+",
+            koerperPunkt(k, -k.breite / 2, 0));
+      griff(koerperPunkt(k, -k.breite / 2, 0), y0, farbe, "breite-",
+            koerperPunkt(k, k.breite / 2, 0));
+      griff(koerperPunkt(k, 0, k.tiefe / 2), y0, farbe, "tiefe+",
+            koerperPunkt(k, 0, -k.tiefe / 2));
+      griff(koerperPunkt(k, 0, -k.tiefe / 2), y0, farbe, "tiefe-",
+            koerperPunkt(k, 0, k.tiefe / 2));
+
+      // Der Drehgriff sitzt an einem Arm in Richtung der Tiefenachse --
+      // sichtbar abgesetzt, damit er nicht mit den Massgriffen verwechselt
+      // wird.
+      var arm = Math.max(3, k.tiefe * 0.3);
+      var dreh = koerperPunkt(k, 0, k.tiefe / 2 + arm);
+      strecke(new THREE.Vector3(vorne[0], y0, vorne[1]),
+              new THREE.Vector3(dreh[0], y0, dreh[1]), f.wahl, 0.7);
+      griff(dreh, y0, f.wahl, "drehen", null, true);
+      entwurfSchilder.push({ anker: new THREE.Vector3(dreh[0], y0 + 1.2, dreh[1]),
+                             text: Math.round(k.drehung * 180 / Math.PI) + "°",
+                             farbe: f.wahl, klein: true });
     });
+  }
+
+  // --- Auswahl in der Szene -------------------------------------------
+
+  function entwurfKlick(ereignis) {
+    var id = entwurfKoerperTreffer(ereignis);
+    window.entwurfWaehlen(id);
   }
 
   // --- Die Tafel unter der Buehne -------------------------------------
@@ -7640,6 +8041,39 @@ function secEntwurf(erg) {
       '<span class="ekpt">' + esc(p.text) + "</span></div>";
   }
 
+  // Der Inhalt einer Listenzeile. Eine eigene Funktion, weil er an zwei
+  // Stellen gebraucht wird: beim Aufbau der Tafel und beim Nachziehen
+  // waehrend des Ziehens. Stand er nur im Aufbau, zeigte die Liste
+  // "erfuellt", waehrend die Tafel darunter schon "ragt hinaus" sagte --
+  // live beobachtet.
+  function ekZeile(k) {
+    var schlimmste = null;
+    allePruefungen(k).forEach(function (x) {
+      var rang = { verletzt: 2, unbestimmt: 1, ok: 0 }[x[1].art] || 0;
+      if (!schlimmste || rang > schlimmste[0]) schlimmste = [rang, x[1]];
+    });
+    var m = PRUEF_MARKE[(schlimmste ? schlimmste[1].art : "unbestimmt")] ||
+            PRUEF_MARKE.unbestimmt;
+    return "<b>" + esc(k.name) + "</b> " +
+      k.breite.toFixed(1) + " × " + k.tiefe.toFixed(1) + " m · " + k.geschosse +
+      " Geschosse · " + koerperHoehe(k).toFixed(2) + " m hoch " +
+      '<span class="badge ' + m[1] + '">' + esc(m[0]) + "</span>";
+  }
+
+  function ekWert(label, wert) {
+    return '<div class="ekwert"><span class="ekpl">' + esc(label) + "</span><span>" +
+      wert + "</span></div>";
+  }
+
+  function ekFeld(label, feld, wert, schritt, einheit) {
+    return '<label class="ekfeld"><span class="ekpl">' + esc(label) + "</span>" +
+      '<input type="number" data-entwurf="' + feld + '" value="' + wert +
+      '" step="' + schritt + '"><span class="ekeinheit">' + esc(einheit) + "</span></label>";
+  }
+
+  // Vollstaendiger Neuaufbau. Nur bei Auswahlwechsel, Anlegen, Loeschen --
+  // nicht beim Ziehen: ein neu geschriebenes Eingabefeld verliert den
+  // Fokus mitten im Tippen.
   function entwurfTafel() {
     var tafel = document.getElementById("entwurf-tafel");
     if (!tafel) return;
@@ -7651,13 +8085,9 @@ function secEntwurf(erg) {
     }
 
     var liste = entwuerfe.map(function (k) {
-      var p = pruefeBaubereich(k);
-      var m = PRUEF_MARKE[p.art] || PRUEF_MARKE.unbestimmt;
       return '<li class="' + (k.id === entwurfGewaehlt ? "an" : "") +
-        '" data-koerper="' + esc(k.id) + '"><b>' + esc(k.name) + "</b> " +
-        k.breite.toFixed(1) + " × " + k.tiefe.toFixed(1) + " m · " + k.geschosse +
-        " Geschosse · " + koerperHoehe(k).toFixed(2) + " m hoch " +
-        '<span class="badge ' + m[1] + '">' + esc(m[0]) + "</span>" +
+        '" data-koerper="' + esc(k.id) + '">' +
+        '<span class="ekinhalt" data-inhalt="' + esc(k.id) + '">' + ekZeile(k) + "</span>" +
         '<button class="m3weg" data-koerperweg="' + esc(k.id) +
         '" title="Baukörper löschen">×</button></li>';
     }).join("");
@@ -7665,39 +8095,83 @@ function secEntwurf(erg) {
     var k = entwurfVon(entwurfGewaehlt);
     var detail = "";
     if (k) {
-      var bb = pruefeBaubereich(k), gz = pruefeGeschosse(k);
       detail =
         '<div class="ekdetail">' +
           '<div class="ekspalte"><div class="ekkopf">Projektstudie</div>' +
             '<div class="ekunter">aus der gezeichneten Geometrie</div>' +
-            ekWert("Grundfläche", fmt(koerperGrundflaeche(k), 0) + " m²") +
-            ekWert("Geschossfläche", fmt(koerperGrundflaeche(k) * k.geschosse, 0) + " m²") +
-            ekWert("Höhe über Terrain", koerperHoehe(k).toFixed(2) + " m") +
-            ekWert("Geschosshöhe", k.geschosshoehe.toFixed(2) + " m" +
-              (k.hoeheAngenommen ? ' <span class="badge mute">angenommen</span>'
-                                 : ' <span class="badge ok">aus der Engine</span>')) +
+            ekFeld("Breite", "breite", k.breite.toFixed(1), "0.5", "m") +
+            ekFeld("Tiefe", "tiefe", k.tiefe.toFixed(1), "0.5", "m") +
+            ekFeld("Drehung", "drehung", Math.round(k.drehung * 180 / Math.PI), "5", "°") +
+            ekFeld("Geschosse", "geschosse", k.geschosse, "1", "") +
+            ekFeld("Geschosshöhe", "geschosshoehe", k.geschosshoehe.toFixed(2), "0.1", "m") +
+            '<div id="entwurf-werte"></div>' +
           "</div>" +
           '<div class="ekspalte"><div class="ekkopf">Fachliche Prüfung</div>' +
             '<div class="ekunter">aus der Engine bzw. eindeutiger Geometrie</div>' +
-            pruefZeile("Baubereich", bb) +
-            pruefZeile("Geschosse", gz) +
-            pruefZeile("Grenzabstand", { art: "unbestimmt", kurz: "noch nicht geprüft",
-              text: "Folgt, sobald der Körper verschiebbar ist." }) +
-            pruefZeile("Ausnützung", { art: "unbestimmt", kurz: "nicht im Browser",
-              text: "Anrechenbare Geschossfläche und Ausnützungsziffer rechnet die Engine " +
-                    "nach SIA 416 — nicht die Ansicht." }) +
+            '<div id="entwurf-pruef"></div>' +
           "</div>" +
         "</div>";
     }
 
     tafel.innerHTML = '<ul class="ekliste">' + liste + "</ul>" + detail +
       '<div class="ekfuss">Die linke Spalte ist <b>Ihre Geometrie</b>, nicht unser Befund. ' +
-      'Verschieben, Drehen und Masse ändern folgen im nächsten Schritt.</div>';
+      'Der gewählte Körper lässt sich in der Szene <b>ziehen</b>; die vier Griffe an den ' +
+      'Kanten bemassen ihn, der abgesetzte Griff dreht ihn. Korrigiert wird nichts von ' +
+      'selbst — auch eine unzulässige Lage bleibt stehen.</div>';
+    entwurfWerte();
   }
 
-  function ekWert(label, wert) {
-    return '<div class="ekwert"><span class="ekpl">' + esc(label) + "</span><span>" +
-      wert + "</span></div>";
+  // Nur die Zahlen. Laeuft waehrend des Ziehens, deshalb ruehrt sie die
+  // Eingabefelder nicht an.
+  function entwurfWerte() {
+    var k = entwurfVon(entwurfGewaehlt);
+    var w = document.getElementById("entwurf-werte");
+    var p = document.getElementById("entwurf-pruef");
+    if (!k || !w || !p) return;
+
+    var gs = gelaendeSpanne(k);
+    w.innerHTML =
+      '<div class="ektrenner"></div>' +
+      ekWert("Grundfläche", fmt(koerperGrundflaeche(k), 0) + " m²") +
+      ekWert("Geschossfläche", fmt(koerperGeschossflaeche(k), 0) + " m²") +
+      ekWert("Höhe über Terrain", koerperHoehe(k).toFixed(2) + " m") +
+      ekWert("Volumen", fmt(koerperGrundflaeche(k) * koerperHoehe(k), 0) + " m³") +
+      (k.hoeheAngenommen
+        ? '<div class="ekpt" style="margin-left:0">Geschosshöhe angenommen — die Engine ' +
+          'führt für diese Zone keine.</div>' : "") +
+      (gs && gs.unterschied > 0.5
+        ? '<div class="ekpt" style="margin-left:0">Gelände unter dem Fussabdruck ' +
+          esc(gs.min.toFixed(1)) + "–" + esc(gs.max.toFixed(1)) + " m ü. M. (" +
+          esc(gs.unterschied.toFixed(1)) + ' m Unterschied). Der Körper sitzt auf der ' +
+          'Höhe seiner Mitte — für eine Massenstudie genügt das, ein Terrassierungs- ' +
+          'oder Sockelnachweis ist es nicht.</div>' : "");
+
+    p.innerHTML = allePruefungen(k).map(function (x) {
+      return pruefZeile(x[0], x[1]);
+    }).join("");
+
+    // Die Liste oben zeigt dieselbe Aussage -- sie muss mitlaufen.
+    document.querySelectorAll("[data-inhalt]").forEach(function (el) {
+      var kk = entwurfVon(el.dataset.inhalt);
+      if (kk) el.innerHTML = ekZeile(kk);
+    });
+  }
+
+  // Die Eingabefelder nachziehen, wenn in der Szene gezogen wurde. Das
+  // gerade bearbeitete Feld bleibt unberuehrt, sonst springt der Cursor.
+  function entwurfFelder() {
+    var k = entwurfVon(entwurfGewaehlt);
+    if (!k) return;
+    var werte = {
+      breite: k.breite.toFixed(1), tiefe: k.tiefe.toFixed(1),
+      drehung: String(Math.round(k.drehung * 180 / Math.PI)),
+      geschosse: String(k.geschosse), geschosshoehe: k.geschosshoehe.toFixed(2)
+    };
+    document.querySelectorAll("[data-entwurf]").forEach(function (el) {
+      if (el === document.activeElement) return;
+      var v = werte[el.dataset.entwurf];
+      if (v !== undefined && el.value !== v) el.value = v;
+    });
   }
 
   // -------------------------------------------------------------------
@@ -8030,7 +8504,13 @@ function secEntwurf(erg) {
     if (umriss) u3dGruppen.grundstueck.add(umriss);
 
     var g1 = erg.g1_ergebnis || {};
-    var e1 = g1.ergebnis || (g1.szenarien ? g1.szenarien[Object.keys(g1.szenarien)[0]] : null);
+    // Bei mehrdeutigen Abstandsregeln rechnet G1 je zulaessiger Anordnung
+    // eine eigene Kaskade. Gezeichnet wird die erste -- und ab hier wird
+    // auch geprueft, was gezeichnet ist. Der Name wird mitgefuehrt, damit
+    // die Pruefung sagen kann, WELCHE Anordnung sie gemessen hat.
+    var g1Namen = g1.szenarien ? Object.keys(g1.szenarien) : [];
+    var g1Name = g1.ergebnis ? null : (g1Namen[0] || null);
+    var e1 = g1.ergebnis || (g1Name ? g1.szenarien[g1Name] : null);
     var bbRinge = (e1 && e1.baubereich_koordinaten) ? alsListe(e1.baubereich_koordinaten) : [];
     bbRinge.forEach(function (r) {
       var b = koerper(r, mx, my, 0.25, FARBE.baubereich, 0.30);
@@ -8049,9 +8529,63 @@ function secEntwurf(erg) {
       var lr = lokalRing(r, mx, my);
       if (lr.length >= 3 && (!bbLokal || ringSpanne(lr) > ringSpanne(bbLokal))) bbLokal = lr;
     });
+    // Der geforderte Abstand kommt aus effektive_kanten_abstaende der
+    // GEZEICHNETEN Anordnung -- nicht aus dem obersten kantenprotokoll.
+    // Das oberste fuehrt bei einer Bandbreite den grossen Abstand, waehrend
+    // der gezeichnete Baubereich mit dem kleinen gerechnet ist. Live in
+    // Buchs beobachtet: derselbe Koerper lag "vollstaendig im Baubereich"
+    // und verletzte zugleich den Grenzabstand. Beide Pruefungen hatten
+    // recht -- sie massen gegen verschiedene Anordnungen.
+    //
+    // Die Kante nr liegt zwischen den Ringpunkten nr und nr+1. Diese
+    // Zuordnung wird an der mitgelieferten Laenge geprueft: stimmt sie
+    // nicht, wird die Kante uebersprungen. Lieber "nicht bestimmbar" als
+    // gegen die falsche Kante gemessen.
+    var ringRoh = alsListe(parzelle).slice();
+    if (ringRoh.length > 2 &&
+        ringRoh[0][0] === ringRoh[ringRoh.length - 1][0] &&
+        ringRoh[0][1] === ringRoh[ringRoh.length - 1][1]) ringRoh.pop();
+    var kantenLokal = [];
+    var effAbst = alsListe((e1 || {}).effektive_kanten_abstaende);
+    alsListe(g1.kantenprotokoll).forEach(function (kt) {
+      var i = kt.nr;
+      if (typeof i !== "number" || i < 0 || i >= ringRoh.length) return;
+      var pa = ringRoh[i], pb = ringRoh[(i + 1) % ringRoh.length];
+      if (!pa || !pb) return;
+      var laenge = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+      if (typeof kt.laenge_m === "number" && Math.abs(laenge - kt.laenge_m) > 0.5) return;
+      kantenLokal.push({
+        nr: i + 1,
+        a: [pa[0] - mx, -(pa[1] - my)],
+        b: [pb[0] - mx, -(pb[1] - my)],
+        soll: typeof effAbst[i] === "number" ? effAbst[i]
+              : (typeof kt.abstand_m === "number" ? kt.abstand_m : 0)
+      });
+    });
+
+    // Geprueft wird gegen die Flaechen, die G1 TATSAECHLICH abgezogen hat --
+    // inklusive der aus Baulinien abgeleiteten. Welche Seite einer Baulinie
+    // Baugebiet ist, hat die Engine hergeleitet; diese Herleitung wird hier
+    // benutzt und nicht wiederholt.
+    var restrLokal = alsListe((m1.restriktionsgeometrie || {}).restriktionsflaechen_fuer_g1)
+      .map(function (rf) {
+        return { typ: klartext(rf.typ || rf.quelle || "Restriktion"),
+                 ring: lokalRing(rf.koordinaten || rf, mx, my) };
+      }).filter(function (r) { return r.ring.length >= 3; });
+
+    var zoneD = ((erg.zonen_zuordnung || {}).zone) || {};
+    var ausWert = function (v) { return (v && typeof v === "object") ? v.wert : v; };
+    var hMax = ausWert(zoneD.gebaeudehoehe_m);
+    if (leer(hMax)) hMax = ausWert(zoneD.gesamthoehe_m);
+
     entwurfRaum = {
       parzelle: lokalRing(parzelle, mx, my),
       baubereich: bbLokal,
+      kanten: kantenLokal,
+      anordnung: g1Name,
+      anordnungen: g1Namen.length,
+      restriktionen: restrLokal,
+      hoeheMax: typeof hMax === "number" && hMax > 0 ? hMax : null,
       terrain: terrain, mx: mx, my: my, basis: basis
     };
     // Eine neue Analyse ist eine andere Parzelle. Koerper der vorigen
@@ -8165,10 +8699,16 @@ function verdrahte3DSteuerung() {
     });
   });
 
+  // Der Merker haengt am Element UND am Ereignis. Mit einem Merker je
+  // Element verschwand der zweite Horcher auf demselben Element
+  // stillschweigend -- ein Fehler, den niemand sieht, weil nichts bricht:
+  // der Knopf tut einfach nichts.
   function einmal(id, ereignis, was) {
     var el = document.getElementById(id);
-    if (!el || el._verdrahtet) return el;
-    el._verdrahtet = true;
+    if (!el) return null;
+    var merker = "_verdrahtet_" + ereignis;
+    if (el[merker]) return el;
+    el[merker] = true;
     el.addEventListener(ereignis, was);
     return el;
   }
@@ -8206,6 +8746,12 @@ function verdrahte3DSteuerung() {
   // --- Projektstudie -------------------------------------------------
   einmal("entwurf-neu", "click", function () {
     if (window.entwurfHinzufuegen) window.entwurfHinzufuegen();
+  });
+  // Die Felder entstehen erst mit der Auswahl -- deshalb haengt der
+  // Horcher an der Tafel, nicht an den Feldern.
+  einmal("entwurf-tafel", "input", function (e) {
+    var f = e.target.closest ? e.target.closest("[data-entwurf]") : null;
+    if (f && window.entwurfSetzen) window.entwurfSetzen(f.dataset.entwurf, f.value);
   });
   einmal("entwurf-tafel", "click", function (e) {
     if (!e.target.closest) return;
