@@ -1325,6 +1325,17 @@ def test_rueckrechnung_flaechenmodell(s: str) -> None:
     pruefe("szenario: (typeof aktivesSzenario !== \"undefined\" && aktivesSzenario) || null" in s,
            "das Szenario stammt aus der vorhandenen Auswahl")
 
+    # 6. Die Lage geht in die Flaechenkaskade nicht ein -- der Endpunkt
+    #    bekommt Fussabdruck und Geschosse, keine Koordinaten. Verschieben
+    #    loest deshalb keine Rueckrechnung aus. Das sieht wie ein Fehler
+    #    aus, wenn es nicht dasteht.
+    pruefe("Die Lage geht nicht ein" in s,
+           "die Tafel sagt, dass Verschieben die Flaechen nicht aendert")
+    pruefe("k.breite.toFixed(2), k.tiefe.toFixed(2), k.geschosse" in s
+           and "k.mitte" not in s[s.index("function rueckKennung(k)"):
+                                  s.index("function rueckAnstossen(")],
+           "die Kennung der Rueckrechnung enthaelt die Masse, nicht die Lage")
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")

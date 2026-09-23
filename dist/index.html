@@ -7003,7 +7003,8 @@ function secEntwurf(erg) {
     fuss += '<div class="ekpt" style="margin-left:0">Eingang: ' +
       fmt(studie.fussabdruck_m2, 0) + " m² Fussabdruck × " + esc(studie.geschosszahl) +
       " Geschosse. Alles Übrige — anrechenbare Landfläche, Zone, Ziffern — stammt " +
-      "unverändert aus der Engine.</div>";
+      "unverändert aus der Engine. <b>Die Lage geht nicht ein</b>: Verschieben ändert " +
+      "die Prüfungen darüber, nicht die Flächen.</div>";
 
     return (veraltet ? '<div class="ekveraltet">' : "<div>") + zeilen + fuss + "</div>";
   }
