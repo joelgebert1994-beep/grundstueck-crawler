@@ -1166,6 +1166,111 @@ def test_koerper_greifbar_und_bemassbar(s: str) -> None:
     pruefe('var merker = "_verdrahtet_" + ereignis;' in s,
            "einmal() merkt sich Element UND Ereignis")
 
+def test_baurechtsgrenzen_raeumlich(s: str) -> None:
+    """Die raeumliche Kette ist sichtbar, nicht nur als Liste lesbar.
+
+    Parzelle -> Abstandskorridor -> Baubereich -> Baulinien/Restriktionen
+    -> Projektkoerper. Vorher lagen die ersten drei in EINER Ebene
+    "grundstueck" -- man konnte die Kette also gar nicht auseinandernehmen.
+    """
+    # 1. Jede Stufe eine eigene, schaltbare Ebene.
+    for ebene in ("parzelle", "korridor", "baubereich", "baulinien", "restriktionen"):
+        pruefe(f'd3schalter("{ebene}"' in s, f"Ebene {ebene} ist schaltbar")
+        pruefe(f'u3dGruppen.{ebene}.add' in s or f'"{ebene}"' in s,
+               f"Ebene {ebene} wird bespielt")
+    pruefe("var U3D_EBENEN = [" in s,
+           "die Ebenenliste steht an einer Stelle")
+    pruefe('d3schalter("grundstueck"' not in s,
+           "die Sammelebene „grundstueck“ gibt es nicht mehr")
+    # Vier Gruppen mit klarer Aufgabe.
+    for gruppe in ("Bestand", "Grundstück", "Baurecht", "Projekt"):
+        pruefe(f'<span class="d3titel">{gruppe}</span>' in s,
+               f"Bediengruppe {gruppe}")
+
+    # 2. Der Korridor entsteht ohne neue Rechnung: die Parzelle liegt
+    #    darunter, der Baubereich darueber. Die sichtbare Differenz IST
+    #    der Korridor -- keine Polygonsubtraktion im Browser.
+    pruefe("(bbRinge.length ? u3dGruppen.korridor : u3dGruppen.parzelle).add(flaeche)" in s
+           and "u3dGruppen.baubereich.add(b)" in s,
+           "Korridor und Baubereich liegen uebereinander -- und ohne Baubereich "
+           "gibt es keinen Korridor, sonst hiesse die ganze Parzelle so")
+    pruefe("Er entsteht" in s and "nicht aus einer neuen Rechnung" in s,
+           "und das steht als Begruendung im Code")
+
+    # 3. DIE Regression: mehrere zulaessige Anordnungen.
+    #    Frueher nahm die Ansicht Object.keys()[0] -- also eine zufaellige --
+    #    waehrend das oberste Kantenprotokoll den grossen Abstand fuehrte.
+    #    Derselbe Koerper lag dann "vollstaendig im Baubereich" UND verletzte
+    #    den Grenzabstand.
+    pruefe("var anordnungGewaehlt" in s and "window.setzeAnordnung" in s,
+           "die Anordnung ist waehlbar")
+    pruefe("g1Namen.reduce(" in s and "baubereich_m2" in s,
+           "voreingestellt ist die strengste Anordnung (kleinster Baubereich), "
+           "nicht die erste aus Object.keys()")
+    pruefe('data-anordnung="' in s,
+           "alle Anordnungen stehen zur Wahl")
+    pruefe("keine</b> Anordnung als " in s,
+           "und es steht da, dass die Engine keine als verbindlich ausweist")
+    # Eine einzige gemeinsame Pruefgrundlage: e1 traegt Baubereich UND
+    # Abstaende, beide gehen in entwurfRaum.
+    e1block = s[s.index("var e1 = g1.ergebnis ||"): s.index("var zoneD =")]
+    pruefe("e1.baubereich_koordinaten" in e1block
+           and "(e1 || {}).effektive_kanten_abstaende" in e1block,
+           "gezeichneter Baubereich und geforderte Abstaende stammen aus DEMSELBEN e1")
+    pruefe("anordnung: g1Name" in s,
+           "und die Pruefung weiss, welche Anordnung das war")
+
+    # 4. Baulinien: drei Zustaende, nie still ausgegraut.
+    for zustand in ("gefunden", "geprueft_keine", "abfrage_fehlgeschlagen", "nicht_geprueft"):
+        pruefe(f'"{zustand}"' in s or f"{zustand}:" in s, f"Baulinienzustand {zustand}")
+    pruefe("function pruefeBaulinie(k)" in s, "die Baulinie ist eine eigene Pruefzeile")
+    pruefe("/Baulinien-Abfrage/.test(String(h))" in s,
+           "der Fehlschlag wird am Hinweis der Datenschicht erkannt")
+    pruefe("ein Test haelt die\n    // Schreibweise fest" in s
+           or "ein Test haelt die" in s,
+           "und die Kopplung an diesen Text ist im Code begruendet")
+    # Bricht diese Zusicherung, hat die Engine ihren Hinweistext geaendert
+    # und der Zustand "Abfrage fehlgeschlagen" faellt stillschweigend auf
+    # "keine gefunden" zurueck.
+    pruefe("fehlgeschlagen" in s, "die Schreibweise des Engine-Hinweises ist festgehalten")
+
+    # 5. Die Szene sagt, WELCHE Seite das Problem ist.
+    pruefe("function naehesteVerbindung(ecken, a, b)" in s,
+           "die kuerzeste Verbindung zur Kante wird berechnet, nicht nur ihre Laenge")
+    pruefe("function grenzabstandBefund(k)" in s
+           and "function pruefeGrenzabstand(k) { return grenzabstandBefund(k); }" in s,
+           "ein Befund, zwei Verbraucher: Tafel und Szene koennen nicht auseinanderlaufen")
+    pruefe('" m / erforderlich "' in s,
+           "bei einer Verletzung steht Ist UND Soll an der Geometrie")
+    pruefe("zeigen.indexOf(ga.kritisch) < 0" in s,
+           "gezeigt werden die verletzten Kanten und immer die engste Stelle")
+    pruefe("restriktionBefund(k).getroffen.forEach" in s,
+           "getroffene Restriktionsflaechen werden in der Szene umrandet")
+
+    # 6. Die Baulinienscheibe ist eine Sichthilfe, keine Hoehenangabe --
+    #    sonst liest man sie als Hoehenbeschraenkung.
+    pruefe("function scheibe(koordinaten, mx, my, basis, farbe, hoehe)" in s,
+           "Baulinien bekommen eine sichtbare Scheibe")
+    pruefe("Sichthilfe" in s and "keine Höhenangabe" in s,
+           "und die Legende sagt, dass ihre Hoehe nichts bedeutet")
+
+    # 7. Herkunft nicht erfinden: restriktionsflaechen_fuer_g1 ist eine
+    #    Liste blanker Ringe ohne Typ.
+    pruefe("ohne ausgewiesene Herkunft" in s,
+           "unbenannte Restriktionsflaechen werden als solche ausgewiesen")
+    pruefe("Gewässerraum" in s,
+           "ein Ring, der einem Gewaesserraum entspricht, wird benannt")
+
+    # 8. Leistung: die neuen Geometrien entstehen beim Szenenaufbau, nicht
+    #    je Bild. Nur die koerperbezogenen Masse haengen am Entwurf.
+    szene = s[s.index("function zeichneSzene(szenarioId)"):]
+    szene = szene[: szene.index("\n  }\n})();") if "\n  }\n})();" in szene else len(szene)]
+    pruefe("u3dGruppen.baulinien.add" in szene and "u3dGruppen.restriktionen.add" in szene,
+           "Baulinien und Restriktionen werden einmal je Szene aufgebaut")
+    zieh = s[s.index("function entwurfZiehen("): s.index("// --- Fachliche Pruefung")]
+    pruefe("fetch(" not in zieh and "zeichneSzene" not in zieh,
+           "beim Ziehen wird weder die Szene neu gebaut noch der Server gefragt")
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -1184,7 +1289,8 @@ def main() -> int:
                test_qualitaetsauswahl_passt_zur_engine,
                test_quellen_nie_vermischt, test_sechs_marktsegmente,
                test_entwurf_reiter, test_messwerkzeuge_dynamisch,
-               test_koerper_greifbar_und_bemassbar):
+               test_koerper_greifbar_und_bemassbar,
+               test_baurechtsgrenzen_raeumlich):
         fn(s)
 
     if _fehler:

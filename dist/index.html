@@ -943,6 +943,19 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .ekpl { flex: 0 0 8.5em; color: var(--ink-3); font-size: 11px; }
 .ekpt { flex: 1 1 100%; margin-left: 8.5em; font-size: 10.5px; color: var(--ink-3);
   line-height: 1.4; }
+/* --- Baurechtstafel ueber der Buehne --- */
+.brtafel { display: flex; flex-direction: column; gap: 6px; margin: 8px 0;
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg-2); }
+.brzeile { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  font-size: 12px; }
+.brtitel { flex: 0 0 9.5em; font-size: 10.5px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+.brwert { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.brmass { font-size: 10.5px; opacity: .8; font-variant-numeric: tabular-nums; }
+.brhinweis { flex: 1 1 100%; margin-left: 9.5em; font-size: 10.5px;
+  color: var(--ink-3); line-height: 1.45; }
+@media (max-width: 560px) { .brtitel { flex-basis: 100%; } .brhinweis { margin-left: 0; } }
 .ekfeld { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
 .ekfeld input { font: inherit; font-size: 12px; width: 5.5em; padding: 2px 5px;
   border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
@@ -6157,11 +6170,17 @@ function secEntwurf(erg) {
     'unbekannt, werden sie flach dargestellt statt geraten.</div>' +
     wahl + hinweisOhneKoerper +
     '<div class="d3steuer">' +
-      '<div class="d3gruppe"><span class="d3titel">Umgebung</span>' +
+      '<div class="d3gruppe"><span class="d3titel">Bestand</span>' +
         d3schalter("terrain", "Terrain") + d3schalter("gebaeude", "Gebäude") +
         d3schalter("strassen", "Strassen") + "</div>" +
+      '<div class="d3gruppe"><span class="d3titel">Grundstück</span>' +
+        d3schalter("parzelle", "Parzellengrenze") +
+        d3schalter("korridor", "Abstandskorridor") + "</div>" +
+      '<div class="d3gruppe"><span class="d3titel">Baurecht</span>' +
+        d3schalter("baubereich", "Baubereich") + d3schalter("baulinien", "Baulinien") +
+        d3schalter("restriktionen", "Restriktionen") + "</div>" +
       '<div class="d3gruppe"><span class="d3titel">Projekt</span>' +
-        d3schalter("grundstueck", "Grundstück") + d3schalter("projekt", "Baukörper") +
+        d3schalter("projekt", "Szenarienkörper") +
         d3schalter("entwurf", "Projektstudie") + "</div>" +
       '<div class="d3gruppe"><span class="d3titel">Entwerfen</span>' +
         '<button class="m3knopf m3haupt" id="entwurf-neu">+ Baukörper</button>' + "</div>" +
@@ -6190,6 +6209,7 @@ function secEntwurf(erg) {
       '<span class="s3info" id="sonne-info"></span>' +
       '<span class="s3zeiten" id="sonne-zeiten"></span>' +
     "</div>" +
+    '<div id="entwurf-recht"></div>' +
     '<div class="v3rahmen"><div id="view3d"></div>' +
       '<div id="view3d-schilder"></div></div>' +
     '<div id="entwurf-tafel" class="ektafel"></div>' +
@@ -6459,8 +6479,18 @@ function secEntwurf(erg) {
   // Seitenneuladen behalten. Live beobachtet in Buchs.
   var umgebungFuerJob = null;
   var u3dGruppen = {};          // Ebenengruppen, einzeln schaltbar
+  // Vier Gruppen mit klarer Aufgabe: Bestand (was da ist), Grundstueck
+  // (die Grenze), Baurecht (was gilt), Projekt (was man vorhat). Frueher
+  // lagen Parzelle, Korridor und Baubereich in EINER Ebene "grundstueck" --
+  // man konnte die raeumliche Kette also nicht auseinandernehmen.
   var u3dSicht = { terrain: true, gebaeude: true, strassen: true,
-                   grundstueck: true, projekt: true, entwurf: true };
+                   parzelle: true, korridor: true, baubereich: true,
+                   baulinien: true, restriktionen: true,
+                   projekt: true, entwurf: true };
+  var U3D_EBENEN = ["terrain", "gebaeude", "strassen", "parzelle", "korridor",
+                    "baubereich", "baulinien", "restriktionen", "projekt", "entwurf"];
+  // Welche Anordnung gezeichnet und geprueft wird. null = die strengste.
+  var anordnungGewaehlt = null;
 
   var TERRAIN_DECKKRAFT = 0.55;   // Grundeinstellung aus Block 1
 
@@ -6471,6 +6501,9 @@ function secEntwurf(erg) {
     ohneHoehe:   "#b6bcc4",
     strasse:     "#c8c2b4",
     parzelle:    "#b3324a",
+    korridor:    "#b3324a",   // Parzelle unter dem Baubereich = Abstandskorridor
+    baulinie:    "#b4661a",
+    restriktion: "#8a5cd6",
     baubereich:  "#1f7a4d"
   };
 
@@ -6531,6 +6564,27 @@ function secEntwurf(erg) {
     var g = new THREE.Group();
     g.add(mesh); g.add(netz);
     return g;
+  }
+
+  // Eine niedrige, durchscheinende Scheibe entlang eines Linienzugs.
+  // Baulinien sind Linien am Boden -- in der Schraegansicht praktisch
+  // unsichtbar. Die Scheibe macht sie lesbar und ist ausdruecklich eine
+  // SICHTHILFE: ihre Hoehe bedeutet nichts.
+  function scheibe(koordinaten, mx, my, basis, farbe, hoehe) {
+    var ecken = [];
+    for (var i = 0; i < koordinaten.length - 1; i++) {
+      var a = koordinaten[i], b = koordinaten[i + 1];
+      var ax = a[0] - mx, az = -(a[1] - my), bx = b[0] - mx, bz = -(b[1] - my);
+      // Zwei Dreiecke je Abschnitt, beidseitig sichtbar.
+      ecken.push(ax, 0.1, az, bx, 0.1, bz, bx, hoehe, bz);
+      ecken.push(ax, 0.1, az, bx, hoehe, bz, ax, hoehe, az);
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(ecken, 3));
+    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: new THREE.Color(farbe), transparent: true, opacity: 0.22,
+      side: THREE.DoubleSide, depthWrite: false
+    }));
   }
 
   // Ein Linienzug auf dem Terrain (Strassen, Parzellenumrisse).
@@ -6780,6 +6834,79 @@ function secEntwurf(erg) {
     }, 140);
   }
 
+  // --- Die Baurechtstafel ----------------------------------------------
+  //
+  // Sie beantwortet die Frage, die vor jeder Koerperpruefung steht:
+  // WORAUF wird eigentlich geprueft? Welche Anordnung, welche Baulinien,
+  // welche Restriktionen. Ohne sie waere jede Zahl darunter eine Aussage
+  // ohne Grundlage.
+
+  window.setzeAnordnung = function (name) {
+    anordnungGewaehlt = name || null;
+    if (window.zeichne3D && ergebnisAktuell) {
+      window.zeichne3D(typeof aktivesSzenario !== "undefined" ? aktivesSzenario : null);
+    }
+  };
+
+  function entwurfRechtTafel() {
+    var el = document.getElementById("entwurf-recht");
+    if (!el) return;
+    if (!entwurfRaum) { el.innerHTML = ""; return; }
+
+    var teile = [];
+
+    // 1. Anordnung -- nur, wo es etwas zu waehlen gibt.
+    var liste = entwurfRaum.anordnungsListe || [];
+    if (liste.length > 1) {
+      teile.push('<div class="brzeile"><span class="brtitel">Abstandsanordnung</span>' +
+        liste.map(function (a) {
+          var mass = a.abstaende.length
+            ? a.abstaende.map(function (x) { return fmt(x, 1); }).join(" / ") + " m"
+            : "ohne Abstandsangabe";
+          return '<button class="m3knopf' + (a.gewaehlt ? " an" : "") +
+            '" data-anordnung="' + esc(a.name) + '">' + esc(klartext(a.name)) +
+            ' <span class="brmass">' + esc(mass) +
+            (leer(a.baubereich_m2) ? "" : " · " + fmt(a.baubereich_m2, 0) + " m²") +
+            "</span></button>";
+        }).join("") + "</div>" +
+        '<div class="brhinweis">Die Engine weist hier <b>keine</b> Anordnung als ' +
+        'verbindlich aus — welche Seite den grossen Grenzabstand trägt, entscheidet die ' +
+        'Ausrichtung des noch nicht entworfenen Gebäudes. Dargestellt ist die strengste. ' +
+        'Baubereich, Grenzabstände und Körperprüfung stammen immer aus der hier ' +
+        'gewählten Anordnung.</div>');
+    } else if (entwurfRaum.anordnung) {
+      teile.push('<div class="brzeile"><span class="brtitel">Abstandsanordnung</span>' +
+        '<span class="brwert">' + esc(klartext(entwurfRaum.anordnung)) + "</span></div>");
+    }
+
+    // 2. Baulinien -- drei Zustaende, nie zwei.
+    var bl = BL_TEXT[entwurfRaum.baulinienStatus] || BL_TEXT.nicht_geprueft;
+    teile.push('<div class="brzeile"><span class="brtitel">Baulinien</span>' +
+      '<span class="badge ' + bl[1] + '">' +
+      esc(entwurfRaum.baulinienStatus === "gefunden"
+          ? entwurfRaum.baulinienAnzahl + " vorhanden" : bl[0]) + "</span>" +
+      (entwurfRaum.baulinienStatus === "abfrage_fehlgeschlagen"
+        ? '<span class="brhinweis">' + esc(entwurfRaum.baulinienFehler || "") + "</span>"
+        : "") +
+      (entwurfRaum.baulinienStatus === "geprueft_keine"
+        ? '<span class="brhinweis">Die Abfrage lief und fand keine.</span>' : "") +
+      "</div>");
+
+    // 3. Restriktionsflaechen -- was G1 tatsaechlich abgezogen hat.
+    var rf = entwurfRaum.restriktionen || [];
+    var ohneHerkunft = rf.filter(function (x) { return !x.benannt; }).length;
+    teile.push('<div class="brzeile"><span class="brtitel">Restriktionsflächen</span>' +
+      '<span class="brwert">' + (rf.length ? rf.length + " in G1 abgezogen" : "keine") +
+      "</span>" +
+      (ohneHerkunft
+        ? '<span class="brhinweis">' + ohneHerkunft + " davon ohne ausgewiesene Herkunft — " +
+          "die Datenschicht führt bei den abgezogenen Flächen nicht mit, ob sie aus " +
+          "Gewässerraum, Baulinie oder Waldabstand stammen.</span>"
+        : ""));
+
+    el.innerHTML = '<div class="brtafel">' + teile.join("") + "</div>";
+  }
+
   // =====================================================================
   // Messwerkzeuge
   //
@@ -6815,7 +6942,8 @@ function secEntwurf(erg) {
 
   function messZiele() {
     var ziele = [];
-    ["terrain", "gebaeude", "grundstueck", "projekt"].forEach(function (k) {
+    ["terrain", "gebaeude", "parzelle", "korridor", "baubereich", "projekt"]
+      .forEach(function (k) {
       // Der Entwurf ist bewusst kein Messziel: gemessen wird am Bestand
       // und am Gelaende, nicht an der eigenen Studie.
       if (u3dGruppen[k] && u3dGruppen[k].visible) ziele.push(u3dGruppen[k]);
@@ -7756,30 +7884,48 @@ function secEntwurf(erg) {
                    "wo er steht — korrigiert wird nichts von selbst." };
   }
 
-  // Je Parzellenkante kennt die Engine den angewendeten Grenzabstand
-  // (kantenprotokoll). Der tatsaechliche Abstand des Fussabdrucks dazu ist
-  // reine Geometrie -- damit ist die Aussage eindeutig, ohne eine einzige
-  // baurechtliche Annahme.
-  function pruefeGrenzabstand(k) {
+  // Die kuerzeste Verbindung zwischen Fussabdruck und Parzellenkante --
+  // nicht nur ihre Laenge. Gezeichnet und gerechnet wird dieselbe Strecke;
+  // eine zweite Herleitung gaebe es hier nicht.
+  function naehesteVerbindung(ecken, a, b) {
+    var best = null;
+    ecken.forEach(function (e) {
+      var dx = b[0] - a[0], dz = b[1] - a[1];
+      var l = dx * dx + dz * dz;
+      var t = l > 0 ? ((e[0] - a[0]) * dx + (e[1] - a[1]) * dz) / l : 0;
+      t = Math.max(0, Math.min(1, t));
+      var fuss = [a[0] + t * dx, a[1] + t * dz];
+      var d = Math.hypot(e[0] - fuss[0], e[1] - fuss[1]);
+      if (!best || d < best.ist) best = { ist: d, von: e, nach: fuss };
+    });
+    return best;
+  }
+
+  // EIN Befund, zwei Verbraucher: die Tafel liest art/kurz/text, die Szene
+  // zeichnet kritisch und verletzte. So koennen Text und Bild nicht
+  // auseinanderlaufen.
+  function grenzabstandBefund(k) {
     var kanten = (entwurfRaum && entwurfRaum.kanten) || [];
     var mit = kanten.filter(function (kt) { return kt.soll > 0; });
     if (!mit.length) {
-      return unbestimmt("nicht bestimmbar",
-        "Die Engine führt für keine Parzellenkante einen Grenzabstand.");
+      return { art: "unbestimmt", kurz: "nicht bestimmbar",
+               text: "Die Engine führt für keine Parzellenkante einen Grenzabstand.",
+               kritisch: null, verletzte: [] };
     }
     var ecken = koerperEcken(k);
-    var schlimmste = null;
+    var kritisch = null, verletzte = [];
     mit.forEach(function (kt) {
-      var ist = abstandRingZuStrecke(ecken, kt.a, kt.b);
-      var luft = ist - kt.soll;
-      if (!schlimmste || luft < schlimmste.luft) {
-        schlimmste = { luft: luft, ist: ist, soll: kt.soll, nr: kt.nr };
-      }
+      var v = naehesteVerbindung(ecken, kt.a, kt.b);
+      if (!v) return;
+      var eintrag = { nr: kt.nr, soll: kt.soll, ist: v.ist, luft: v.ist - kt.soll,
+                      von: v.von, nach: v.nach, a: kt.a, b: kt.b };
+      if (eintrag.luft < -1e-9) verletzte.push(eintrag);
+      if (!kritisch || eintrag.luft < kritisch.luft) kritisch = eintrag;
     });
-    var s = schlimmste;
+    var s = kritisch;
     // Gemessen wird gegen die Anordnung, deren Baubereich gezeichnet ist.
     // Gibt es mehrere zulaessige, gehoert das gesagt -- sonst liest sich
-    // ein Ergebnis wie DIE Antwort, obwohl es eine von zweien ist.
+    // ein Ergebnis wie DIE Antwort, obwohl es eine von mehreren ist.
     var woher = entwurfRaum.anordnung
       ? " Gerechnet mit der Anordnung „" + klartext(entwurfRaum.anordnung) + "“" +
         (entwurfRaum.anordnungen > 1
@@ -7788,39 +7934,90 @@ function secEntwurf(erg) {
       : "";
     var gemessen = "engste Stelle " + s.ist.toFixed(2) + " m an Kante " + s.nr +
                    ", gefordert " + s.soll.toFixed(2) + " m";
-    if (s.luft >= 0) {
+    if (!verletzte.length) {
       return { art: "ok", kurz: s.ist.toFixed(1) + " / " + s.soll.toFixed(1) + " m",
-               text: gemessen + " — eingehalten über alle " + mit.length + " Kanten." + woher };
+               text: gemessen + " — eingehalten über alle " + mit.length + " Kanten." + woher,
+               kritisch: kritisch, verletzte: [] };
     }
     return { art: "verletzt", kurz: s.ist.toFixed(1) + " statt " + s.soll.toFixed(1) + " m",
-             text: gemessen + " — unterschritten um " + Math.abs(s.luft).toFixed(2) + " m." + woher };
+             text: gemessen + " — unterschritten um " + Math.abs(s.luft).toFixed(2) + " m an " +
+                   (verletzte.length === 1 ? "einer Kante" : verletzte.length + " Kanten") +
+                   "." + woher,
+             kritisch: kritisch, verletzte: verletzte };
   }
 
+  function pruefeGrenzabstand(k) { return grenzabstandBefund(k); }
+
   // Geprueft wird gegen die Flaechen, die G1 TATSAECHLICH abgezogen hat.
-  // Die Baulinie selbst ist eine Linie; welche Seite Baugebiet ist, hat die
-  // Engine hergeleitet -- diese Herleitung wird hier benutzt und nicht
-  // wiederholt.
-  function pruefeRestriktion(k) {
+  // Welche Seite einer Baulinie Baugebiet ist, hat die Engine hergeleitet;
+  // diese Herleitung wird hier benutzt und nicht wiederholt.
+  function restriktionBefund(k) {
     var flaechen = (entwurfRaum && entwurfRaum.restriktionen) || [];
     if (!flaechen.length) {
-      return unbestimmt("nicht bestimmbar",
-        "Es liegt keine geprüfte Restriktionsfläche vor. Eine leere Liste kann " +
-        "bedeuten, dass keine besteht oder dass die Abfrage nicht durchlief — das " +
-        "unterscheidet die Datenschicht heute nicht.");
+      return { art: "unbestimmt", kurz: "keine abgezogen",
+               text: "G1 hat für diese Parzelle keine Restriktionsfläche abgezogen. " +
+                     "Ob dennoch eine besteht, sagt der Zustand der Baulinienabfrage.",
+               getroffen: [] };
     }
     var ecken = koerperEcken(k);
     var getroffen = flaechen.filter(function (f) { return ringeUeberlappen(ecken, f.ring); });
     if (!getroffen.length) {
       return { art: "ok", kurz: "frei",
                text: "Der Fussabdruck berührt keine der " + flaechen.length +
-                     " abgezogenen Restriktionsflächen." };
+                     " abgezogenen Restriktionsflächen.", getroffen: [] };
     }
     var namen = getroffen.map(function (f) { return f.typ; }).filter(function (v, i, a) {
       return a.indexOf(v) === i;
     });
     return { art: "verletzt", kurz: "überlagert",
-             text: "Der Fussabdruck überlagert " + getroffen.length + " Restriktionsfläche(n): " +
-                   namen.join(", ") + "." };
+             text: "Der Fussabdruck überlagert " + getroffen.length +
+                   " Restriktionsfläche(n): " + namen.join(", ") + ".",
+             getroffen: getroffen };
+  }
+
+  function pruefeRestriktion(k) { return restriktionBefund(k); }
+
+  // Der Zustand der Baulinien haengt NICHT am Koerper -- er gilt fuer die
+  // Parzelle. Er steht trotzdem in der Pruefliste, weil "keine gefunden"
+  // und "nicht nachgesehen" verschiedene Aussagen sind und beide den
+  // Befund des Koerpers einschraenken.
+  var BL_TEXT = {
+    gefunden: ["vorhanden", "ok"],
+    geprueft_keine: ["keine gefunden", "ok"],
+    abfrage_fehlgeschlagen: ["Abfrage fehlgeschlagen", "warn"],
+    nicht_geprueft: ["nicht geprüft", "mute"]
+  };
+
+  function pruefeBaulinie(k) {
+    var st = (entwurfRaum && entwurfRaum.baulinienStatus) || "nicht_geprueft";
+    var n = (entwurfRaum && entwurfRaum.baulinienAnzahl) || 0;
+    if (st === "gefunden") {
+      // Die Baulinie selbst ist eine Linie; massgebend ist die daraus
+      // abgeleitete Flaeche, die G1 abgezogen hat. Genau die prueft
+      // restriktionBefund() -- hier steht nur, dass es sie gibt.
+      var r = restriktionBefund(k);
+      if (r.art === "verletzt") {
+        return { art: "verletzt", kurz: n + " vorhanden, überlagert",
+                 text: n + " rechtskräftige Baulinie(n) auf oder an der Parzelle. Der " +
+                       "Körper überlagert eine abgezogene Restriktionsfläche." };
+      }
+      return { art: "ok", kurz: n + " vorhanden, eingehalten",
+               text: n + " rechtskräftige Baulinie(n) auf oder an der Parzelle. Der " +
+                     "Fussabdruck liegt ausserhalb der daraus abgeleiteten Fläche." };
+    }
+    if (st === "geprueft_keine") {
+      return { art: "ok", kurz: "keine gefunden",
+               text: "Die Abfrage lief und fand im Umkreis keine rechtskräftige Baulinie." };
+    }
+    if (st === "abfrage_fehlgeschlagen") {
+      return { art: "unbestimmt", kurz: "Abfrage fehlgeschlagen",
+               text: "Die Baulinienabfrage ist nicht durchgelaufen — ob eine Baulinie " +
+                     "besteht, ist damit offen. " +
+                     ((entwurfRaum && entwurfRaum.baulinienFehler) || "") };
+    }
+    return unbestimmt("nicht geprüft",
+      "Für diese Parzelle liegt keine Restriktionsgeometrie vor — die Baulinien " +
+      "wurden nicht abgefragt.");
   }
 
   function pruefeGeschosse(k) {
@@ -7862,7 +8059,8 @@ function secEntwurf(erg) {
   function allePruefungen(k) {
     return [["Baubereich", pruefeBaubereich(k)],
             ["Grenzabstand", pruefeGrenzabstand(k)],
-            ["Baulinie / Restriktion", pruefeRestriktion(k)],
+            ["Baulinie", pruefeBaulinie(k)],
+            ["Restriktionsfläche", pruefeRestriktion(k)],
             ["Geschosse", pruefeGeschosse(k)],
             ["Höhe", pruefeHoehe(k)]];
   }
@@ -8011,6 +8209,40 @@ function secEntwurf(erg) {
       // Der Drehgriff sitzt an einem Arm in Richtung der Tiefenachse --
       // sichtbar abgesetzt, damit er nicht mit den Massgriffen verwechselt
       // wird.
+      // --- Die Grenzen, an denen es haengt ----------------------------
+      //
+      // Nicht nur rot oder gruen: gezeigt wird, WELCHE Seite das Problem
+      // ist. Gezeichnet werden die verletzten Kanten und -- immer -- die
+      // engste Stelle. Die Strecke ist dieselbe, die grenzabstandBefund()
+      // gemessen hat; sie wird nicht ein zweites Mal hergeleitet.
+      var ga = grenzabstandBefund(k);
+      var zeigen = ga.verletzte.slice();
+      if (ga.kritisch && zeigen.indexOf(ga.kritisch) < 0) zeigen.push(ga.kritisch);
+      zeigen.forEach(function (v) {
+        var schlecht = v.luft < -1e-9;
+        var fb = schlecht ? f.stop : f.wahl;
+        // Die betroffene Parzellenkante selbst hervorheben.
+        strecke(new THREE.Vector3(v.a[0], y0 + 0.2, v.a[1]),
+                new THREE.Vector3(v.b[0], y0 + 0.2, v.b[1]), fb, schlecht ? 1 : 0.5);
+        // Und das Mass dazwischen.
+        strecke(new THREE.Vector3(v.von[0], y0 + 0.3, v.von[1]),
+                new THREE.Vector3(v.nach[0], y0 + 0.3, v.nach[1]), fb, 1);
+        entwurfSchilder.push({
+          anker: new THREE.Vector3((v.von[0] + v.nach[0]) / 2, y0 + 0.9,
+                                   (v.von[1] + v.nach[1]) / 2),
+          text: schlecht
+            ? v.ist.toFixed(2) + " m / erforderlich " + v.soll.toFixed(2) + " m"
+            : v.ist.toFixed(2) + " m",
+          farbe: fb, klein: !schlecht
+        });
+      });
+
+      // Getroffene Restriktionsflaechen umranden -- die Zeile in der Tafel
+      // sagt WAS, die Szene sagt WO.
+      restriktionBefund(k).getroffen.forEach(function (rf) {
+        schleife(rf.ring, y0 + 0.25, f.stop, 1);
+      });
+
       var arm = Math.max(3, k.tiefe * 0.3);
       var dreh = koerperPunkt(k, 0, k.tiefe / 2 + arm);
       strecke(new THREE.Vector3(vorne[0], y0, vorne[1]),
@@ -8441,7 +8673,7 @@ function secEntwurf(erg) {
     var erg = ergebnisAktuell;
     while (gruppe3d.children.length) gruppe3d.remove(gruppe3d.children[0]);
     u3dGruppen = {};
-    ["terrain", "gebaeude", "strassen", "grundstueck", "projekt", "entwurf"].forEach(function (k) {
+    U3D_EBENEN.forEach(function (k) {
       u3dGruppen[k] = new THREE.Group();
       u3dGruppen[k].visible = u3dSicht[k] !== false;
       gruppe3d.add(u3dGruppen[k]);
@@ -8493,37 +8725,115 @@ function secEntwurf(erg) {
       });
     }
 
-    // --- Grundstueck ----------------------------------------------------
+    // --- Die raeumliche Kette -------------------------------------------
+    //
+    // Parzelle -> Abstandskorridor -> Baubereich -> Baulinien/Restriktionen
+    // -> Projektkoerper. Jede Stufe eine eigene Ebene, jede in ihrer
+    // eigenen Farbe, alle uebereinander: der rote Rand zwischen
+    // Parzellengrenze und gruener Flaeche IST der Korridor. Er entsteht
+    // nicht aus einer neuen Rechnung, sondern daraus, dass der Baubereich
+    // die Parzelle verdeckt -- und genau das stimmt.
     var pHoehen = u ? u.parzelle.terrain_hoehen_m : null;
-    var flaeche = koerper(parzelle, mx, my, 0, FARBE.parzelle, 0.20);
-    flaeche.position.y = 0.05;
-    u3dGruppen.grundstueck.add(flaeche);
     var umriss = linie(parzelle.concat([parzelle[0]]),
                        pHoehen ? pHoehen.concat([pHoehen[0]]) : null,
                        mx, my, basis, FARBE.parzelle, 0.95, 0.35);
-    if (umriss) u3dGruppen.grundstueck.add(umriss);
+    if (umriss) u3dGruppen.parzelle.add(umriss);
 
     var g1 = erg.g1_ergebnis || {};
+
+    // --- Welche Anordnung gilt? ------------------------------------------
+    //
     // Bei mehrdeutigen Abstandsregeln rechnet G1 je zulaessiger Anordnung
-    // eine eigene Kaskade. Gezeichnet wird die erste -- und ab hier wird
-    // auch geprueft, was gezeichnet ist. Der Name wird mitgefuehrt, damit
-    // die Pruefung sagen kann, WELCHE Anordnung sie gemessen hat.
+    // eine eigene Kaskade und weist AUSDRUECKLICH keine als verbindlich
+    // aus ("eine einzelne davon herauszugreifen waere eine Annahme").
+    // Frueher nahm die Ansicht einfach die erste aus Object.keys() -- also
+    // eine zufaellige. Jetzt ist die strengste voreingestellt (der kleinste
+    // Baubereich, dieselbe Wahl, die die Engine im eindeutigen Fall selbst
+    // trifft) und alle sind waehlbar.
+    //
+    // Entscheidend: Baubereich, Grenzabstaende und Koerperpruefung stammen
+    // ab hier aus GENAU DIESER Anordnung. Sonst entsteht wieder der Fall,
+    // in dem ein Koerper "vollstaendig im Baubereich" liegt und zugleich
+    // den Grenzabstand verletzt.
     var g1Namen = g1.szenarien ? Object.keys(g1.szenarien) : [];
-    var g1Name = g1.ergebnis ? null : (g1Namen[0] || null);
+    var g1Name = null;
+    if (!g1.ergebnis && g1Namen.length) {
+      g1Name = (anordnungGewaehlt && g1.szenarien[anordnungGewaehlt])
+        ? anordnungGewaehlt
+        : g1Namen.reduce(function (beste, n) {
+            var a = (g1.szenarien[n] || {}).baubereich_m2;
+            var b = (g1.szenarien[beste] || {}).baubereich_m2;
+            return (typeof a === "number" && (typeof b !== "number" || a < b)) ? n : beste;
+          }, g1Namen[0]);
+    }
     var e1 = g1.ergebnis || (g1Name ? g1.szenarien[g1Name] : null);
     var bbRinge = (e1 && e1.baubereich_koordinaten) ? alsListe(e1.baubereich_koordinaten) : [];
+
+    // Die Parzellenflaeche liegt unter dem Baubereich -- was unbedeckt
+    // bleibt, IST der Korridor. Ohne Baubereich gibt es keinen Korridor:
+    // dann gehoert die Flaeche in die Ebene "Parzellengrenze", sonst
+    // behauptete die Ebenenbeschriftung, die ganze Parzelle sei
+    // Abstandskorridor.
+    var flaeche = koerper(parzelle, mx, my, 0,
+                          bbRinge.length ? FARBE.korridor : FARBE.parzelle,
+                          bbRinge.length ? 0.30 : 0.18);
+    flaeche.position.y = 0.05;
+    (bbRinge.length ? u3dGruppen.korridor : u3dGruppen.parzelle).add(flaeche);
+
     bbRinge.forEach(function (r) {
       var b = koerper(r, mx, my, 0.25, FARBE.baubereich, 0.30);
       b.position.y = 0.1;
-      u3dGruppen.grundstueck.add(b);
+      u3dGruppen.baubereich.add(b);
     });
 
-    // --- Der Raum, in dem die Projektstudie steht -----------------------
+    // --- Baulinien --------------------------------------------------------
     //
-    // Dieselben Ringe, die eben gezeichnet wurden, in lokalen Metern. Der
-    // groesste Baubereichsring gilt: bei mehreren Teilflaechen ist das die
-    // tragende. Fehlt er, bleibt die Parzelle -- und die Pruefung sagt
-    // dann "nicht bestimmbar" statt eine Lage zu bestaetigen.
+    // Eine Baulinie ist in Plan eine Linie. In der Schraegansicht ist eine
+    // Linie auf dem Boden kaum zu sehen, deshalb steht eine niedrige,
+    // durchscheinende Scheibe darauf. Sie ist eine SICHTHILFE und keine
+    // Hoehenangabe -- das steht auch in der Legende.
+    var rg = m1.restriktionsgeometrie || {};
+    var baulinien = alsListe(rg.baulinien_gefunden);
+    baulinien.forEach(function (bl) {
+      alsListe(bl.koordinaten || bl.geometrie_koordinaten).forEach(function (zug) {
+        var punkte = alsListe(zug);
+        if (punkte.length < 2 || !Array.isArray(punkte[0])) return;
+        var l = linie(punkte, null, mx, my, basis, FARBE.baulinie, 1, 0.6);
+        if (l) u3dGruppen.baulinien.add(l);
+        u3dGruppen.baulinien.add(scheibe(punkte, mx, my, basis, FARBE.baulinie, 4));
+      });
+    });
+
+    // --- Restriktionsflaechen ---------------------------------------------
+    //
+    // Gezeigt wird, was G1 TATSAECHLICH abgezogen hat. Die Herkunft fuehrt
+    // die Datenschicht nicht mit: restriktionsflaechen_fuer_g1 ist eine
+    // Liste blanker Ringe. Wo ein Ring mit einem Gewaesserraum
+    // uebereinstimmt, wird er so benannt; sonst bleibt er ausdruecklich
+    // unbenannt, statt eine Herkunft zu erfinden.
+    var gewaesser = alsListe(rg.gewaesserraum_flaechen);
+    var restrLokal = [];
+    alsListe(rg.restriktionsflaechen_fuer_g1).forEach(function (rf) {
+      var ring = alsListe(rf && rf.koordinaten ? rf.koordinaten : rf);
+      if (ring.length < 3 || !Array.isArray(ring[0])) return;
+      var name = null;
+      gewaesser.forEach(function (gw) {
+        alsListe(gw.koordinaten).forEach(function (gr) {
+          var g0 = alsListe(gr);
+          if (g0.length && Array.isArray(g0[0]) &&
+              Math.abs(g0[0][0] - ring[0][0]) < 0.01 &&
+              Math.abs(g0[0][1] - ring[0][1]) < 0.01) {
+            name = "Gewässerraum" + (gw.gewaessername ? " " + gw.gewaessername : "");
+          }
+        });
+      });
+      var f = koerper(ring, mx, my, 0.4, FARBE.restriktion, 0.28);
+      f.position.y = 0.15;
+      u3dGruppen.restriktionen.add(f);
+      restrLokal.push({ typ: name || "Restriktionsfläche ohne ausgewiesene Herkunft",
+                        benannt: !!name, ring: lokalRing(ring, mx, my) });
+    });
+
     var bbLokal = null;
     bbRinge.forEach(function (r) {
       var lr = lokalRing(r, mx, my);
@@ -8563,27 +8873,42 @@ function secEntwurf(erg) {
       });
     });
 
-    // Geprueft wird gegen die Flaechen, die G1 TATSAECHLICH abgezogen hat --
-    // inklusive der aus Baulinien abgeleiteten. Welche Seite einer Baulinie
-    // Baugebiet ist, hat die Engine hergeleitet; diese Herleitung wird hier
-    // benutzt und nicht wiederholt.
-    var restrLokal = alsListe((m1.restriktionsgeometrie || {}).restriktionsflaechen_fuer_g1)
-      .map(function (rf) {
-        return { typ: klartext(rf.typ || rf.quelle || "Restriktion"),
-                 ring: lokalRing(rf.koordinaten || rf, mx, my) };
-      }).filter(function (r) { return r.ring.length >= 3; });
-
     var zoneD = ((erg.zonen_zuordnung || {}).zone) || {};
     var ausWert = function (v) { return (v && typeof v === "object") ? v.wert : v; };
     var hMax = ausWert(zoneD.gebaeudehoehe_m);
     if (leer(hMax)) hMax = ausWert(zoneD.gesamthoehe_m);
 
+    // Drei Zustaende, nie zwei. Die Datenschicht liefert bei "keine
+    // gefunden" und bei "Abfrage fehlgeschlagen" dieselbe leere Liste --
+    // der Fehlschlag steht nur als Satz in den Hinweisen. Dieser Satz wird
+    // hier gelesen. Eine Kopplung an einen deutschen Text ist nicht schoen,
+    // aber ehrlicher als eine still ausgegraute Ebene; ein Test haelt die
+    // Schreibweise fest, damit sie nicht unbemerkt auseinanderlaeuft.
+    var blFehler = alsListe(rg.hinweise).filter(function (h) {
+      return /Baulinien-Abfrage/.test(String(h)) && /fehlgeschlagen/.test(String(h));
+    })[0] || null;
+    var blStatus = baulinien.length ? "gefunden"
+      : (blFehler ? "abfrage_fehlgeschlagen"
+         : (rg.gefunden ? "geprueft_keine" : "nicht_geprueft"));
+
     entwurfRaum = {
       parzelle: lokalRing(parzelle, mx, my),
       baubereich: bbLokal,
       kanten: kantenLokal,
+      baulinienStatus: blStatus,
+      baulinienAnzahl: baulinien.length,
+      baulinienFehler: blFehler,
       anordnung: g1Name,
       anordnungen: g1Namen.length,
+      anordnungsListe: g1Namen.map(function (n) {
+        var sz = g1.szenarien[n] || {};
+        var ab = alsListe(sz.effektive_kanten_abstaende)
+          .filter(function (x) { return typeof x === "number" && x > 0; });
+        var eindeutig = ab.filter(function (v, i, a) { return a.indexOf(v) === i; }).sort();
+        return { name: n, gewaehlt: n === g1Name,
+                 baubereich_m2: sz.baubereich_m2,
+                 abstaende: eindeutig };
+      }),
       restriktionen: restrLokal,
       hoeheMax: typeof hMax === "number" && hMax > 0 ? hMax : null,
       terrain: terrain, mx: mx, my: my, basis: basis
@@ -8617,10 +8942,10 @@ function secEntwurf(erg) {
     // und der berechnete Projektkoerper. Flache Flaechen (Parzelle,
     // Baubereich) werfen keinen, sie haben keine Hoehe.
     ["gebaeude", "projekt"].forEach(function (k) {
-      u3dGruppen[k].traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+      if (u3dGruppen[k]) u3dGruppen[k].traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     });
-    ["terrain", "gebaeude", "grundstueck", "projekt"].forEach(function (k) {
-      u3dGruppen[k].traverse(function (o) { if (o.isMesh) o.receiveShadow = true; });
+    ["terrain", "gebaeude", "parzelle", "korridor", "baubereich", "projekt"].forEach(function (k) {
+      if (u3dGruppen[k]) u3dGruppen[k].traverse(function (o) { if (o.isMesh) o.receiveShadow = true; });
     });
     sonneAnwenden();
 
@@ -8629,6 +8954,7 @@ function secEntwurf(erg) {
     zeichneMessungen();
     zeichneEntwuerfe();
     entwurfTafel();
+    entwurfRechtTafel();
 
     // --- Legende --------------------------------------------------------
     var info = document.getElementById("view3d-legende");
@@ -8639,6 +8965,26 @@ function secEntwurf(erg) {
           (leer(l.hoehe) ? " (Höhe unbekannt — flach)" : " · " + esc(l.hoehe) + " m") + "</span>";
       });
       if (!legende.length) teile.push('<span class="l3d">Kein Baukörper für dieses Szenario.</span>');
+      // Die raeumliche Kette in der Reihenfolge, in der sie zu lesen ist.
+      teile.push('<span class="l3d"><i style="background:' + FARBE.parzelle +
+        '"></i>Parzellengrenze</span>');
+      if (bbRinge.length) {
+        teile.push('<span class="l3d"><i style="background:' + FARBE.korridor +
+          ';opacity:.45"></i>Abstandskorridor (Parzelle ohne Baubereich)</span>');
+        teile.push('<span class="l3d"><i style="background:' + FARBE.baubereich +
+          '"></i>Baubereich' +
+          (leer((e1 || {}).baubereich_m2) ? "" : " " + fmt(e1.baubereich_m2, 0) + " m²") +
+          "</span>");
+      }
+      if (baulinien.length) {
+        teile.push('<span class="l3d"><i style="background:' + FARBE.baulinie +
+          '"></i>' + baulinien.length + ' Baulinie(n) — die Scheibe ist eine Sichthilfe, ' +
+          'keine Höhenangabe</span>');
+      }
+      if (restrLokal.length) {
+        teile.push('<span class="l3d"><i style="background:' + FARBE.restriktion +
+          '"></i>' + restrLokal.length + ' Restriktionsfläche(n), in G1 abgezogen</span>');
+      }
       if (u) {
         var st = u.statistik || {};
         teile.push('<span class="l3d"><i style="background:' + FARBE.gebaeudeNeu + '"></i>' +
@@ -8749,6 +9095,10 @@ function verdrahte3DSteuerung() {
   });
   // Die Felder entstehen erst mit der Auswahl -- deshalb haengt der
   // Horcher an der Tafel, nicht an den Feldern.
+  einmal("entwurf-recht", "click", function (e) {
+    var b = e.target.closest ? e.target.closest("[data-anordnung]") : null;
+    if (b && window.setzeAnordnung) window.setzeAnordnung(b.dataset.anordnung);
+  });
   einmal("entwurf-tafel", "input", function (e) {
     var f = e.target.closest ? e.target.closest("[data-entwurf]") : null;
     if (f && window.entwurfSetzen) window.entwurfSetzen(f.dataset.entwurf, f.value);
