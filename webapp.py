@@ -659,6 +659,53 @@ def _rechne_screening(analyse: "Analyse", daten: dict) -> dict:
     return ergebnis
 
 
+def _projektstudie_grundlage(g1: dict, anordnung: Optional[str]) -> tuple:
+    """Welches G1-Ergebnis gilt fuer die Rueckrechnung?
+
+    Gibt (basis, name, fehler) zurueck. Bei mehreren zulaessigen
+    Abstandsanordnungen wird NICHT geraten: ohne ausdruecklichen Namen gibt
+    es einen Fehler. Sonst rechnete die Rueckrechnung gegen eine andere
+    Geometrie als die, die der Benutzer sieht -- genau der Fehler, der in
+    Buchs schon zwei widerspruechliche Pruefungen erzeugt hat.
+    """
+    anordnungen = (g1 or {}).get("szenarien") or {}
+    basis = (g1 or {}).get("ergebnis")
+    if basis is not None:
+        if anordnung and anordnung in anordnungen:
+            return anordnungen[anordnung], anordnung, None
+        return basis, None, None
+    if not anordnungen:
+        return None, None, ("G1 hat fuer diese Parzelle keinen Baubereich berechnet -- "
+                            "ohne ihn gibt es keine Grundlage.")
+    if not anordnung or anordnung not in anordnungen:
+        return None, None, ("Diese Parzelle kennt mehrere zulaessige Abstandsanordnungen. "
+                            "Welche gilt, muss mitgegeben werden.")
+    return anordnungen[anordnung], anordnung, None
+
+
+def _projektstudie_g1(basis: dict, fussabdruck_m2: float, geschosse: int) -> dict:
+    """Das G1-Ergebnis mit den Groessen der Projektstudie.
+
+    Dasselbe Verfahren wie szenarien._flaechen_fuer(): eine Kopie, in der
+    nur ersetzt wird, was aus der Studie kommt. Anrechenbare Landflaeche,
+    Zone und Nutzungsziffern bleiben stehen -- nur so behaelt der Rechenweg
+    seine echte Herkunft. Die limitierende Groesse wird mitgeschrieben,
+    damit der Rechenweg nicht behauptet, G1 habe diese Werte begrenzt.
+    """
+    gf = round(fussabdruck_m2 * geschosse, 2)
+    abgewandelt = dict(basis)
+    abgewandelt["fussabdruck_m2"] = round(fussabdruck_m2, 2)
+    abgewandelt["geschosszahl"] = int(geschosse)
+    abgewandelt["geschossflaeche_m2"] = gf
+    abgewandelt["fussabdruck_limitiert_durch"] = "projektstudie"
+    abgewandelt["geschosszahl_limitiert_durch"] = "projektstudie"
+    abgewandelt["geschossflaeche_limitiert_durch"] = "projektstudie"
+    abgewandelt["fussabdruck_kandidaten"] = {"projektstudie": round(fussabdruck_m2, 2)}
+    abgewandelt["geschosszahl_kandidaten"] = {"projektstudie": int(geschosse)}
+    abgewandelt["geschossflaeche_kandidaten"] = {"projektstudie": gf}
+    return abgewandelt
+
+
 def _variantenvergleich(varianten: list, ergebnisse: dict) -> list:
     """Eine Zeile je Variante -- die Grundlage der Vergleichstabelle.
 
@@ -1453,6 +1500,136 @@ class Handler(BaseHTTPRequestHandler):
             antwort["vergleich"] = _variantenvergleich(varianten, ergebnisse)
         self._send_json(antwort)
 
+    # Szenarien, bei denen der gezeichnete Koerper NICHT allein steht,
+    # sondern zum Bestand hinzukommt. Die Kaskade rechnet hier trotzdem nur
+    # den Koerper -- das Zusammenfuehren mit der Bestandsflaeche waere eine
+    # fachliche Entscheidung und wird nicht unterstellt, sondern gesagt.
+    _SZENARIO_MIT_BESTAND = {
+        "bestand": "Das Szenario belaesst den Bestand. Die Kaskade unten rechnet nur den "
+                   "gezeichneten Koerper.",
+        "sanierung": "Das Szenario saniert den Bestand, ohne neue Geschossflaeche. Die "
+                     "Kaskade unten rechnet nur den gezeichneten Koerper.",
+        "anbau": "Das Szenario rechnet Bestand PLUS Anbau. Die Kaskade unten rechnet nur "
+                 "den gezeichneten Koerper; die Bestandsflaeche ist nicht addiert.",
+        "aufstockung": "Das Szenario rechnet Bestand PLUS Aufstockung. Die Kaskade unten "
+                       "rechnet nur den gezeichneten Koerper; die Bestandsflaeche ist "
+                       "nicht addiert.",
+        "dachausbau": "Das Szenario rechnet Bestand PLUS Dachausbau. Die Kaskade unten "
+                      "rechnet nur den gezeichneten Koerper; die Bestandsflaeche ist "
+                      "nicht addiert.",
+        "bestand_plus_neubau": "Das Szenario rechnet Bestand PLUS Neubau. Die Kaskade "
+                               "unten rechnet nur den gezeichneten Koerper; die "
+                               "Bestandsflaeche ist nicht addiert.",
+    }
+
+    def _handle_projektstudie_flaechen(self) -> None:
+        """Die Flaechenkaskade fuer einen von Hand gezeichneten Baukoerper.
+
+        Hier wird NICHTS gerechnet. Der Endpunkt tut genau das, was
+        szenarien._flaechen_fuer() seit jeher tut: er legt eine Kopie des
+        G1-Ergebnisses an, ersetzt darin die drei Groessen, die aus der
+        Projektstudie kommen -- Fussabdruck, Geschosszahl, Geschossflaeche --
+        und faehrt dieselbe Kaskade wie jede andere Auswertung. aGF, NWF,
+        Wohnflaeche und Ausnuetzung stammen damit aus genau einem Modell.
+
+        Alles Uebrige bleibt stehen: anrechenbare Landflaeche, Zone,
+        Nutzungsziffern. Nur so behaelt der Rechenweg seine echte Herkunft.
+        """
+        from potenzial_engine.flaechenmodell import (
+            FlaechenmodellError, berechne_flaechen_und_wohnungen,
+        )
+
+        daten = self._lies_json_body()
+        if daten is None:
+            self._send_json({"ok": False, "fehler": "Kein JSON im Rumpf."}, status=400)
+            return
+
+        job_id = str(daten.get("job_id") or "").strip()
+        with _JOBS_LOCK:
+            job = _JOBS.get(job_id)
+            ergebnis = (job or {}).get("ergebnis")
+        if not ergebnis:
+            self._send_json(
+                {"ok": False, "fehler": "Zu dieser job_id liegt kein Ergebnis vor."},
+                status=404)
+            return
+
+        g1 = ergebnis.get("g1_ergebnis") or {}
+        anordnungen = g1.get("szenarien") or {}
+        basis, name, fehler = _projektstudie_grundlage(g1, daten.get("anordnung") or None)
+        if fehler:
+            self._send_json({"ok": False, "fehler": fehler, "anordnungen": sorted(anordnungen)},
+                            status=422)
+            return
+
+        try:
+            fuss = float(daten.get("fussabdruck_m2"))
+            geschosse = int(daten.get("geschosse"))
+        except (TypeError, ValueError):
+            self._send_json(
+                {"ok": False, "fehler": "fussabdruck_m2 und geschosse sind Pflicht."},
+                status=400)
+            return
+        if not (0 < fuss <= 100000) or not (1 <= geschosse <= 60):
+            self._send_json(
+                {"ok": False, "fehler": "Fussabdruck oder Geschosszahl ausserhalb des "
+                                        "sinnvollen Bereichs."},
+                status=400)
+            return
+
+        gf = round(fuss * geschosse, 2)
+        abgewandelt = _projektstudie_g1(basis, fuss, geschosse)
+
+        benutzerwerte = None
+        hoehe = daten.get("geschosshoehe_m")
+        if hoehe is not None:
+            try:
+                h = float(hoehe)
+            except (TypeError, ValueError):
+                h = None
+            if h is not None and 2.0 <= h <= 8.0:
+                benutzerwerte = {"geschosshoehe_m": round(h, 2)}
+
+        zone = (ergebnis.get("zonen_zuordnung") or {}).get("zone")
+        szenario = str(daten.get("szenario") or "").strip() or None
+
+        try:
+            flaechen = berechne_flaechen_und_wohnungen(
+                abgewandelt, zone=zone, benutzerwerte=benutzerwerte)
+        except FlaechenmodellError as exc:
+            self._send_json({"ok": False, "fehler": f"Flaechenmodell: {exc}"}, status=422)
+            return
+
+        self._send_json({
+            "ok": True,
+            "flaechen": flaechen,
+            "grundlage": {
+                "anordnung": name,
+                "anordnungen_gesamt": len(anordnungen),
+                "szenario": szenario,
+                "szenario_hinweis": self._SZENARIO_MIT_BESTAND.get(szenario or ""),
+                "aus_der_projektstudie": {
+                    "fussabdruck_m2": round(fuss, 2),
+                    "geschosszahl": geschosse,
+                    "geschossflaeche_m2": gf,
+                    "geschosshoehe_m": (benutzerwerte or {}).get("geschosshoehe_m"),
+                },
+                "aus_g1_uebernommen": {
+                    "parzellenflaeche_m2": basis.get("parzellenflaeche_m2"),
+                    "anrechenbare_landflaeche_m2": basis.get("anrechenbare_landflaeche_m2"),
+                    "baubereich_m2": basis.get("baubereich_m2"),
+                    # Die nach Ausnuetzungsziffer zulaessige Geschossflaeche
+                    # rechnet G1 bereits (AZ x anrechenbare Landflaeche). Sie
+                    # wird hier nur durchgereicht -- die Oberflaeche stellt
+                    # sie der Studien-GF gegenueber, statt eine eigene Ziffer
+                    # zu bilden.
+                    "gf_nach_ausnuetzungsziffer_m2": g1.get("gf_nach_ausnuetzungsziffer_m2"),
+                    "gf_nach_ausnuetzungsziffer_rechnung":
+                        g1.get("gf_nach_ausnuetzungsziffer_rechnung"),
+                },
+            },
+        })
+
     def _handle_umgebung(self) -> None:
         """Raeumlicher Kontext fuer die 3D-Ansicht.
 
@@ -1644,6 +1821,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/projekt/rechnen":
             self._handle_variante_rechnen()
+            return
+        if self.path == "/projektstudie/flaechen":
+            self._handle_projektstudie_flaechen()
             return
         if self.path == "/marktdaten":
             self._handle_marktdaten_schreiben()

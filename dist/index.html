@@ -963,6 +963,9 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .ekfeld input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ekeinheit { font-size: 11px; color: var(--ink-3); }
 .ektrenner { height: 1px; background: var(--line); margin: 8px 0 6px; }
+/* Zahlen einer vorigen Geometrie: sichtbar, aber nicht als aktuell. */
+.ekveraltet { opacity: .55; }
+.ekwert .na { color: var(--ink-3); font-style: italic; }
 .ekfuss { font-size: 11px; color: var(--ink-3); margin-top: 6px; line-height: 1.45; }
 @media (max-width: 560px) { .ekpt { margin-left: 0; } }
 #view3d-legende { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 2px; font-size: 11px; color: var(--ink-2); }
@@ -6385,6 +6388,9 @@ function secEntwurf(erg) {
         // Erst beim Loslassen die Felder auf runde Werte bringen -- waehrend
         // des Ziehens waere das ein Einrasten.
         entwurfFelder();
+        // Und erst jetzt den Server fragen. Waehrend der Geste haette das
+        // eine Anfragenlawine gegeben und die Szene ins Stocken gebracht.
+        rueckAnstossen(true);
       }
     });
     // Die Zeigerposition wird nur gemerkt. Ausgewertet wird sie einmal je
@@ -6834,6 +6840,178 @@ function secEntwurf(erg) {
     }, 140);
   }
 
+  // --- Rueckrechnung durch das Flaechenmodell --------------------------
+  //
+  // Die Geometrie rechnet der Browser -- Grundflaeche, Geschossflaeche,
+  // Hoehe, Volumen sind Multiplikationen auf der eigenen Zeichnung. Alles
+  // Fachliche rechnet der Server mit dem VORHANDENEN Flaechenmodell: aGF,
+  // KF, NGF, HNF, NWF. Es gibt dafuer keinen zweiten Weg im Browser, und
+  // es soll auch keinen geben.
+  //
+  // Interaktion und Rueckrechnung laufen deshalb verschieden schnell: die
+  // Szene folgt der Maus sofort, der Server wird erst gefragt, wenn die
+  // Geste zu Ende ist. Waehrenddessen stehen die alten Zahlen NICHT still
+  // da, als waeren sie aktuell.
+  var rueckStand = null;      // "laeuft" | "fertig" | "fehler" | null
+  var rueckWerte = null;      // letzte erfolgreiche Antwort
+  var rueckFuer = null;       // Kennzeichnung der Geometrie dazu
+  var rueckFehler = null;
+  var rueckTakt = null;       // Entprellung
+  var rueckLauf = 0;          // laufende Nummer, gegen ueberholende Antworten
+
+  // Woran man erkennt, ob eine Antwort noch zur Zeichnung passt. Aendert
+  // sich hier etwas, ist die letzte Rueckrechnung veraltet.
+  function rueckKennung(k) {
+    if (!k) return null;
+    return [k.id, k.breite.toFixed(2), k.tiefe.toFixed(2), k.geschosse,
+            k.geschosshoehe.toFixed(2),
+            (entwurfRaum && entwurfRaum.anordnung) || "",
+            (typeof aktivesSzenario !== "undefined" && aktivesSzenario) || ""].join("|");
+  }
+
+  // Beim Ziehen nicht bei jeder Mausbewegung: erst wenn die Geste ruht.
+  // 350 ms sind lang genug, dass ein Zug nicht zwanzig Anfragen ausloest,
+  // und kurz genug, dass es sich nicht wie Warten anfuehlt.
+  function rueckAnstossen(sofort) {
+    if (rueckTakt) { clearTimeout(rueckTakt); rueckTakt = null; }
+    var k = entwurfVon(entwurfGewaehlt);
+    if (!k) { rueckStand = null; rueckWerte = null; rueckFuer = null; return; }
+    if (rueckKennung(k) === rueckFuer && rueckStand === "fertig") return;
+    rueckStand = "laeuft";
+    entwurfWerte();
+    rueckTakt = setTimeout(rueckRechnen, sofort ? 0 : 350);
+  }
+
+  function rueckRechnen() {
+    rueckTakt = null;
+    var k = entwurfVon(entwurfGewaehlt);
+    if (!k || !jobIdAktuell) { rueckStand = null; return; }
+    var kennung = rueckKennung(k);
+    var lauf = ++rueckLauf;
+
+    fetch("/api/projektstudie/flaechen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: jobIdAktuell,
+        szenario: (typeof aktivesSzenario !== "undefined" && aktivesSzenario) || null,
+        // Die in H gewaehlte Anordnung geht mit. Ohne sie weigert sich der
+        // Server, wenn mehrere zulaessig sind -- und das ist richtig so.
+        anordnung: (entwurfRaum && entwurfRaum.anordnung) || null,
+        fussabdruck_m2: Math.round(koerperGrundflaeche(k) * 100) / 100,
+        geschosse: k.geschosse,
+        geschosshoehe_m: Math.round(k.geschosshoehe * 100) / 100
+      })
+    }).then(function (r) {
+      return r.json().then(function (d) { return { status: r.status, d: d }; });
+    }).then(function (a) {
+      // Eine ueberholte Antwort wird verworfen: sonst schriebe die
+      // langsamere Anfrage die neuere Zahl wieder zu.
+      if (lauf !== rueckLauf) return;
+      if (a.d && a.d.ok) {
+        rueckWerte = a.d; rueckFuer = kennung; rueckStand = "fertig"; rueckFehler = null;
+      } else {
+        rueckStand = "fehler";
+        rueckFehler = (a.d && a.d.fehler) || ("Server antwortete mit " + a.status + ".");
+      }
+      entwurfWerte();
+    }).catch(function (e) {
+      if (lauf !== rueckLauf) return;
+      rueckStand = "fehler";
+      rueckFehler = "Flächenmodell nicht erreichbar: " + e;
+      entwurfWerte();
+    });
+  }
+
+  function rueckFeld(name, feld) {
+    if (!feld || feld.wert === null || feld.wert === undefined) {
+      return ekWert(name, '<span class="na">nicht bestimmbar</span>');
+    }
+    var marke = feld.status === "bestimmt"
+      ? '<span class="badge ok">berechnet</span>'
+      : '<span class="badge mute">Modellannahme</span>';
+    return ekWert(name, fmt(feld.wert, 0) + " m² " + marke);
+  }
+
+  // Die zweite Spalte der Tafel: was das Flaechenmodell sagt.
+  function rueckBlock() {
+    var k = entwurfVon(entwurfGewaehlt);
+    if (!k) return "";
+    var kopf = '<div class="ektrenner"></div>' +
+      '<div class="ekkopf">Flächenmodell</div>' +
+      '<div class="ekunter">SIA 416, gerechnet auf Ihren Projektkörper</div>';
+
+    if (rueckStand === "laeuft") {
+      return kopf + '<div class="ekpt" style="margin-left:0">Berechnung wird ' +
+        'aktualisiert …</div>' +
+        (rueckWerte ? '<div class="ekpt" style="margin-left:0">Die Zahlen unten ' +
+          'stammen noch von der vorigen Geometrie.</div>' + rueckZahlen(true) : "");
+    }
+    if (rueckStand === "fehler") {
+      return kopf + '<div class="ekpt" style="margin-left:0"><b>Nicht gerechnet:</b> ' +
+        esc(rueckFehler || "") + "</div>" +
+        (rueckWerte ? rueckZahlen(true) : "");
+    }
+    if (rueckStand === "fertig" && rueckWerte) return kopf + rueckZahlen(false);
+    return kopf + '<div class="ekpt" style="margin-left:0">Noch nicht gerechnet.</div>';
+  }
+
+  function rueckZahlen(veraltet) {
+    var d = rueckWerte || {};
+    var f = (d.flaechen || {}).flaechen || {};
+    var g = d.grundlage || {};
+    var studie = g.aus_der_projektstudie || {};
+    var ausG1 = g.aus_g1_uebernommen || {};
+    var zulaessig = ausG1.gf_nach_ausnuetzungsziffer_m2;
+    var gf = (f.geschossflaeche_gf || {}).wert;
+
+    var zeilen =
+      rueckFeld("aGF (SIA 416)", f.geschossflaeche_gf) +
+      rueckFeld("Nettogeschossfläche", f.nettogeschossflaeche_ngf) +
+      rueckFeld("Hauptnutzfläche HNF", f.hauptnutzflaeche_hnf) +
+      rueckFeld("Wohnfläche NWF", f.wohnflaeche_nwf);
+
+    // Ausnuetzung: gegenuebergestellt, nicht neu gebildet. Die zulaessige
+    // Geschossflaeche rechnet G1 (AZ x anrechenbare Landflaeche); hier
+    // steht nur die Differenz.
+    if (!leer(zulaessig) && !leer(gf)) {
+      var rest = zulaessig - gf;
+      zeilen += ekWert("Zulässig nach AZ", fmt(zulaessig, 0) + " m² " +
+        '<span class="badge ok">Engine</span>');
+      zeilen += ekWert(rest >= 0 ? "Reserve" : "Überschritten",
+        fmt(Math.abs(rest), 0) + " m² " +
+        '<span class="badge ' + (rest >= 0 ? "ok" : "stop") + '">' +
+        (rest >= 0 ? "frei" : "über") + "</span>");
+    } else {
+      zeilen += ekWert("Zulässig nach AZ", '<span class="na">nicht bestimmbar</span>');
+    }
+
+    var wohn = (d.flaechen || {}).wohnungen || {};
+    var fuss = "";
+    if (wohn.status === "nicht_bestimmbar" && wohn.grund) {
+      fuss += '<div class="ekpt" style="margin-left:0">Wohnungszahl: ' +
+        esc(satzKurz(wohn.grund)) + "</div>";
+    }
+    if (g.szenario_hinweis) {
+      fuss += '<div class="ekpt" style="margin-left:0">' +
+        esc(satzKurz(g.szenario_hinweis)) + "</div>";
+    }
+    if (g.anordnung) {
+      fuss += '<div class="ekpt" style="margin-left:0">Gerechnet mit der Anordnung „' +
+        esc(klartext(g.anordnung)) + "“.</div>";
+    }
+    fuss += '<div class="ekpt" style="margin-left:0">Eingang: ' +
+      fmt(studie.fussabdruck_m2, 0) + " m² Fussabdruck × " + esc(studie.geschosszahl) +
+      " Geschosse. Alles Übrige — anrechenbare Landfläche, Zone, Ziffern — stammt " +
+      "unverändert aus der Engine.</div>";
+
+    return (veraltet ? '<div class="ekveraltet">' : "<div>") + zeilen + fuss + "</div>";
+  }
+
+  // Die Engine schreibt ihre Gruende in ASCII-Umschrift; satz() uebersetzt
+  // Schluessel mit, was hier nicht gebraucht wird.
+  function satzKurz(text) { return lesbar(String(text || "")); }
+
   // --- Die Baurechtstafel ----------------------------------------------
   //
   // Sie beantwortet die Frage, die vor jeder Koerperpruefung steht:
@@ -6843,6 +7021,9 @@ function secEntwurf(erg) {
 
   window.setzeAnordnung = function (name) {
     anordnungGewaehlt = name || null;
+    // Eine andere Anordnung ist eine andere Grundlage -- die letzte
+    // Rueckrechnung gilt nicht mehr fuer das, was gleich zu sehen ist.
+    rueckStand = null; rueckWerte = null; rueckFuer = null; rueckFehler = null;
     if (window.zeichne3D && ergebnisAktuell) {
       window.zeichne3D(typeof aktivesSzenario !== "undefined" ? aktivesSzenario : null);
     }
@@ -7712,6 +7893,7 @@ function secEntwurf(erg) {
     entwurfGewaehlt = k.id;
     zeichneEntwuerfe();
     entwurfTafel();
+    rueckAnstossen(true);
     return k.id;
   };
 
@@ -7726,8 +7908,12 @@ function secEntwurf(erg) {
   window.entwurfWaehlen = function (id) {
     if ((id || null) === entwurfGewaehlt) return;
     entwurfGewaehlt = id || null;
+    // Die Rueckrechnung gehoert zum Koerper, nicht zur Ansicht: bei einem
+    // Wechsel gilt die alte Antwort nicht mehr.
+    rueckStand = null; rueckWerte = null; rueckFuer = null; rueckFehler = null;
     zeichneEntwuerfe();
     entwurfTafel();
+    rueckAnstossen(true);
   };
 
   function entwurfVon(id) {
@@ -7753,6 +7939,7 @@ function secEntwurf(erg) {
     } else return;
     zeichneEntwuerfe();
     entwurfWerte();
+    rueckAnstossen(false);
   };
 
   // --- Greifen, Schieben, Drehen, Bemassen -----------------------------
@@ -8341,6 +8528,7 @@ function secEntwurf(erg) {
           '<div class="ekspalte"><div class="ekkopf">Fachliche Prüfung</div>' +
             '<div class="ekunter">aus der Engine bzw. eindeutiger Geometrie</div>' +
             '<div id="entwurf-pruef"></div>' +
+            '<div id="entwurf-flaechen"></div>' +
           "</div>" +
         "</div>";
     }
@@ -8381,6 +8569,9 @@ function secEntwurf(erg) {
     p.innerHTML = allePruefungen(k).map(function (x) {
       return pruefZeile(x[0], x[1]);
     }).join("");
+
+    var fl = document.getElementById("entwurf-flaechen");
+    if (fl) fl.innerHTML = rueckBlock();
 
     // Die Liste oben zeigt dieselbe Aussage -- sie muss mitlaufen.
     document.querySelectorAll("[data-inhalt]").forEach(function (el) {
@@ -8955,6 +9146,7 @@ function secEntwurf(erg) {
     zeichneEntwuerfe();
     entwurfTafel();
     entwurfRechtTafel();
+    if (entwurfGewaehlt) rueckAnstossen(true);
 
     // --- Legende --------------------------------------------------------
     var info = document.getElementById("view3d-legende");

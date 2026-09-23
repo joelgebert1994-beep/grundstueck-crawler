@@ -1271,6 +1271,60 @@ def test_baurechtsgrenzen_raeumlich(s: str) -> None:
     pruefe("fetch(" not in zieh and "zeichneSzene" not in zieh,
            "beim Ziehen wird weder die Szene neu gebaut noch der Server gefragt")
 
+def test_rueckrechnung_flaechenmodell(s: str) -> None:
+    """Die Geometrie rechnet der Browser, das Fach rechnet der Server.
+
+    aGF, NGF, HNF und NWF kommen aus dem vorhandenen Flaechenmodell. Waeren
+    sie hier noch einmal gebaut, gaebe es zwei Wahrheiten ueber dieselbe
+    Flaeche -- die Regel, an der das ganze Produkt haengt.
+    """
+    # 1. Kein zweiter Rechenweg: die Fachwerte werden gelesen, nicht gebildet.
+    pruefe('fetch("/api/projektstudie/flaechen"' in s,
+           "die Rueckrechnung geht an den vorhandenen Endpunkt")
+    for feld in ("geschossflaeche_gf", "nettogeschossflaeche_ngf",
+                 "hauptnutzflaeche_hnf", "wohnflaeche_nwf"):
+        pruefe(f"f.{feld}" in s, f"{feld} wird aus der Antwort gelesen")
+    # Die Ausnuetzung wird gegenuebergestellt, nicht neu gebildet: der
+    # zulaessige Wert kommt fertig aus G1.
+    pruefe("gf_nach_ausnuetzungsziffer_m2" in s and "zulaessig" not in s.lower().split("gf_nach")[0][-80:],
+           "die zulaessige Geschossflaeche kommt fertig aus G1")
+    pruefe("var rest = zulaessig - gf;" in s,
+           "die Reserve ist die Differenz zweier Engine-Werte, keine eigene Ziffer")
+
+    # 2. Interaktion sofort, Rueckrechnung kontrolliert.
+    zieh = s[s.index("function entwurfZiehen("): s.index("// --- Fachliche Pruefung")]
+    pruefe("rueckAnstossen" not in zieh and "fetch(" not in zieh,
+           "waehrend des Ziehens geht keine Anfrage hinaus")
+    pruefe("rueckAnstossen(true);" in s and "entwurfZieht = null;" in s,
+           "beim Loslassen wird angestossen")
+    pruefe("setTimeout(rueckRechnen, sofort ? 0 : 350)" in s,
+           "Feldaenderungen werden entprellt, nicht je Tastendruck geschickt")
+    pruefe("if (lauf !== rueckLauf) return;" in s,
+           "eine ueberholte Antwort wird verworfen -- sonst schriebe die "
+           "langsamere Anfrage die neuere Zahl wieder zu")
+
+    # 3. Waehrend gerechnet wird, stehen keine alten Zahlen als aktuell da.
+    pruefe("Berechnung wird " in s and "aktualisiert" in s,
+           "waehrend der Rueckrechnung steht das auch dran")
+    pruefe("ekveraltet" in s and "stammen noch von der vorigen Geometrie" in s,
+           "alte Zahlen bleiben sichtbar, aber als veraltet gekennzeichnet")
+    pruefe('rueckStand = "fehler"' in s and "Nicht gerechnet:" in s,
+           "bei einem Fehler gibt es eine Meldung, keine Null")
+    pruefe("nicht bestimmbar" in s,
+           "und ein fehlender Wert heisst „nicht bestimmbar“")
+
+    # 4. Die in H gewaehlte Anordnung geht mit -- sonst rechnete der Server
+    #    gegen eine andere Geometrie als die gezeigte.
+    pruefe("anordnung: (entwurfRaum && entwurfRaum.anordnung) || null" in s,
+           "die gewaehlte Anordnung geht an den Server")
+    pruefe("rueckStand = null; rueckWerte = null; rueckFuer = null; rueckFehler = null;" in s,
+           "ein Anordnungs- oder Koerperwechsel verwirft die alte Antwort")
+
+    # 5. Das Szenario kommt aus der vorhandenen Szenarienwahl, nicht aus
+    #    einem neuen Vokabular im Browser.
+    pruefe("szenario: (typeof aktivesSzenario !== \"undefined\" && aktivesSzenario) || null" in s,
+           "das Szenario stammt aus der vorhandenen Auswahl")
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -1290,7 +1344,8 @@ def main() -> int:
                test_quellen_nie_vermischt, test_sechs_marktsegmente,
                test_entwurf_reiter, test_messwerkzeuge_dynamisch,
                test_koerper_greifbar_und_bemassbar,
-               test_baurechtsgrenzen_raeumlich):
+               test_baurechtsgrenzen_raeumlich,
+               test_rueckrechnung_flaechenmodell):
         fn(s)
 
     if _fehler:
