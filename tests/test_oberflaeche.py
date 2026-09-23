@@ -896,8 +896,10 @@ def test_entwurf_reiter(s: str) -> None:
            "die Kamera kreist um den Blickpunkt, nicht mehr fest um den Nullpunkt")
 
     # 5. Die Messung darf dabei nicht kaputtgehen.
-    pruefe("messModus && e.button === 0" in s,
-           "gemessen wird nur mit der linken Taste -- sonst loeste auch das "
+    pruefe("if (klickStart && e.button === 0) {" in s
+           and "if (messModus) messKlick(e); else entwurfKlick(e);" in s,
+           "der Klick gehoert der linken Taste: gemessen wird im Messmodus, "
+           "sonst waehlt er einen Projektkoerper -- sonst loeste auch das "
            "Loslassen nach dem Verschieben eine Messung aus")
     pruefe("schiebtGerade = e.button === 2 || e.shiftKey" in s,
            "verschoben wird mit rechter Taste oder Umschalt")

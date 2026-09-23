@@ -23,6 +23,12 @@
   --zone: #2a7f8f;
   --baubereich: #1f7a4d;
   --restrikt: #b4661a;
+  /* Die Projektstudie: helle Konturen ueber dem realen Bestand. Im hellen
+     Bild traegt die dunkle Linie, im dunklen die helle -- weiss auf grauem
+     Gelaende waere nicht zu sehen. */
+  --entwurf-linie: #10454f;
+  --entwurf-fuell: #1596ab;
+  --entwurf-wahl: #b26a00;
   --ok: #2f6f47; --ok-soft: #e2eee7;
   --warn: #8f6415; --warn-soft: #f4ead6;
   --stop: #9c3327; --stop-soft: #f4e2df;
@@ -41,6 +47,7 @@
     --accent: #4fb3c1; --accent-2: #7fd0da; --accent-soft: #13343c;
     --parzelle: #ef7d92; --zone: #63bccb;
     --baubereich: #5cc98c; --restrikt: #e0a05a;
+    --entwurf-linie: #e9f8fb; --entwurf-fuell: #46c4da; --entwurf-wahl: #f0b357;
     --ok: #6cc38e; --ok-soft: #163022;
     --warn: #dcae5c; --warn-soft: #32270f;
     --stop: #e88a7c; --stop-soft: #3a1d19;
@@ -55,6 +62,7 @@
   --accent: #4fb3c1; --accent-2: #7fd0da; --accent-soft: #13343c;
   --parzelle: #ef7d92; --zone: #63bccb;
   --baubereich: #5cc98c; --restrikt: #e0a05a;
+  --entwurf-linie: #e9f8fb; --entwurf-fuell: #46c4da; --entwurf-wahl: #f0b357;
   --ok: #6cc38e; --ok-soft: #163022; --warn: #dcae5c; --warn-soft: #32270f;
   --stop: #e88a7c; --stop-soft: #3a1d19;
 }
@@ -911,6 +919,31 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   border-radius: 4px; background: var(--bg); color: var(--ink-3); }
 .m3weg:hover { border-color: var(--stop); color: var(--stop); }
 .m3bearb { font-size: 10px; color: var(--ink-3); font-style: italic; }
+
+/* --- Projektstudie: die Tafel unter der Buehne --- */
+.m3haupt { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.m3haupt:hover { background: var(--accent); color: var(--bg); }
+.ektafel { margin: 10px 0 2px; }
+.ekleer { font-size: 12px; color: var(--ink-3); padding: 8px 10px;
+  border: 1px dashed var(--line); border-radius: 8px; }
+.ekliste { list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
+.ekliste li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px;
+  margin-bottom: 4px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.ekliste li.an { border-color: var(--accent); background: var(--accent-soft); }
+.ekdetail { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px 20px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--bg-2); }
+.ekkopf { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink-2); font-weight: 700; }
+.ekunter { font-size: 10.5px; color: var(--ink-3); margin-bottom: 6px; }
+.ekwert, .ekpruef { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+  padding: 3px 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ekpl { flex: 0 0 8.5em; color: var(--ink-3); font-size: 11px; }
+.ekpt { flex: 1 1 100%; margin-left: 8.5em; font-size: 10.5px; color: var(--ink-3);
+  line-height: 1.4; }
+.ekfuss { font-size: 11px; color: var(--ink-3); margin-top: 6px; line-height: 1.45; }
+@media (max-width: 560px) { .ekpt { margin-left: 0; } }
 #view3d-legende { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 2px; font-size: 11px; color: var(--ink-2); }
 #view3d-legende .l3d { display: inline-flex; align-items: center; gap: 6px; }
 #view3d-legende i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
@@ -6109,16 +6142,21 @@ function secEntwurf(erg) {
     }).join("") + "</div>";
 
   return '<section class="sec" id="sec-entwurf">' + kopf +
-    '<div class="note">Eine <b>Projektstudie</b>, keine Baubewilligung. Jedes Volumen ist ' +
-    'das Extrudat eines real berechneten Polygons mit der berechneten Höhe — ist keine ' +
-    'Höhe bekannt, wird der Körper flach dargestellt statt geraten.</div>' +
+    '<div class="note">Realer Bestand, reales Gelände, reale Nachbarschaft — und darüber ' +
+    'Ihr <b>Projektkörper</b> als Drahtmodell. Eine Projektstudie, keine Baubewilligung: ' +
+    'die linke Spalte der Tafel ist Ihre Geometrie, die rechte der Befund der Engine. ' +
+    'Volumen aus einem berechneten Szenario bleiben davon getrennt — ist deren Höhe ' +
+    'unbekannt, werden sie flach dargestellt statt geraten.</div>' +
     wahl + hinweisOhneKoerper +
     '<div class="d3steuer">' +
       '<div class="d3gruppe"><span class="d3titel">Umgebung</span>' +
         d3schalter("terrain", "Terrain") + d3schalter("gebaeude", "Gebäude") +
         d3schalter("strassen", "Strassen") + "</div>" +
       '<div class="d3gruppe"><span class="d3titel">Projekt</span>' +
-        d3schalter("grundstueck", "Grundstück") + d3schalter("projekt", "Baukörper") + "</div>" +
+        d3schalter("grundstueck", "Grundstück") + d3schalter("projekt", "Baukörper") +
+        d3schalter("entwurf", "Projektstudie") + "</div>" +
+      '<div class="d3gruppe"><span class="d3titel">Entwerfen</span>' +
+        '<button class="m3knopf m3haupt" id="entwurf-neu">+ Baukörper</button>' + "</div>" +
       '<div class="d3gruppe"><span class="d3titel">Blickrichtung</span>' +
         '<button class="m3knopf" data-blick="sued">Süd</button>' +
         '<button class="m3knopf" data-blick="west">West</button>' +
@@ -6146,6 +6184,7 @@ function secEntwurf(erg) {
     "</div>" +
     '<div class="v3rahmen"><div id="view3d"></div>' +
       '<div id="view3d-schilder"></div></div>' +
+    '<div id="entwurf-tafel" class="ektafel"></div>' +
     '<div class="m3tafel"><span class="m3hinweis" id="mess-hinweis"></span>' +
       '<div id="mess-liste"></div></div>' +
     '<div id="view3d-legende"></div>' +
@@ -6283,9 +6322,13 @@ function secEntwurf(erg) {
         ? { x: e.clientX, y: e.clientY, t: Date.now() } : null;
     });
     renderer.domElement.addEventListener("pointerup", function (e) {
-      if (klickStart && messModus && e.button === 0) {
+      if (klickStart && e.button === 0) {
         var weg = Math.hypot(e.clientX - klickStart.x, e.clientY - klickStart.y);
-        if (weg < 5 && Date.now() - klickStart.t < 700) messKlick(e);
+        if (weg < 5 && Date.now() - klickStart.t < 700) {
+          // Wer misst, misst. Sonst waehlt der Klick einen Projektkoerper
+          // aus -- und ein Klick ins Leere hebt die Auswahl auf.
+          if (messModus) messKlick(e); else entwurfKlick(e);
+        }
       }
       klickStart = null;
     });
@@ -6394,7 +6437,7 @@ function secEntwurf(erg) {
   var umgebungFuerJob = null;
   var u3dGruppen = {};          // Ebenengruppen, einzeln schaltbar
   var u3dSicht = { terrain: true, gebaeude: true, strassen: true,
-                   grundstueck: true, projekt: true };
+                   grundstueck: true, projekt: true, entwurf: true };
 
   var TERRAIN_DECKKRAFT = 0.55;   // Grundeinstellung aus Block 1
 
@@ -6748,6 +6791,8 @@ function secEntwurf(erg) {
   function messZiele() {
     var ziele = [];
     ["terrain", "gebaeude", "grundstueck", "projekt"].forEach(function (k) {
+      // Der Entwurf ist bewusst kein Messziel: gemessen wird am Bestand
+      // und am Gelaende, nicht an der eigenen Studie.
       if (u3dGruppen[k] && u3dGruppen[k].visible) ziele.push(u3dGruppen[k]);
     });
     return ziele;
@@ -7164,14 +7209,19 @@ function secEntwurf(erg) {
   function messSchilderZeichnen() {
     var schicht = document.getElementById("view3d-schilder");
     if (!schicht || !kamera || !renderer) return;
-    if (!messSchilder.length) {
+    // Messungen und Projektkoerper beschriften dieselbe Schicht. Getrennt
+    // gehalten werden sie, weil die Messzeichnung bei jeder Mausbewegung
+    // neu entsteht -- die Koerperschilder waeren sonst gleich wieder weg.
+    var alle = messSchilder.concat(
+      typeof entwurfSchilder !== "undefined" ? entwurfSchilder : []);
+    if (!alle.length) {
       if (schicht.innerHTML) schicht.innerHTML = "";
       return;
     }
 
     var b = renderer.domElement;
     var html = "";
-    messSchilder.forEach(function (sch) {
+    alle.forEach(function (sch) {
       var v = sch.anker.clone();
       gruppe3d.localToWorld(v);
       v.project(kamera);
@@ -7223,6 +7273,432 @@ function secEntwurf(erg) {
     hoehe: "Unten anklicken, dann oben — der Unterschied läuft mit.",
     punkt: "Der Zeiger zeigt die Höhe, Klicken hält sie fest."
   };
+
+  // =====================================================================
+  // Projektstudie: der Entwurfskoerper
+  //
+  // Bis hierher war die Ansicht ein Betrachter. Ab hier wird entwickelt:
+  // ein Volumen entsteht auf der realen Parzelle, im realen Gelaende,
+  // zwischen den realen Nachbarn.
+  //
+  // Die Darstellung folgt der Referenz aus der Projektentwicklung: der
+  // Bestand bleibt koerperhaft und stumpf, der Entwurf ist ein
+  // DRAHTMODELL -- helle Konturen, fast keine Fuellung, und man sieht das
+  // bestehende Haus hindurch. Genau daran liest man ihn als Vorschlag und
+  // nicht als Gebaeude. Ein satter Volumenkoerper wuerde den Bestand
+  // verdecken und damit die Aussage verkehren.
+  //
+  // Die Kanten zeichnen OHNE Tiefenpruefung: das Drahtmodell liegt wie
+  // eine Folie ueber der Szene, auch dort, wo ein Gebaeude davorsteht.
+  // Das ist der Ueberlagerungscharakter der Referenz -- und der einzige
+  // Weg, eine Aufstockung zu zeigen, ohne den Bestand auszublenden.
+  // =====================================================================
+
+  // Nur, wenn die Engine keine Geschosshoehe fuehrt. Dann steht die
+  // Annahme in der Tafel -- eine eingebaute Zahl ohne Ausweis waere
+  // dasselbe wie eine erfundene.
+  var ENTWURF_ERSATZHOEHE = 3.0;
+
+  var entwuerfe = [];          // die Koerper dieser Studie
+  var entwurfGewaehlt = null;  // id des markierten Koerpers
+  var entwurfZaehler = 0;
+  var entwurfGruppe = null;
+  var entwurfTreffer = [];     // {mesh, id} -- anklickbare Flaechen
+  var entwurfMuell = [];       // Geometrien der letzten Zeichnung
+  var entwurfFuerJob = null;   // zu welcher Analyse die Koerper gehoeren
+  // Der Raum, in dem gebaut wird: Parzelle und Baubereich in lokalen
+  // Metern. Gesetzt in zeichneSzene() aus denselben Werten wie die
+  // gezeichnete Geometrie -- eine zweite Herleitung gaebe es hier nicht.
+  var entwurfRaum = null;
+  // Eigene Beschriftungen: messSchilder wird bei jeder Mausbewegung neu
+  // aufgebaut, die Koerperschilder wuerden dabei verschwinden.
+  var entwurfSchilder = [];
+
+  // --- Geometrie ------------------------------------------------------
+
+  function lokalRing(ring, mx, my) {
+    return alsListe(ring).map(function (p) { return [p[0] - mx, -(p[1] - my)]; });
+  }
+
+  // Strahlensatz-Verfahren. Eindeutig, solange der Ring geschlossen und
+  // nicht selbstueberschneidend ist -- beides gilt fuer amtliche Ringe.
+  function imPolygon(x, z, ring) {
+    var drin = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      var xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) drin = !drin;
+    }
+    return drin;
+  }
+
+  function ringMitte(ring) {
+    // Flaechenschwerpunkt, nicht Mittel der Ecken: bei ungleich verteilten
+    // Stuetzpunkten liegt das Eckenmittel sonst am dichten Rand.
+    var f = 0, sx = 0, sz = 0;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      var a = ring[j], b = ring[i];
+      var kreuz = a[0] * b[1] - b[0] * a[1];
+      f += kreuz; sx += (a[0] + b[0]) * kreuz; sz += (a[1] + b[1]) * kreuz;
+    }
+    if (Math.abs(f) < 1e-9) {
+      var m = ring.reduce(function (s, p) { return [s[0] + p[0], s[1] + p[1]]; }, [0, 0]);
+      return [m[0] / ring.length, m[1] / ring.length];
+    }
+    return [sx / (3 * f), sz / (3 * f)];
+  }
+
+  // Die laengste Kante gibt die Richtung vor. Ein Baukoerper, der schraeg
+  // zur Parzelle steht, sieht nach Zufall aus -- und ist es auch.
+  function laengsteKanteWinkel(ring) {
+    var best = 0, bestLaenge = -1;
+    for (var i = 0; i < ring.length; i++) {
+      var a = ring[i], b = ring[(i + 1) % ring.length];
+      var dx = b[0] - a[0], dz = b[1] - a[1];
+      var l = dx * dx + dz * dz;
+      if (l > bestLaenge) { bestLaenge = l; best = Math.atan2(dz, dx); }
+    }
+    return best;
+  }
+
+  function ringSpanne(ring) {
+    var xs = ring.map(function (p) { return p[0]; });
+    var zs = ring.map(function (p) { return p[1]; });
+    return Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs),
+                    Math.max.apply(null, zs) - Math.min.apply(null, zs));
+  }
+
+  // Die vier Ecken in lokalen Metern (x, z).
+  function koerperEcken(k) {
+    var c = Math.cos(k.drehung), s = Math.sin(k.drehung);
+    var hb = k.breite / 2, ht = k.tiefe / 2;
+    return [[-hb, -ht], [hb, -ht], [hb, ht], [-hb, ht]].map(function (p) {
+      return [k.mitte[0] + p[0] * c - p[1] * s, k.mitte[1] + p[0] * s + p[1] * c];
+    });
+  }
+
+  function koerperHoehe(k) { return k.geschosse * k.geschosshoehe; }
+  function koerperGrundflaeche(k) { return k.breite * k.tiefe; }
+
+  // --- Was die Engine dazu sagt ---------------------------------------
+
+  function engineGeschosse() {
+    var g1 = (ergebnisAktuell || {}).g1_ergebnis || {};
+    var e = g1.ergebnis ||
+      (g1.szenarien ? g1.szenarien[Object.keys(g1.szenarien)[0]] : null) || {};
+    var n = parseInt(e.geschosszahl, 10);
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  function engineGeschosshoehe() {
+    // Dieselbe Kaskade, die der Flaechenreiter zeigt -- flTeile() ist die
+    // vorhandene Aufteilung, nicht eine zweite.
+    var teile = flTeile((ergebnisAktuell || {}).flaechen_und_wohnungen);
+    for (var i = 0; i < teile.length; i++) {
+      var h = (teile[i][1] || {}).hoehenmodell;
+      if (h && h.geschosshoehe_m && typeof h.geschosshoehe_m.wert === "number") {
+        return h.geschosshoehe_m.wert;
+      }
+    }
+    return null;
+  }
+
+  // --- Anlegen --------------------------------------------------------
+
+  window.entwurfHinzufuegen = function () {
+    if (!entwurfRaum) return null;
+    var grund = (entwurfRaum.baubereich && entwurfRaum.baubereich.length >= 3)
+      ? entwurfRaum.baubereich : entwurfRaum.parzelle;
+    if (!grund || grund.length < 3) return null;
+
+    var gh = engineGeschosshoehe();
+    var spanne = ringSpanne(grund);
+    var k = {
+      id: "k" + (++entwurfZaehler),
+      name: "Baukörper " + entwurfZaehler,
+      mitte: ringMitte(grund),
+      // Gedeckelt: auf einer grossen Parzelle entstuende sonst ein Riegel,
+      // den niemand gewollt hat.
+      breite: Math.max(6, Math.min(20, spanne * 0.55)),
+      tiefe: Math.max(5, Math.min(14, spanne * 0.38)),
+      drehung: laengsteKanteWinkel(grund),
+      geschosse: engineGeschosse() || 3,
+      geschosshoehe: gh || ENTWURF_ERSATZHOEHE,
+      hoeheAngenommen: gh === null,
+      geschosseAngenommen: engineGeschosse() === null
+    };
+
+    // Schrumpfen, bis der Koerper in den Grund passt. Klappt das nicht --
+    // etwa auf einem einspringenden Baubereich --, bleibt er trotzdem
+    // stehen und die Pruefung sagt, dass er hinausragt. Kein stilles
+    // Verschieben an eine vermeintlich richtige Stelle.
+    for (var i = 0; i < 14; i++) {
+      if (koerperEcken(k).every(function (e) { return imPolygon(e[0], e[1], grund); })) break;
+      k.breite *= 0.86; k.tiefe *= 0.86;
+      if (k.breite < 3 || k.tiefe < 3) break;
+    }
+    k.breite = Math.round(k.breite * 10) / 10;
+    k.tiefe = Math.round(k.tiefe * 10) / 10;
+
+    entwuerfe.push(k);
+    entwurfGewaehlt = k.id;
+    zeichneEntwuerfe();
+    entwurfTafel();
+    return k.id;
+  };
+
+  window.entwurfLoeschen = function (id) {
+    entwuerfe = entwuerfe.filter(function (k) { return k.id !== id; });
+    if (entwurfGewaehlt === id) entwurfGewaehlt = null;
+    zeichneEntwuerfe();
+    entwurfTafel();
+  };
+
+  window.entwurfWaehlen = function (id) {
+    entwurfGewaehlt = id || null;
+    zeichneEntwuerfe();
+    entwurfTafel();
+  };
+
+  function entwurfVon(id) {
+    for (var i = 0; i < entwuerfe.length; i++) if (entwuerfe[i].id === id) return entwuerfe[i];
+    return null;
+  }
+
+  // --- Auswahl in der Szene -------------------------------------------
+
+  function entwurfKlick(ereignis) {
+    if (!entwurfTreffer.length) {
+      if (entwurfGewaehlt) window.entwurfWaehlen(null);
+      return;
+    }
+    strahlSetzen(ereignis);
+    var netze = entwurfTreffer.map(function (t) { return t.mesh; });
+    var t = strahl.intersectObjects(netze, false);
+    var id = null;
+    if (t.length) {
+      for (var i = 0; i < entwurfTreffer.length; i++) {
+        if (entwurfTreffer[i].mesh === t[0].object) { id = entwurfTreffer[i].id; break; }
+      }
+    }
+    if (id !== entwurfGewaehlt) window.entwurfWaehlen(id);
+  }
+
+  // --- Fachliche Pruefung, soweit sie rein geometrisch ist -------------
+  //
+  // Nur Aussagen, die aus zwei vorliegenden Geometrien folgen. Alles, was
+  // vom Reglement abhaengt -- anrechenbare Geschossflaeche, Ausnuetzung,
+  // Gebaeudehoehe nach kantonaler Messweise -- gehoert der Engine und
+  // steht hier als "noch nicht gerechnet", nicht als Zahl.
+
+  function pruefeBaubereich(k) {
+    var bb = entwurfRaum && entwurfRaum.baubereich;
+    if (!bb || bb.length < 3) {
+      return { art: "unbestimmt", kurz: "nicht bestimmbar",
+               text: "Für diese Parzelle ist kein Baubereich berechnet — die Lage " +
+                     "des Körpers ist damit nicht geprüft." };
+    }
+    var ecken = koerperEcken(k);
+    var draussen = ecken.filter(function (e) { return !imPolygon(e[0], e[1], bb); }).length;
+    if (!draussen) {
+      return { art: "ok", kurz: "innerhalb", text: "Alle vier Ecken liegen im Baubereich." };
+    }
+    return { art: "verletzt", kurz: "ragt hinaus",
+             text: draussen + " von 4 Ecken liegen ausserhalb des Baubereichs. Der Körper " +
+                   "bleibt, wo er steht — korrigiert wird nichts von selbst." };
+  }
+
+  function pruefeGeschosse(k) {
+    var zulaessig = engineGeschosse();
+    if (zulaessig === null) {
+      return { art: "unbestimmt", kurz: "nicht bestimmbar",
+               text: "Die Engine führt für diese Zone keine zulässige Geschosszahl." };
+    }
+    if (k.geschosse <= zulaessig) {
+      return { art: "ok", kurz: k.geschosse + " von " + zulaessig,
+               text: "Die Engine rechnet mit " + zulaessig + " Geschossen." };
+    }
+    return { art: "verletzt", kurz: k.geschosse + " statt " + zulaessig,
+             text: "Die Engine rechnet mit " + zulaessig + " Geschossen." };
+  }
+
+  // --- Zeichnen -------------------------------------------------------
+
+  function entwurfFarben() {
+    var s = getComputedStyle(document.body);
+    function v(name, ersatz) { return (s.getPropertyValue(name) || "").trim() || ersatz; }
+    return {
+      linie: v("--entwurf-linie", "#10454f"),
+      fuell: v("--entwurf-fuell", "#1596ab"),
+      wahl: v("--entwurf-wahl", "#b26a00"),
+      stop: v("--stop", "#9c3327")
+    };
+  }
+
+  function zeichneEntwuerfe() {
+    if (!gruppe3d || !u3dGruppen.entwurf) return;
+    var ziel = u3dGruppen.entwurf;
+    if (entwurfGruppe) ziel.remove(entwurfGruppe);
+    entwurfMuell.forEach(function (x) { x.dispose(); });
+    entwurfMuell = [];
+    entwurfGruppe = new THREE.Group();
+    ziel.add(entwurfGruppe);
+    entwurfTreffer = [];
+    entwurfSchilder = [];
+    if (!entwuerfe.length || !entwurfRaum) return;
+
+    var f = entwurfFarben();
+
+    function merkeE(x) { entwurfMuell.push(x); return x; }
+
+    function schleife(punkte, y, farbe, deckkraft) {
+      var liste = punkte.map(function (p) { return new THREE.Vector3(p[0], y, p[1]); });
+      liste.push(liste[0].clone());
+      var geo = merkeE(new THREE.BufferGeometry().setFromPoints(liste));
+      var mat = merkeE(new THREE.LineBasicMaterial({
+        color: new THREE.Color(farbe), transparent: deckkraft < 1, opacity: deckkraft,
+        depthTest: false
+      }));
+      var l = new THREE.Line(geo, mat);
+      l.renderOrder = 6;
+      entwurfGruppe.add(l);
+    }
+
+    function senkrechte(a, b, farbe) {
+      var geo = merkeE(new THREE.BufferGeometry().setFromPoints([a, b]));
+      var mat = merkeE(new THREE.LineBasicMaterial({ color: new THREE.Color(farbe), depthTest: false }));
+      var l = new THREE.Line(geo, mat);
+      l.renderOrder = 6;
+      entwurfGruppe.add(l);
+    }
+
+    entwuerfe.forEach(function (k) {
+      var pruef = pruefeBaubereich(k);
+      var gewaehlt = k.id === entwurfGewaehlt;
+      var farbe = pruef.art === "verletzt" ? f.stop : (gewaehlt ? f.wahl : f.linie);
+      var ecken = koerperEcken(k);
+      var hoehe = koerperHoehe(k);
+
+      // Der Boden, auf dem er steht: die Gelaendehoehe in der Mitte.
+      // Ein Koerper, der in der Luft haengt oder im Hang steckt, ist als
+      // Machbarkeitsbild wertlos.
+      var y0 = entwurfRaum.terrain
+        ? (terrainHoeheAn(entwurfRaum.terrain, k.mitte[0] + entwurfRaum.mx,
+                          -k.mitte[1] + entwurfRaum.my) || entwurfRaum.basis) - entwurfRaum.basis
+        : 0;
+
+      // Sehr schwache Fuellung: sie gibt dem Drahtmodell Koerper, ohne
+      // den Bestand darunter zu verdecken. Sie traegt auch die Auswahl --
+      // eine Linie trifft man mit der Maus nicht.
+      var enRing = ecken.map(function (e) { return [e[0], -e[1]]; });
+      var shape = new THREE.Shape();
+      enRing.forEach(function (p, i) {
+        if (i === 0) shape.moveTo(p[0], p[1]); else shape.lineTo(p[0], p[1]);
+      });
+      var geo = merkeE(new THREE.ExtrudeGeometry(shape, { depth: hoehe, bevelEnabled: false }));
+      var mat = merkeE(new THREE.MeshBasicMaterial({
+        color: new THREE.Color(pruef.art === "verletzt" ? f.stop : f.fuell),
+        transparent: true, opacity: gewaehlt ? 0.20 : 0.13,
+        depthWrite: false, side: THREE.DoubleSide
+      }));
+      var netz = new THREE.Mesh(geo, mat);
+      netz.rotation.x = -Math.PI / 2;
+      netz.position.y = y0;
+      entwurfGruppe.add(netz);
+      entwurfTreffer.push({ mesh: netz, id: k.id });
+
+      // Das Drahtmodell: Grundriss, Dachkante, Senkrechten -- und je
+      // Geschoss eine Ebene. Erst die Geschossebenen machen aus einem
+      // Kasten ein lesbares Volumen.
+      schleife(ecken, y0 + 0.05, farbe, 1);
+      schleife(ecken, y0 + hoehe, farbe, 1);
+      for (var g = 1; g < k.geschosse; g++) {
+        schleife(ecken, y0 + g * k.geschosshoehe, farbe, 0.45);
+      }
+      ecken.forEach(function (e) {
+        senkrechte(new THREE.Vector3(e[0], y0, e[1]),
+                   new THREE.Vector3(e[0], y0 + hoehe, e[1]), farbe);
+      });
+
+      entwurfSchilder.push({
+        anker: new THREE.Vector3(k.mitte[0], y0 + hoehe + 2, k.mitte[1]),
+        text: k.name + " · " + k.breite.toFixed(1) + " × " + k.tiefe.toFixed(1) +
+              " m · " + k.geschosse + " G",
+        farbe: farbe, klein: !gewaehlt
+      });
+    });
+  }
+
+  // --- Die Tafel unter der Buehne -------------------------------------
+
+  var PRUEF_MARKE = { ok: ["erfüllt", "ok"], verletzt: ["verletzt", "stop"],
+                      unbestimmt: ["nicht bestimmbar", "mute"] };
+
+  function pruefZeile(label, p) {
+    var m = PRUEF_MARKE[p.art] || PRUEF_MARKE.unbestimmt;
+    return '<div class="ekpruef"><span class="ekpl">' + esc(label) + "</span>" +
+      '<span class="badge ' + m[1] + '">' + esc(p.kurz) + "</span>" +
+      '<span class="ekpt">' + esc(p.text) + "</span></div>";
+  }
+
+  function entwurfTafel() {
+    var tafel = document.getElementById("entwurf-tafel");
+    if (!tafel) return;
+    if (!entwuerfe.length) {
+      tafel.innerHTML = '<div class="ekleer">Noch kein Projektkörper. ' +
+        '<b>+ Baukörper</b> setzt einen Quader in den Baubereich — oder, wo keiner ' +
+        'berechnet ist, in die Mitte der Parzelle.</div>';
+      return;
+    }
+
+    var liste = entwuerfe.map(function (k) {
+      var p = pruefeBaubereich(k);
+      var m = PRUEF_MARKE[p.art] || PRUEF_MARKE.unbestimmt;
+      return '<li class="' + (k.id === entwurfGewaehlt ? "an" : "") +
+        '" data-koerper="' + esc(k.id) + '"><b>' + esc(k.name) + "</b> " +
+        k.breite.toFixed(1) + " × " + k.tiefe.toFixed(1) + " m · " + k.geschosse +
+        " Geschosse · " + koerperHoehe(k).toFixed(2) + " m hoch " +
+        '<span class="badge ' + m[1] + '">' + esc(m[0]) + "</span>" +
+        '<button class="m3weg" data-koerperweg="' + esc(k.id) +
+        '" title="Baukörper löschen">×</button></li>';
+    }).join("");
+
+    var k = entwurfVon(entwurfGewaehlt);
+    var detail = "";
+    if (k) {
+      var bb = pruefeBaubereich(k), gz = pruefeGeschosse(k);
+      detail =
+        '<div class="ekdetail">' +
+          '<div class="ekspalte"><div class="ekkopf">Projektstudie</div>' +
+            '<div class="ekunter">aus der gezeichneten Geometrie</div>' +
+            ekWert("Grundfläche", fmt(koerperGrundflaeche(k), 0) + " m²") +
+            ekWert("Geschossfläche", fmt(koerperGrundflaeche(k) * k.geschosse, 0) + " m²") +
+            ekWert("Höhe über Terrain", koerperHoehe(k).toFixed(2) + " m") +
+            ekWert("Geschosshöhe", k.geschosshoehe.toFixed(2) + " m" +
+              (k.hoeheAngenommen ? ' <span class="badge mute">angenommen</span>'
+                                 : ' <span class="badge ok">aus der Engine</span>')) +
+          "</div>" +
+          '<div class="ekspalte"><div class="ekkopf">Fachliche Prüfung</div>' +
+            '<div class="ekunter">aus der Engine bzw. eindeutiger Geometrie</div>' +
+            pruefZeile("Baubereich", bb) +
+            pruefZeile("Geschosse", gz) +
+            pruefZeile("Grenzabstand", { art: "unbestimmt", kurz: "noch nicht geprüft",
+              text: "Folgt, sobald der Körper verschiebbar ist." }) +
+            pruefZeile("Ausnützung", { art: "unbestimmt", kurz: "nicht im Browser",
+              text: "Anrechenbare Geschossfläche und Ausnützungsziffer rechnet die Engine " +
+                    "nach SIA 416 — nicht die Ansicht." }) +
+          "</div>" +
+        "</div>";
+    }
+
+    tafel.innerHTML = '<ul class="ekliste">' + liste + "</ul>" + detail +
+      '<div class="ekfuss">Die linke Spalte ist <b>Ihre Geometrie</b>, nicht unser Befund. ' +
+      'Verschieben, Drehen und Masse ändern folgen im nächsten Schritt.</div>';
+  }
+
+  function ekWert(label, wert) {
+    return '<div class="ekwert"><span class="ekpl">' + esc(label) + "</span><span>" +
+      wert + "</span></div>";
+  }
 
   // -------------------------------------------------------------------
   // Arbeitsstand der Ansicht
@@ -7491,7 +7967,7 @@ function secEntwurf(erg) {
     var erg = ergebnisAktuell;
     while (gruppe3d.children.length) gruppe3d.remove(gruppe3d.children[0]);
     u3dGruppen = {};
-    ["terrain", "gebaeude", "strassen", "grundstueck", "projekt"].forEach(function (k) {
+    ["terrain", "gebaeude", "strassen", "grundstueck", "projekt", "entwurf"].forEach(function (k) {
       u3dGruppen[k] = new THREE.Group();
       u3dGruppen[k].visible = u3dSicht[k] !== false;
       gruppe3d.add(u3dGruppen[k]);
@@ -7555,12 +8031,37 @@ function secEntwurf(erg) {
 
     var g1 = erg.g1_ergebnis || {};
     var e1 = g1.ergebnis || (g1.szenarien ? g1.szenarien[Object.keys(g1.szenarien)[0]] : null);
-    if (e1 && e1.baubereich_koordinaten) {
-      alsListe(e1.baubereich_koordinaten).forEach(function (r) {
-        var b = koerper(r, mx, my, 0.25, FARBE.baubereich, 0.30);
-        b.position.y = 0.1;
-        u3dGruppen.grundstueck.add(b);
-      });
+    var bbRinge = (e1 && e1.baubereich_koordinaten) ? alsListe(e1.baubereich_koordinaten) : [];
+    bbRinge.forEach(function (r) {
+      var b = koerper(r, mx, my, 0.25, FARBE.baubereich, 0.30);
+      b.position.y = 0.1;
+      u3dGruppen.grundstueck.add(b);
+    });
+
+    // --- Der Raum, in dem die Projektstudie steht -----------------------
+    //
+    // Dieselben Ringe, die eben gezeichnet wurden, in lokalen Metern. Der
+    // groesste Baubereichsring gilt: bei mehreren Teilflaechen ist das die
+    // tragende. Fehlt er, bleibt die Parzelle -- und die Pruefung sagt
+    // dann "nicht bestimmbar" statt eine Lage zu bestaetigen.
+    var bbLokal = null;
+    bbRinge.forEach(function (r) {
+      var lr = lokalRing(r, mx, my);
+      if (lr.length >= 3 && (!bbLokal || ringSpanne(lr) > ringSpanne(bbLokal))) bbLokal = lr;
+    });
+    entwurfRaum = {
+      parzelle: lokalRing(parzelle, mx, my),
+      baubereich: bbLokal,
+      terrain: terrain, mx: mx, my: my, basis: basis
+    };
+    // Eine neue Analyse ist eine andere Parzelle. Koerper der vorigen
+    // stuenden sonst im fremden Gelaende -- derselbe Fehler, den die
+    // Umgebung schon einmal gemacht hat.
+    if (entwurfFuerJob !== jobIdAktuell) {
+      entwuerfe = [];
+      entwurfGewaehlt = null;
+      entwurfZaehler = 0;
+      entwurfFuerJob = jobIdAktuell;
     }
 
     // --- Projekt --------------------------------------------------------
@@ -7589,9 +8090,11 @@ function secEntwurf(erg) {
     });
     sonneAnwenden();
 
-    // Messungen ueberleben den Neuaufbau der Szene -- sie haengen am
-    // Bezugsrahmen, nicht am Szenario.
+    // Messungen und Projektkoerper ueberleben den Neuaufbau der Szene --
+    // sie haengen am Bezugsrahmen, nicht am Szenario.
     zeichneMessungen();
+    zeichneEntwuerfe();
+    entwurfTafel();
 
     // --- Legende --------------------------------------------------------
     var info = document.getElementById("view3d-legende");
@@ -7698,6 +8201,18 @@ function verdrahte3DSteuerung() {
   einmal("mess-liste", "click", function (e) {
     var k = e.target.closest ? e.target.closest(".m3weg") : null;
     if (k && window.messLoeschen) window.messLoeschen(k.dataset.weg);
+  });
+
+  // --- Projektstudie -------------------------------------------------
+  einmal("entwurf-neu", "click", function () {
+    if (window.entwurfHinzufuegen) window.entwurfHinzufuegen();
+  });
+  einmal("entwurf-tafel", "click", function (e) {
+    if (!e.target.closest) return;
+    var weg = e.target.closest("[data-koerperweg]");
+    if (weg) { window.entwurfLoeschen(weg.dataset.koerperweg); return; }
+    var zeile = e.target.closest("[data-koerper]");
+    if (zeile) window.entwurfWaehlen(zeile.dataset.koerper);
   });
 }
 
