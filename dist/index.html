@@ -5007,6 +5007,27 @@ var projektAktuell = null;        // {projekt_id, name, varianten: [...], ...}
 var varianteErgebnisse = {};      // variante_id -> Rechenergebnis
 var variantenVergleich = null;
 
+// "Ersatzneubau · 14.0 × 22.0 m · 3 Geschosse · 924 m² GF" -- was in der
+// Variantenleiste ueber den gespeicherten Koerper zu sagen ist. Die
+// Geschossflaeche ist hier reine Geometrie (Grundflaeche x Geschosse) und
+// ausdruecklich NICHT die anrechenbare: die rechnet das Flaechenmodell,
+// und zwar beim Laden neu.
+function entwurfKurzfassung(entwurf) {
+  entwurf = entwurf || {};
+  var k = (entwurf.koerper || [])[0];
+  if (!k) return "kein Baukörper";
+  var teile = [];
+  if (entwurf.szenario) teile.push(klartext(entwurf.szenario));
+  teile.push(fmt(k.breite, 1) + " × " + fmt(k.tiefe, 1) + " m");
+  teile.push(k.geschosse + " Geschoss" + (k.geschosse === 1 ? "" : "e"));
+  teile.push(fmt(k.breite * k.tiefe * k.geschosse, 0) + " m² GF (Geometrie)");
+  if ((entwurf.koerper || []).length > 1) {
+    teile.push("+ " + ((entwurf.koerper || []).length - 1) + " weitere");
+  }
+  if (entwurf.anordnung) teile.push("Anordnung " + klartext(entwurf.anordnung));
+  return teile.join(" · ");
+}
+
 function aktiveVariante() {
   if (!projektAktuell) return null;
   return (projektAktuell.varianten || []).find(function (v) {
@@ -5075,6 +5096,12 @@ function wendeVarianteAn() {
       window.messZuruecksetzen();
     }
   }
+
+  // Und der Projektkoerper. Auch ohne gespeicherten Entwurf wird gesetzt --
+  // mit leerer Liste. Sonst stuende der Baukoerper der Vorgaengervariante
+  // weiter da, geprueft gegen deren Anordnung: genau das, was beim
+  // Variantenwechsel nicht passieren darf.
+  if (window.entwurfSetzen) window.entwurfSetzen(v.entwurf || {});
 }
 
 // Die gespeicherten Benutzerannahmen in die Eingabefelder zuruecklesen --
@@ -5221,6 +5248,8 @@ function zeichneProjektleiste() {
       '<button class="szbtn" id="var-umbenennen">Umbenennen</button>' +
       '<button class="szbtn" id="var-loeschen">L\u00f6schen</button>' +
       '<button class="szbtn" id="ansicht-speichern">Ansicht speichern</button>' +
+      '<button class="szbtn" id="entwurf-speichern">Entwurf sichern</button>' +
+      '<button class="szbtn" id="entwurf-alsvariante">Als neue Variante</button>' +
       (aktiv && aktiv.hat_ansicht
         ? '<button class="szbtn" id="ansicht-zurueck">Ansicht zur\u00fcckholen</button>' +
           '<button class="szbtn" id="ansicht-loeschen">Ansicht verwerfen</button>'
@@ -5234,6 +5263,15 @@ function zeichneProjektleiste() {
       : '<div class="note">F\u00fcr diese Variante ist noch kein Arbeitsstand gespeichert. ' +
         '\u201eAnsicht speichern\u201c h\u00e4lt Blickwinkel, Ebenen, Sonnenstand und Messungen fest ' +
         '\u2014 sie \u00e4ndern keine Zahl und z\u00e4hlen deshalb nicht als eigene Annahme.</div>') +
+    (aktiv && aktiv.hat_entwurf
+      ? '<div class="note">Gespeicherter <b>Projektkörper</b>: ' +
+        esc(entwurfKurzfassung(aktiv.entwurf)) +
+        '. Er wird beim Wechsel auf diese Variante wiederhergestellt — samt der ' +
+        'Anordnung, gegen die er geprüft wurde. Die Flächen werden dabei neu ' +
+        'gerechnet, nicht aus der Datei übernommen.</div>'
+      : '<div class="note">Für diese Variante ist noch kein Projektkörper gespeichert. ' +
+        '„Entwurf sichern“ hält ihn fest, „Als neue Variante“ legt daraus ' +
+        'eine abgeleitete Variante an.</div>') +
     '<div class="pjtitel">Export</div>' +
     '<div class="szwahl">' +
       '<button class="szbtn" id="dossier-pdf">Dossier PDF</button>' +
@@ -5309,6 +5347,56 @@ function verdrahteProjektleiste() {
 
   var ansSpeichern = document.getElementById("ansicht-speichern");
   if (ansSpeichern) ansSpeichern.onclick = ansichtSpeichernJetzt;
+
+  // --- Der Projektkoerper dieser Variante -----------------------------
+  var entwSpeichern = document.getElementById("entwurf-speichern");
+  if (entwSpeichern) entwSpeichern.onclick = function () {
+    var v = aktiveVariante();
+    if (!v || !window.entwurfLesen) return;
+    projektAktion({ aktion: "entwurf_speichern", variante_id: v.variante_id,
+                    entwurf: window.entwurfLesen() })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return; }
+        projektAktuell = d.projekt;
+        zeichneProjektleiste();
+      });
+  };
+
+  // Ableiten statt ueberschreiben: dupliziere_variante setzt
+  // basiert_auf_variante_id und nimmt Ansicht und Entwurf mit. Danach wird
+  // der AKTUELLE Entwurf auf die neue Variante geschrieben -- die alte
+  // behaelt ihren.
+  var entwVariante = document.getElementById("entwurf-alsvariante");
+  if (entwVariante) entwVariante.onclick = function () {
+    var v = aktiveVariante();
+    if (!v || !window.entwurfLesen) return;
+    var name = prompt("Name der neuen Variante", v.name + " – Entwurf");
+    if (!name) return;
+    var zustand = window.entwurfLesen();
+    projektAktion({ aktion: "variante_duplizieren", variante_id: v.variante_id, name: name })
+      .then(function (d) {
+        if (!d.ok) { alert(d.fehler); return null; }
+        projektAktuell = d.projekt;
+        var neu = (d.projekt.varianten || []).filter(function (x) {
+          return x.basiert_auf_variante_id === v.variante_id;
+        }).pop();
+        if (!neu) return null;
+        return projektAktion({ aktion: "entwurf_speichern",
+                               variante_id: neu.variante_id, entwurf: zustand })
+          .then(function (d2) {
+            if (!d2.ok) { alert(d2.fehler); return null; }
+            projektAktuell = d2.projekt;
+            return projektAktion({ aktion: "variante_aktiv",
+                                   projekt_id: projektAktuell.projekt_id,
+                                   variante_id: neu.variante_id });
+          });
+      })
+      .then(function (d3) {
+        if (d3 && d3.ok) projektAktuell = d3.projekt;
+        return rechneVarianten(false);
+      })
+      .then(function () { wendeVarianteAn(); });
+  };
 
   var ansZurueck = document.getElementById("ansicht-zurueck");
   if (ansZurueck) ansZurueck.onclick = function () {
@@ -6838,6 +6926,112 @@ function secEntwurf(erg) {
       if (schieber) schieber.value = String(sonneSchritt);
       sonneAnwenden(); sonneBeschriftung();
     }, 140);
+  }
+
+  // --- Der Entwurfszustand einer Variante ------------------------------
+  //
+  // Was gespeichert wird, ist ausschliesslich das, was der Benutzer
+  // gezeichnet und gewaehlt hat -- plus die Engine-Anordnung, gegen die
+  // geprueft wurde. Kein aGF, kein NWF, keine Ausnuetzung: eine
+  // gespeicherte Fachzahl stuende beim naechsten Oeffnen als Tatsache da,
+  // auch wenn das Flaechenmodell inzwischen anders rechnet. Sie wird neu
+  // angefordert.
+  //
+  // Der Rahmen gehoert dazu, aus demselben Grund wie bei den Messungen:
+  // die Koerper liegen in lokalen Metern. Ohne den Bezug stuende der
+  // Baukoerper beim naechsten Oeffnen stillschweigend woanders.
+  window.entwurfLesen = function () {
+    var zustand = {
+      szenario: (typeof aktivesSzenario !== "undefined" && aktivesSzenario) || null,
+      anordnung: (entwurfRaum && entwurfRaum.anordnung) || null,
+      koerper: entwuerfe.map(function (k) {
+        return {
+          id: k.id, name: k.name,
+          mitte: [runde(k.mitte[0]), runde(k.mitte[1])],
+          breite: runde(k.breite), tiefe: runde(k.tiefe),
+          drehung: runde(k.drehung),
+          geschosse: k.geschosse,
+          geschosshoehe: runde(k.geschosshoehe),
+          hoeheAngenommen: !!k.hoeheAngenommen,
+          geschosseAngenommen: !!k.geschosseAngenommen
+        };
+      })
+    };
+    if (szeneRahmen) {
+      zustand.rahmen = { mx: szeneRahmen.mx, my: szeneRahmen.my,
+                         basis: runde(szeneRahmen.basis) };
+    }
+    return zustand;
+  };
+
+  // Stellt den gespeicherten Zustand wieder her.
+  //
+  // Reihenfolge mit Absicht: erst die Anordnung, dann die Koerper. Die
+  // Anordnung baut die Szene neu auf -- vorher gesetzte Koerper waeren
+  // gleich wieder weg, und schlimmer: sie wuerden gegen den Baubereich der
+  // VORIGEN Anordnung geprueft. Genau der Widerspruch, der in Buchs schon
+  // einmal zwei sich widersprechende Aussagen erzeugt hat.
+  window.entwurfSetzen = function (zustand) {
+    zustand = zustand || {};
+    var koerper = alsListe(zustand.koerper);
+
+    // Die letzte Rueckrechnung gehoert zum vorigen Entwurf und gilt nicht
+    // mehr. Sie wird verworfen, nicht stillschweigend weitergezeigt.
+    rueckStand = null; rueckWerte = null; rueckFuer = null; rueckFehler = null;
+
+    var neueAnordnung = zustand.anordnung || null;
+    var anordnungWechselt = neueAnordnung !== anordnungGewaehlt;
+    if (anordnungWechselt) anordnungGewaehlt = neueAnordnung;
+
+    function koerperSetzen() {
+      entwuerfe = koerper.map(function (k) {
+        return {
+          id: k.id || ("k" + (++entwurfZaehler)),
+          name: k.name || "Baukörper",
+          mitte: [Number(k.mitte && k.mitte[0]) || 0, Number(k.mitte && k.mitte[1]) || 0],
+          breite: Math.max(ENTWURF_MIN_MASS, Number(k.breite) || ENTWURF_MIN_MASS),
+          tiefe: Math.max(ENTWURF_MIN_MASS, Number(k.tiefe) || ENTWURF_MIN_MASS),
+          drehung: Number(k.drehung) || 0,
+          geschosse: Math.max(1, parseInt(k.geschosse, 10) || 1),
+          geschosshoehe: Math.max(2.0, Number(k.geschosshoehe) || ENTWURF_ERSATZHOEHE),
+          hoeheAngenommen: !!k.hoeheAngenommen,
+          geschosseAngenommen: !!k.geschosseAngenommen
+        };
+      });
+      entwurfZaehler = Math.max(entwurfZaehler, entwuerfe.length);
+      entwurfGewaehlt = entwuerfe.length ? entwuerfe[0].id : null;
+      entwurfZieht = null;
+      // Der Auftrag gehoert jetzt zu DIESEN Koerpern -- sonst raeumte
+      // zeichneSzene() sie beim naechsten Aufbau als fremd weg.
+      entwurfFuerJob = jobIdAktuell;
+      pruefeEntwurfsrahmen(zustand.rahmen);
+      zeichneEntwuerfe();
+      entwurfTafel();
+      entwurfRechtTafel();
+      if (entwurfGewaehlt) rueckAnstossen(true);
+    }
+
+    if (anordnungWechselt && window.zeichne3D && ergebnisAktuell) {
+      // zeichne3D baut die Szene mit der neuen Anordnung auf; danach steht
+      // entwurfRaum auf der richtigen Grundlage.
+      window.zeichne3D(typeof aktivesSzenario !== "undefined" ? aktivesSzenario : null);
+      setTimeout(koerperSetzen, 0);
+    } else {
+      koerperSetzen();
+    }
+  };
+
+  // Stimmt der gespeicherte Bezugsrahmen noch mit der laufenden Szene
+  // ueberein? Wenn nicht, stehen die Koerper verschoben -- dieselbe Lage
+  // wie bei den Messungen, und sie gehoert ebenso gesagt.
+  function pruefeEntwurfsrahmen(rahmen) {
+    if (!rahmen || !szeneRahmen || !entwuerfe.length) return;
+    var dx = Math.abs((rahmen.mx || 0) - szeneRahmen.mx);
+    var dy = Math.abs((rahmen.my || 0) - szeneRahmen.my);
+    if (dx < 0.5 && dy < 0.5) return;
+    messHinweis("Achtung: Der gespeicherte Entwurf bezieht sich auf einen anderen " +
+      "Geländebezug (Abweichung " + dx.toFixed(1) + " / " + dy.toFixed(1) + " m). " +
+      "Die Masse stimmen weiterhin, die Lage auf dem Grundstück kann verschoben sein.");
   }
 
   // --- Rueckrechnung durch das Flaechenmodell --------------------------

@@ -1336,6 +1336,64 @@ def test_rueckrechnung_flaechenmodell(s: str) -> None:
                                   s.index("function rueckAnstossen(")],
            "die Kennung der Rueckrechnung enthaelt die Masse, nicht die Lage")
 
+def test_variantenentwurf(s: str) -> None:
+    """Der Projektkoerper gehoert zur Variante, nicht zur Sitzung.
+
+    Beim Wechsel auf eine andere Variante darf weder der alte Koerper
+    stehenbleiben noch die alte Anordnung gelten -- sonst stuende ein
+    Entwurf gegen den Baubereich einer fremden Anordnung.
+    """
+    # 1. Lesen und Setzen, ueber die vorhandene Variantenleiste.
+    pruefe("window.entwurfLesen = function ()" in s
+           and "window.entwurfSetzen = function (zustand)" in s,
+           "der Entwurfszustand laesst sich lesen und setzen")
+    pruefe('aktion: "entwurf_speichern"' in s,
+           "gespeichert wird ueber die vorhandene Projektaktion")
+    pruefe('aktion: "variante_duplizieren"' in s and "Als neue Variante" in s,
+           "abgeleitet wird ueber die vorhandene Abstammungslogik, nicht ueber "
+           "eine neue Versionierung")
+
+    # 2. Keine gerechnete Zahl im gespeicherten Zustand.
+    lesen = s[s.index("window.entwurfLesen = function ()"):
+              s.index("window.entwurfSetzen = function (zustand)")]
+    for verboten in ("agf", "nwf", "ausnuetzung", "wohnflaeche", "rueckWerte"):
+        pruefe(verboten not in lesen.lower(),
+               f"{verboten} steht nicht im gespeicherten Entwurf")
+    pruefe("anordnung:" in lesen and "rahmen" in lesen,
+           "wohl aber die Anordnung und der Bezugsrahmen")
+
+    # 3. Reihenfolge beim Laden: erst die Anordnung, dann die Koerper.
+    #    Andersherum wuerden die Koerper gegen den Baubereich der VORIGEN
+    #    Anordnung geprueft -- der Widerspruch aus Buchs.
+    setzen = s[s.index("window.entwurfSetzen = function (zustand)"):
+               s.index("function pruefeEntwurfsrahmen(rahmen)")]
+    pruefe("anordnungGewaehlt = neueAnordnung" in setzen
+           and "setTimeout(koerperSetzen, 0)" in setzen,
+           "erst die Anordnung, dann die Koerper")
+    pruefe("rueckStand = null; rueckWerte = null;" in setzen,
+           "die Rueckrechnung der vorigen Variante wird verworfen")
+    pruefe("rueckAnstossen(true)" in setzen,
+           "und fuer den geladenen Entwurf neu angefordert -- keine alten Zahlen")
+    pruefe("entwurfFuerJob = jobIdAktuell" in setzen,
+           "die geladenen Koerper gehoeren zum laufenden Auftrag, sonst raeumt "
+           "zeichneSzene() sie als fremd weg")
+
+    # 4. Auch OHNE gespeicherten Entwurf wird gesetzt -- mit leerer Liste.
+    #    Sonst bliebe der Koerper der Vorgaengervariante stehen.
+    pruefe("window.entwurfSetzen(v.entwurf || {})" in s,
+           "ein Variantenwechsel ohne Entwurf raeumt den alten Koerper weg")
+
+    # 5. Der Bezugsrahmen wird geprueft, wie bei den Messungen.
+    pruefe("function pruefeEntwurfsrahmen(rahmen)" in s
+           and "Der gespeicherte Entwurf bezieht sich auf einen anderen " in s,
+           "ein verschobener Gelaendebezug wird gemeldet, nicht verschwiegen")
+
+    # 6. Kompakte Leiste, keine eigene Oberflaeche.
+    pruefe("function entwurfKurzfassung(entwurf)" in s
+           and "GF (Geometrie)" in s,
+           "die Leiste fasst den Koerper zusammen -- und nennt die GF "
+           "ausdruecklich als Geometrie, nicht als anrechenbare Flaeche")
+
 def main() -> int:
     if not SEITE.exists():
         print(f"FEHLT: {SEITE}")
@@ -1356,7 +1414,8 @@ def main() -> int:
                test_entwurf_reiter, test_messwerkzeuge_dynamisch,
                test_koerper_greifbar_und_bemassbar,
                test_baurechtsgrenzen_raeumlich,
-               test_rueckrechnung_flaechenmodell):
+               test_rueckrechnung_flaechenmodell,
+               test_variantenentwurf):
         fn(s)
 
     if _fehler:

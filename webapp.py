@@ -1430,6 +1430,15 @@ class Handler(BaseHTTPRequestHandler):
                 v = kern_pj.speichere_ansicht(
                     con, int(daten["variante_id"]), daten.get("ansicht"))
                 projekt = kern_pj.lade_projekt(con, v["projekt_id"])
+            elif aktion == "entwurf_speichern":
+                # Der gezeichnete Projektkoerper und die Anordnung, gegen
+                # die er geprueft wurde. Wie bei der Ansicht kein neuer
+                # Stand: eine Verschiebung um zehn Zentimeter ist keine
+                # Annahme. Gerechnete Flaechen stehen bewusst nicht drin --
+                # sie werden beim Laden neu angefordert.
+                v = kern_pj.speichere_entwurf(
+                    con, int(daten["variante_id"]), daten.get("entwurf"))
+                projekt = kern_pj.lade_projekt(con, v["projekt_id"])
             elif aktion == "stand_wiederherstellen":
                 v = kern_pj.stelle_stand_wieder_her(
                     con, int(daten["variante_id"]), int(daten["stand"]))
