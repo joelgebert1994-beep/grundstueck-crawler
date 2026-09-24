@@ -1344,9 +1344,18 @@ def test_variantenentwurf(s: str) -> None:
     Entwurf gegen den Baubereich einer fremden Anordnung.
     """
     # 1. Lesen und Setzen, ueber die vorhandene Variantenleiste.
-    pruefe("window.entwurfLesen = function ()" in s
-           and "window.entwurfSetzen = function (zustand)" in s,
+    pruefe("window.entwurfZustandLesen = function ()" in s
+           and "window.entwurfZustandSetzen = function (zustand)" in s,
            "der Entwurfszustand laesst sich lesen und setzen")
+    # Ein globaler Name darf nur EINMAL vergeben sein. Die zweite
+    # Definition gewinnt stillschweigend -- entwurfSetzen hiess schon so
+    # (der Feldsetzer), der Variantenzustand ueberschrieb ihn, und beim
+    # Wechsel tat sich nichts: parseFloat eines Objekts ist NaN, der
+    # Feldsetzer stieg ohne Fehler aus. Live beim Variantenwechsel
+    # aufgefallen -- die Leiste zeigte A, die Szene B.
+    namen = re.findall(r"window\.([A-Za-z0-9_]+) = function", s)
+    doppelt = sorted({n for n in namen if namen.count(n) > 1})
+    pruefe(not doppelt, f"jeder window-Name ist nur einmal vergeben (doppelt: {doppelt})")
     pruefe('aktion: "entwurf_speichern"' in s,
            "gespeichert wird ueber die vorhandene Projektaktion")
     pruefe('aktion: "variante_duplizieren"' in s and "Als neue Variante" in s,
@@ -1354,8 +1363,8 @@ def test_variantenentwurf(s: str) -> None:
            "eine neue Versionierung")
 
     # 2. Keine gerechnete Zahl im gespeicherten Zustand.
-    lesen = s[s.index("window.entwurfLesen = function ()"):
-              s.index("window.entwurfSetzen = function (zustand)")]
+    lesen = s[s.index("window.entwurfZustandLesen = function ()"):
+              s.index("window.entwurfZustandSetzen = function (zustand)")]
     for verboten in ("agf", "nwf", "ausnuetzung", "wohnflaeche", "rueckWerte"):
         pruefe(verboten not in lesen.lower(),
                f"{verboten} steht nicht im gespeicherten Entwurf")
@@ -1365,7 +1374,7 @@ def test_variantenentwurf(s: str) -> None:
     # 3. Reihenfolge beim Laden: erst die Anordnung, dann die Koerper.
     #    Andersherum wuerden die Koerper gegen den Baubereich der VORIGEN
     #    Anordnung geprueft -- der Widerspruch aus Buchs.
-    setzen = s[s.index("window.entwurfSetzen = function (zustand)"):
+    setzen = s[s.index("window.entwurfZustandSetzen = function (zustand)"):
                s.index("function pruefeEntwurfsrahmen(rahmen)")]
     pruefe("anordnungGewaehlt = neueAnordnung" in setzen
            and "setTimeout(koerperSetzen, 0)" in setzen,
@@ -1380,7 +1389,7 @@ def test_variantenentwurf(s: str) -> None:
 
     # 4. Auch OHNE gespeicherten Entwurf wird gesetzt -- mit leerer Liste.
     #    Sonst bliebe der Koerper der Vorgaengervariante stehen.
-    pruefe("window.entwurfSetzen(v.entwurf || {})" in s,
+    pruefe("window.entwurfZustandSetzen(v.entwurf || {})" in s,
            "ein Variantenwechsel ohne Entwurf raeumt den alten Koerper weg")
 
     # 5. Der Bezugsrahmen wird geprueft, wie bei den Messungen.
@@ -1393,6 +1402,23 @@ def test_variantenentwurf(s: str) -> None:
            and "GF (Geometrie)" in s,
            "die Leiste fasst den Koerper zusammen -- und nennt die GF "
            "ausdruecklich als Geometrie, nicht als anrechenbare Flaeche")
+
+    # 7. Die Variantenleiste muss im 3D-Reiter erreichbar sein. Die
+    #    vorhandene steht in secSzenarien() -- und die gibt es nur, wenn die
+    #    Engine belastbare Szenarien gerechnet hat. Genau dann ist die
+    #    Projektstudie am wenigsten noetig; wo kein Szenario berechenbar ist,
+    #    ist der gezeichnete Koerper das einzige Projekt. Live in Buchs
+    #    aufgefallen: die Knoepfe waren schlicht nicht da.
+    pruefe('id="entwurf-varianten"' in s and "function zeichneEntwurfsvarianten()" in s,
+           "der 3D-Reiter traegt eine eigene Variantenleiste")
+    pruefe("function entwurfSichern()" in s and "function entwurfAbleiten()" in s
+           and "function entwurfVarianteWaehlen(id)" in s,
+           "sichern, ableiten und wechseln gehen von dort aus")
+    for aktion in ('"projekt_anlegen"', '"entwurf_speichern"',
+                   '"variante_duplizieren"', '"variante_aktiv"'):
+        pruefe(aktion in s, f"und benutzen die vorhandene Projektaktion {aktion}")
+    pruefe("Es ist keine zweite Verwaltung" in s,
+           "dass es dieselbe Verwaltung an zweiter Stelle ist, steht im Code")
 
 def main() -> int:
     if not SEITE.exists():
