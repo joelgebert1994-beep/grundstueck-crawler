@@ -752,6 +752,30 @@ def test_bodenpreis_systemvorschlag_keine_stille_uebernahme(s: str) -> None:
            "Miete bleibt ebenso unveraendert")
 
 
+def test_variante_egrid_schutz_beim_autospeichern(s: str) -> None:
+    """Ein offenes Projekt speichert nur noch in SICH SELBST, nicht in fremde.
+
+    Blieb ein Projekt geoeffnet, waehrend eine ANDERE Adresse analysiert
+    wurde, schrieb wRechne() bisher trotzdem in dessen aktive Variante --
+    mit den inzwischen auf die neue Adresse zurueckgesetzten (leeren)
+    wEingaben. Live reproduziert: Variante 15 "MVP1-Test Marktwerte"
+    (Verkauf 9100, Boden 1000) wurde nach einem Adresswechsel leer
+    ueberschrieben. Funktionaler Regressionstest:
+    tests/js/variante_egrid_schutz.test.js.
+    """
+    fn = s[s.index("function wRechne("): s.index("\nfunction ", s.index("function wRechne("))]
+    pruefe("var egridJetzt = (((ergebnisAktuell || {}).modul1_geodaten || {})"
+           ".kataster || {}).egrid;" in fn,
+           "die EGRID des GERADE analysierten Grundstuecks wird ermittelt")
+    speichern_index = fn.index('aktion: "variante_speichern"')
+    bedingung_index = fn.index("projektAktuell.egrid === egridJetzt")
+    pruefe(bedingung_index < speichern_index,
+           "der EGRID-Abgleich steht VOR dem Speicheraufruf, nicht danach")
+    bedingung = fn[fn.rindex("if (", 0, bedingung_index): fn.index(")", bedingung_index) + 1]
+    pruefe("vAktiv" in bedingung and "projektAktuell" in bedingung,
+           "das Speichern bleibt zusaetzlich an eine aktive Variante und ein offenes Projekt gebunden")
+
+
 def test_markt_ohne_standortdaten(s: str) -> None:
     """Der Marktreiter beantwortet nur: Was ist am Markt plausibel?
 
@@ -1524,6 +1548,7 @@ def main() -> int:
                test_marktauswertung_zwei_wege, test_wergebnis_zurueckgesetzt_bei_neuer_analyse,
                test_weingaben_zurueckgesetzt_bei_neuer_analyse,
                test_bodenpreis_systemvorschlag_keine_stille_uebernahme,
+               test_variante_egrid_schutz_beim_autospeichern,
                test_markt_ohne_standortdaten,
                test_marktsatz_stimmt_mit_der_engine,
                test_qualitaetsauswahl_passt_zur_engine,

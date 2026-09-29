@@ -11976,8 +11976,18 @@ function wRechne() {
     // Ist ein Projekt offen, gehoert die Aenderung in die aktive Variante --
     // sonst waere sie beim naechsten Oeffnen weg. Gespeichert wird nur, was
     // der Benutzer tatsaechlich gesetzt hat.
+    //
+    // NUR wenn das offene Projekt auch zum GERADE ANALYSIERTEN Grundstueck
+    // gehoert (egridJetzt === projektAktuell.egrid): bleibt ein Projekt
+    // beim Analysieren einer ANDEREN Adresse einfach offen -- ein Reiter,
+    // den niemand geschlossen hat -- schrieb wRechne() hier bisher trotzdem
+    // in dessen aktive Variante. Mit dem gerade zurueckgesetzten wEingaben
+    // der neuen Adresse ueberschrieb das echte gespeicherte Werte mit
+    // Leerwerten. Live reproduziert: Variante "MVP1-Test Marktwerte"
+    // (Verkauf 9100, Boden 1000) wurde nach einem Adresswechsel leer.
     var vAktiv = aktiveVariante();
-    if (vAktiv) {
+    var egridJetzt = (((ergebnisAktuell || {}).modul1_geodaten || {}).kataster || {}).egrid;
+    if (vAktiv && projektAktuell && egridJetzt && projektAktuell.egrid === egridJetzt) {
       projektAktion({ aktion: "variante_speichern", variante_id: vAktiv.variante_id,
                       eingaben: eingabenFuerVariante(), zusammenfuehren: false })
         .then(function (d) {
