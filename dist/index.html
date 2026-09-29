@@ -164,7 +164,13 @@ img { max-width: 100%; }
    zu sein. Bewusst EINE Huelle statt eigener Dateien: das Frontend bleibt
    in dist/index.html. */
 .werkflaeche { display: flex; align-items: flex-start; gap: 16px; }
-.wf-buehne { flex: 1 1 auto; min-width: 0; }
+/* width:100% zusaetzlich zu flex:1 1 auto: ohne eine EIGENE, definite
+   Breite gibt diese Flex-Spalte ihren Nachkommen (insbesondere der
+   Three.js-Leinwand, die eine feste Pixelbreite traegt) nicht zuverlaessig
+   ihre gestreckte Breite als Bezugsgroesse weiter -- die Buehne blieb dann
+   auf der Breite stehen, die die Leinwand zuletzt hatte, statt auf der
+   tatsaechlich verfuegbaren. Live beobachtet, siehe auch .v3rahmen. */
+.wf-buehne { flex: 1 1 auto; min-width: 0; width: 100%; }
 .wf-panel {
   flex: 0 0 328px; width: 328px;
   display: flex; flex-direction: column; gap: 10px;
@@ -904,7 +910,7 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .d3spaeter .d3bald { font-size: 11px; color: var(--ink-3); font-style: italic; }
 /* Die Buehne der Projektstudie. 380 px waren eine Vorschau; wer einen
    Baukoerper im Gelaende beurteilen soll, braucht Flaeche. */
-#view3d { width: 100%; height: clamp(460px, 64vh, 800px);
+#view3d { width: 100%; min-width: 0; height: clamp(460px, 64vh, 800px);
   border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; background: var(--bg-2); cursor: grab; touch-action: none; }
 #view3d:active { cursor: grabbing; }
@@ -930,7 +936,13 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
 .mkt-weg { color: var(--ink-3); }
 
 /* --- Sonne, Schatten und Messwerkzeuge (Block 4) --- */
-.v3rahmen { position: relative; }
+/* min-width: 0 ist hier keine Kosmetik: ohne sie richtet sich die Breite
+   dieses Blocks (und damit von #view3d darin) nach der Leinwand, die
+   Three.js zuletzt per renderer.setSize() in Pixeln gesetzt hat, statt
+   sich der schmaleren rechten Spalte anzupassen -- die Bruehne blieb dann
+   auf ihrer alten Breite stehen, wenn der verfuegbare Platz kleiner
+   wurde. Live beobachtet. */
+.v3rahmen { position: relative; min-width: 0; }
 #view3d-schilder { position: absolute; inset: 0; pointer-events: none; }
 .m3schild { position: absolute; transform: translate(-50%, -50%);
   background: var(--bg); border: 1px solid; border-radius: 4px;
@@ -1272,8 +1284,8 @@ function selektiere(layer, sectionId) {
     });
     if (layer.bringToFront) layer.bringToFront();
   }
-  if (layer && layer.getPopup && layer.getPopup()) {
-    zeigeKarteninfo(layer.getPopup().getContent());
+  if (layer && layer._panelHtml) {
+    zeigeKarteninfo(layer._panelHtml);
   }
   void sectionId;
 }
@@ -1289,7 +1301,11 @@ function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung,
   toRings(geom).forEach(function (ring) {
     var poly = L.polygon(ring, stil);
     poly._basisStil = stil;
-    if (popupHtml) poly.bindPopup(popupHtml);
+    // Kein bindPopup mehr: der Inhalt geht ausschliesslich ins rechte
+    // Panel (siehe selektiere()/zeigeKarteninfo()) -- sonst erschien bei
+    // jedem Klick zusaetzlich zum Panel noch eine schwebende Sprechblase
+    // auf der Karte mit demselben Text.
+    if (popupHtml) poly._panelHtml = popupHtml;
     // Verstaendliche Beschriftung statt Layername. Dauerhaft nur dort, wo
     // es genau eine Flaeche gibt -- bei Dutzenden Zonenflaechen waeren
     // dauerhafte Etiketten unlesbarer als gar keine.
@@ -1314,7 +1330,8 @@ function zeichneLinien(gruppe, geom, stil, popupHtml, sectionId, beschriftung) {
   if (koords.length < 2) return [];
   var line = L.polyline(koords, stil);
   line._basisStil = stil;
-  if (popupHtml) line.bindPopup(popupHtml);
+  // Siehe zeichnePolygone(): kein bindPopup, der Inhalt geht ins Panel.
+  if (popupHtml) line._panelHtml = popupHtml;
   if (beschriftung) {
     line.bindTooltip(beschriftung, { direction: "center", className: "kartenlabel", opacity: 1 });
   }
@@ -1415,15 +1432,17 @@ map.on("click", function (ev) {
     return;
   }
   if (pickMarker) map.removeLayer(pickMarker);
+  // Kein Popup mehr auf der Karte -- die Direktabfrage landet ausschliesslich
+  // im rechten Panel, wie jede andere Kartenauswahl auch. Der Marker bleibt
+  // als Ortsmarke stehen.
   pickMarker = L.circleMarker(ev.latlng, { radius: 6, color: "#0d5c68", weight: 2, fillColor: "#fff", fillOpacity: 1 })
-    .addTo(map).bindPopup("<b>Abfrage läuft …</b>").openPopup();
+    .addTo(map);
   zeigeKarteninfo("<b>Abfrage läuft …</b>");
   var lv = wgs84ToLv95(ev.latlng.lat, ev.latlng.lng);
   fetch("/api/pick?e=" + lv[0].toFixed(1) + "&n=" + lv[1].toFixed(1))
     .then(function (x) { return x.json(); })
     .then(function (r) {
       if (!r.ok) {
-        pickMarker.setPopupContent("<b>Keine Daten an dieser Stelle.</b>");
         zeigeKarteninfo("<b>Keine Daten an dieser Stelle.</b>");
         return;
       }
@@ -1442,12 +1461,11 @@ map.on("click", function (ev) {
         if (gw.gebaeudevolumen_m3) g.push(fmt(gw.gebaeudevolumen_m3) + " m³");
         zeilen.push('<span class="m">Gebäude: ' + (g.length ? esc(g.join(" · ")) : "GWR ohne Kennwerte") + "</span>");
       }
-      var inhalt = "<b>Direktabfrage</b>" + zeilen.join("<br>");
-      pickMarker.setPopupContent(inhalt);
-      zeigeKarteninfo(inhalt);
+      // <br> zwischen Titel und erster Zeile -- dieselbe Luecke wie bei
+      // "Bebaubare Fläche" oben, hier vor der Uebernahme ins Panel behoben.
+      zeigeKarteninfo("<b>Direktabfrage</b><br>" + zeilen.join("<br>"));
     })
     .catch(function () {
-      pickMarker.setPopupContent("<b>Abfrage fehlgeschlagen.</b>");
       zeigeKarteninfo("<b>Abfrage fehlgeschlagen.</b>");
     });
 });
@@ -2652,7 +2670,11 @@ function zeichneErgebnisAufKarte(erg) {
       var bezeichnung = anordnungsName(name);
       var popupB;
       if (randfall) {
-        popupB = "<b>Zulässige Abstandsanordnung</b><span class=\"m\">" +
+        // <b>-Titel und die <span class="m">-Details sind beides Inline-
+        // Elemente -- ohne eigenes <br> dazwischen stehen Titel und
+        // Bezeichnung ohne Trennung in einer Zeile ("... Anordnunghauptseite
+        // ..."). Live beobachtet.
+        popupB = "<b>Zulässige Abstandsanordnung</b><span class=\"m\"><br>" +
           esc(bezeichnung) + "<br><br>" +
           "Eine von " + einzel.length + " Anordnungen, die die Bau- und Nutzungsordnung " +
           "zulässt. Welche davon gilt, entscheidet die Fassadenorientierung des noch " +
@@ -2664,8 +2686,10 @@ function zeichneErgebnisAufKarte(erg) {
             ? "<br>begrenzt durch " + esc(klartext(e.geschossflaeche_limitiert_durch)) : "") +
           "<br><br>Die Einordnung steht im Reiter Potenzial unter „Herleitung“.</span>";
       } else {
+        // Derselbe fehlende Zeilenumbruch wie oben: ohne <br> stand
+        // "Bebaubare Flächehauptseite_an_strasse" in einer Zeile.
         popupB = "<b>Bebaubare Fläche</b><span class=\"m\">" +
-          (name ? esc(bezeichnung) + "<br>" : "") +
+          (name ? "<br>" + esc(bezeichnung) + "<br>" : "") +
           "Baubereich " + fmt(e.baubereich_m2, 1) + " m²<br>" +
           "Fussabdruck " + fmt(e.fussabdruck_m2, 1) + " m²" +
           (e.fussabdruck_limitiert_durch
@@ -2910,11 +2934,21 @@ var reiterAktiv = "uebersicht";
    innerHTML-Schreiber mitgeloescht, ist die Karte tot und kommt erst mit
    einem Neuladen der Seite zurueck. Deshalb wohnt #map ausserhalb des
    Dossiers und wird nur fuer die Dauer des Kartenreiters hineingereicht --
-   und vor jedem Neuschreiben des Dossiers zurueckgeholt. */
+   und vor jedem Neuschreiben des Dossiers zurueckgeholt.
+
+   Die Ebenensteuerung (#layercard) wohnt aus demselben Grund dort und
+   wandert ebenso nur fuer die Dauer des Kartenreiters ins Dossier (siehe
+   zeigeReiter). Sie braucht dieselbe Rettung wie #map -- sonst haengt sie
+   beim zweiten renderDossier() noch im ALTEN Dossierinhalt und wird mit
+   diesem geloescht, obwohl die Karte selbst ueberlebt. Live beobachtet:
+   Ebenensteuerung verschwand nach der zweiten Analyse. */
 function parkeKarte() {
-  var karte = document.getElementById("map");
   var heim = document.getElementById("kartenheim");
-  if (karte && heim && karte.parentNode !== heim) heim.appendChild(karte);
+  if (!heim) return;
+  var karte = document.getElementById("map");
+  if (karte && karte.parentNode !== heim) heim.appendChild(karte);
+  var steuerung = document.getElementById("layercard");
+  if (steuerung && steuerung.parentNode !== heim) heim.appendChild(steuerung);
 }
 
 /* Der Wechsel von der Suchansicht in die Dossieransicht.
@@ -6822,12 +6856,33 @@ function secEntwurf(erg) {
       zoom = Math.max(0.12, Math.min(6.0, zoom * (e.deltaY > 0 ? 1.1 : 0.9)));
     }, { passive: false });
     window.addEventListener("resize", function () {
-      if (!renderer || !behaelter()) return;
-      var b = behaelter();
-      kamera.aspect = b.clientWidth / b.clientHeight;
-      kamera.updateProjectionMatrix();
-      renderer.setSize(b.clientWidth, b.clientHeight);
+      if (window.passe3DAn) window.passe3DAn();
     });
+    // ResizeObserver zusaetzlich zum "resize"-Ereignis: die Buehne steckt in
+    // einem Flex-Layout (rechtes Panel, Reiterwechsel) und kann ihre Groesse
+    // aendern, OHNE dass das Fenster selbst sein Mass aendert.
+    if (window.ResizeObserver && !el._groessenBeobachtet) {
+      el._groessenBeobachtet = true;
+      new ResizeObserver(function () {
+        if (window.passe3DAn) window.passe3DAn();
+      }).observe(el);
+    }
+    // Weder "resize" noch ResizeObserver sind hier ausreichend verlaesslich:
+    // geprueft und live beobachtet, dass eine PROGRAMMATISCHE Aenderung der
+    // Darstellungsgroesse (wie sie automatisierte Klicktests verwenden) das
+    // CSS-Layout zwar korrekt aendert, aber weder ein "resize"-Ereignis noch
+    // eine ResizeObserver-Benachrichtigung ausloest -- die Buehne blieb auf
+    // ihrer alten Groesse haengen, obwohl der Container laengst schmaler war.
+    // Ein leichtes Poll-Intervall ist die kleine, robuste Ergaenzung: es
+    // ruft nur denselben, bereits vorhandenen passe3DAn() an (der intern
+    // selbst prueft, ob sich die Groesse ueberhaupt geaendert hat), kostet
+    // im Ruhezustand also praktisch nichts und funktioniert unabhaengig
+    // davon, ob irgendein Ereignis feuert.
+    if (!window._d3GroessenPoll) {
+      window._d3GroessenPoll = setInterval(function () {
+        if (window.passe3DAn) window.passe3DAn();
+      }, 500);
+    }
     return true;
   }
 
