@@ -37,6 +37,7 @@ Pages selbst kann diesen Python-Code nicht direkt ausfuehren.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -57,7 +58,10 @@ from potenzial_engine import Analyse, analysiere_grundstueck, berechne_wirtschaf
 from potenzial_engine import sonnenstand
 from potenzial_engine.modul1_geodata import (
     Modul1Error, geocode_address, get_gwr_data, get_parcel_data)
-from potenzial_engine.modul2_bzo_analysis import Modul2Error
+from potenzial_engine.modul2_bzo_analysis import (
+    FEHLERART_DOKUMENTE_FEHLEN, FEHLERART_UNBEKANNT, REGLEMENT_COMPLETED, REGLEMENT_FAILED,
+    REGLEMENT_PENDING, REGLEMENT_RUNNING, Modul2Error, reglementstatus,
+)
 from potenzial_engine.modul3_financial import Modul3Error
 
 DEFAULT_PORT = 8787
@@ -159,6 +163,25 @@ _JOB_TTL_SECONDS = 30 * 60
 # ist einem Ausfall vorzuziehen.
 MAX_GLEICHZEITIGE_ANALYSEN = max(1, int(os.environ.get("MAX_GLEICHZEITIGE_ANALYSEN", "2")))
 _ANALYSE_PLAETZE = threading.BoundedSemaphore(MAX_GLEICHZEITIGE_ANALYSEN)
+
+# Eine Sperre je Schluessel des Reglement-Zwischenspeichers: zwei
+# gleichzeitige Analysen mit demselben Dokumentensatz sollen Gemini nur
+# einmal fragen -- die zweite wartet und trifft danach den Speicher. Die
+# Tabelle waechst nur um je einen Eintrag pro Dokumentensatz und Prozess.
+_BZO_SPERREN: dict[str, threading.Lock] = {}
+_BZO_SPERREN_LOCK = threading.Lock()
+
+
+def _bzo_sperre(schluessel: str) -> threading.Lock:
+    with _BZO_SPERREN_LOCK:
+        return _BZO_SPERREN.setdefault(schluessel, threading.Lock())
+
+
+def _reglement_setzen(job: dict, block: dict) -> None:
+    """Setzt den Reglementsstatus eines Jobs; `laeufe` zaehlt weiter.
+    Nur unter _JOBS_LOCK aufrufen."""
+    block["laeufe"] = (job.get("reglement") or {}).get("laeufe", 0)
+    job["reglement"] = block
 
 
 # Die Vergleichsobjekte liegen in der Datenschicht (kern), nicht in der
@@ -505,6 +528,21 @@ def _bzo_zwischenspeicher():
     )
 
     def lade(oereb, gemeinde=None, kanton=None):
+        # Alles, was hier schiefgeht, betrifft nur den Reglementsschritt --
+        # und wird deshalb als Modul2Error gemeldet. Sonst endete ein
+        # unerwarteter Fehler als Fehler der GANZEN Analyse, und die
+        # amtlichen Daten waeren fuer den Benutzer verloren.
+        try:
+            return _lade(oereb, gemeinde=gemeinde, kanton=kanton)
+        except Modul2Error:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            raise Modul2Error(f"Unerwarteter Fehler in der Reglementsauswertung: {exc}",
+                              fehlerart=FEHLERART_UNBEKANNT,
+                              detail=f"{type(exc).__name__}: {exc}") from exc
+
+    def _lade(oereb, gemeinde=None, kanton=None):
         kern_db, _ = _kern_projekt()
         speicher = None
         con = None
@@ -546,49 +584,59 @@ def _bzo_zwischenspeicher():
                     traceback.print_exc()
             # Kein Bestand und keine Dokumente: das ist ein Fehler, und er
             # wird als solcher weitergereicht. Kein Ersatzwert.
-            from potenzial_engine.modul2_bzo_analysis import Modul2Error
             raise Modul2Error(
                 "Keines der " + str(len(urls)) + " Reglementsdokumente war abrufbar, "
                 "und es liegt keine gespeicherte Auswertung fuer diese Gemeinde vor. "
-                "Details: " + repr(geholt["uebersprungen"][:3]))
+                "Details: " + repr(geholt["uebersprungen"][:3]),
+                fehlerart=FEHLERART_DOKUMENTE_FEHLEN)
 
         dokumente = [{"url": d["url"], "sha256": d["sha256"], "bytes": d["bytes"]}
                      for d in geholt["geladen"]]
         modul2_version = modul2_fingerabdruck()
         schluessel = None
-
-        # --- Nachschlagen ------------------------------------------------
         if speicher is not None and con is not None:
             try:
                 schluessel = speicher.fingerabdruck(
                     gemeinde, kanton, dokumente, modul2_version)
-                treffer = speicher.hole(con, schluessel)
-                if treffer is not None:
-                    return treffer
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
                 schluessel = None
 
-        # --- Auswerten ---------------------------------------------------
-        # Die Dokumente sind bereits geladen und werden durchgereicht --
-        # sie ein zweites Mal zu holen waere nur langsamer.
-        ergebnis = analyze_from_oereb_result(
-            oereb, gemeinde=gemeinde, kanton=kanton, backend="gemini",
-            dokumente=geholt)
-        ergebnis["_zwischenspeicher"] = {"aus_zwischenspeicher": False,
-                                         "gerechnet_am": _jetzt_iso(),
-                                         "modul2_version": modul2_version,
-                                         "dokumente": dokumente}
-        if speicher is not None and con is not None and schluessel:
-            try:
-                speicher.lege_ab(
-                    con, schluessel,
-                    gemeinde=gemeinde, kanton=kanton,
-                    dokumente=dokumente, modul2_version=modul2_version,
-                    ergebnis=ergebnis)
-            except Exception:  # noqa: BLE001
-                traceback.print_exc()
-        return ergebnis
+        # Nachschlagen und Auswerten unter derselben Sperre: wer wartet,
+        # trifft danach das Ergebnis des anderen statt Gemini ein zweites
+        # Mal zu fragen. Schlaegt der erste fehl, versucht es der zweite
+        # selbst -- Fehlschlaege werden nicht abgelegt.
+        with (_bzo_sperre(schluessel) if schluessel else contextlib.nullcontext()):
+            # --- Nachschlagen --------------------------------------------
+            if schluessel:
+                try:
+                    treffer = speicher.hole(con, schluessel)
+                    if treffer is not None:
+                        return treffer
+                except Exception:  # noqa: BLE001
+                    traceback.print_exc()
+                    schluessel = None
+
+            # --- Auswerten -----------------------------------------------
+            # Die Dokumente sind bereits geladen und werden durchgereicht --
+            # sie ein zweites Mal zu holen waere nur langsamer.
+            ergebnis = analyze_from_oereb_result(
+                oereb, gemeinde=gemeinde, kanton=kanton, backend="gemini",
+                dokumente=geholt)
+            ergebnis["_zwischenspeicher"] = {"aus_zwischenspeicher": False,
+                                             "gerechnet_am": _jetzt_iso(),
+                                             "modul2_version": modul2_version,
+                                             "dokumente": dokumente}
+            if schluessel:
+                try:
+                    speicher.lege_ab(
+                        con, schluessel,
+                        gemeinde=gemeinde, kanton=kanton,
+                        dokumente=dokumente, modul2_version=modul2_version,
+                        ergebnis=ergebnis)
+                except Exception:  # noqa: BLE001
+                    traceback.print_exc()
+            return ergebnis
 
     return lade
 
@@ -621,6 +669,12 @@ def _fortschritt_melder(job_id: str):
                     eintrag["seit"] = _jetzt_iso()
             if teilergebnis is not None:
                 job["teilergebnis"] = teilergebnis
+            # Fehler setzt der Aufrufer -- nur er kennt die Exception.
+            if schritt == "reglement" and stand == "laeuft":
+                _reglement_setzen(job, reglementstatus(REGLEMENT_RUNNING))
+                job["reglement"]["laeufe"] += 1
+            elif schritt == "reglement" and stand == "fertig":
+                _reglement_setzen(job, reglementstatus(REGLEMENT_COMPLETED))
 
     return melde
 
@@ -911,7 +965,8 @@ class Handler(BaseHTTPRequestHandler):
         # Oberflaeche ihre Fortschrittsanzeige, und das Teilergebnis erlaubt
         # ihr, Grundstueck und Karte schon zu zeigen, waehrend die
         # Reglementsauswertung noch laeuft.
-        stand = {"schritte": job.get("schritte") or []}
+        stand = {"schritte": job.get("schritte") or [],
+                 "reglement": job.get("reglement") or reglementstatus(REGLEMENT_PENDING)}
         if job.get("teilergebnis") is not None:
             stand["teilergebnis"] = job["teilergebnis"]
 
@@ -921,8 +976,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "status": "error", "fehler": job["fehler"], **stand})
         elif job["status"] == "teilweise":
             # Amtliche Daten vollstaendig, Reglementsauswertung fehlgeschlagen.
+            # Ob ein neuer Versuch lohnt, sagt die Fehlerart -- nicht pauschal.
             self._send_json({"ok": True, "status": "teilweise", "fehler": job["fehler"],
-                             "wiederholbar": True, **stand})
+                             "wiederholbar": bool(stand["reglement"].get("wiederholbar")),
+                             **stand})
         else:
             self._send_json({"ok": True, "status": "done", "ergebnis": job["ergebnis"], **stand})
 
@@ -1079,8 +1136,18 @@ class Handler(BaseHTTPRequestHandler):
             job = _JOBS.get(job_id)
             teil = job.get("teilergebnis") if job else None
         if job is None or not teil:
-            self._send_json({"ok": False, "fehler": "Zu dieser job_id liegt kein "
-                                                    "Teilergebnis vor."}, status=404)
+            # Auftraege leben nur im Speicher dieses Prozesses (30 min bzw.
+            # bis zum Neustart). Die amtlichen Daten sind bei einer neuen
+            # Analyse nach rund zehn Sekunden wieder da.
+            self._send_json({"ok": False, "fehlerart": "auftrag_unbekannt",
+                             "fehler": "Zu dieser job_id liegt kein Teilergebnis (mehr) vor -- "
+                                       "der Auftrag ist abgelaufen oder der Server wurde neu "
+                                       "gestartet. Bitte die Analyse neu starten."}, status=404)
+            return
+        if job.get("status") == "running":
+            # Doppelklick oder zweiter Tab: kein zweiter Lauf, derselbe Job.
+            self._send_json({"ok": True, "status": "running", "job_id": job_id,
+                             "reglement": job.get("reglement")})
             return
 
         modul1_result = job.get("modul1") or teil.get("modul1_geodaten")
@@ -1102,6 +1169,7 @@ class Handler(BaseHTTPRequestHandler):
         # Job und dieselbe job_id -- die Oberflaeche pollt einfach weiter.
         with _JOBS_LOCK:
             _JOBS[job_id].update(status="running", fehler=None)
+            _reglement_setzen(_JOBS[job_id], reglementstatus(REGLEMENT_RUNNING))
         threading.Thread(
             target=self._reglement_nachholen,
             args=(job_id, job, teil, modul1_result, oereb),
@@ -1133,17 +1201,30 @@ class Handler(BaseHTTPRequestHandler):
                 modul2_result = _bzo_zwischenspeicher()(oereb, gemeinde=gemeinde,
                                                         kanton=oereb.get("kanton"))
             except Exception as exc:  # noqa: BLE001
+                # Das Teilergebnis (amtliche Daten) bleibt unangetastet --
+                # nur der Reglementsschritt traegt den Fehler.
                 melde("reglement", "fehler", teil)
+                block = reglementstatus(REGLEMENT_FAILED, fehler=exc)
                 with _JOBS_LOCK:
-                    _JOBS[job_id].update(
-                        status="teilweise",
-                        fehler=f"Reglementsauswertung erneut fehlgeschlagen: {exc}")
+                    _reglement_setzen(_JOBS[job_id], block)
+                    _JOBS[job_id].update(status="teilweise", fehler=block["meldung"])
                 return
 
             melde("reglement", "fertig")
+            with _JOBS_LOCK:
+                _reglement_setzen(_JOBS[job_id],
+                                  reglementstatus(REGLEMENT_COMPLETED, ergebnis=modul2_result))
             melde("potenzial", "laeuft")
-            ergebnis = _potenzialkette(teil.get("adresse") or job.get("adresse") or "",
-                                       modul1_result, modul2_result)
+            try:
+                ergebnis = _potenzialkette(teil.get("adresse") or job.get("adresse") or "",
+                                           modul1_result, modul2_result)
+            except Exception:  # noqa: BLE001 -- sonst bliebe der Job fuer immer "running"
+                traceback.print_exc()
+                melde("potenzial", "fehler")
+                with _JOBS_LOCK:
+                    _JOBS[job_id].update(status="error", fehler="Unerwarteter Fehler bei der "
+                                                                "Analyse (siehe Server-Log).")
+                return
             melde("potenzial", "fertig", ergebnis)
             with _JOBS_LOCK:
                 _JOBS[job_id].update(status="done", ergebnis=ergebnis,
@@ -1890,6 +1971,7 @@ class Handler(BaseHTTPRequestHandler):
                 "fehler": None,
                 "kontext": None,
                 "adresse": adresse,
+                "reglement": {**reglementstatus(REGLEMENT_PENDING), "laeufe": 0},
             }
 
         thread = threading.Thread(
@@ -2004,6 +2086,9 @@ class Handler(BaseHTTPRequestHandler):
                     # muss sie hier mitspeichern -- sonst rechnet eine
                     # gespeicherte Analyse anders als eine frische.
                     with _JOBS_LOCK:
+                        _reglement_setzen(_JOBS[job_id], {
+                            **reglementstatus(REGLEMENT_COMPLETED),
+                            "versuche": 0, "aus_zwischenspeicher": True})
                         _JOBS[job_id].update(
                             status="done", ergebnis=gespeichert,
                             kontext={"modul1": gespeichert.get("modul1_geodaten"),
@@ -2053,10 +2138,14 @@ class Handler(BaseHTTPRequestHandler):
             # Benutzer musste die vollen zwei Minuten noch einmal warten.
             # Jetzt bleibt das Teilergebnis stehen und nur Modul 2 wird
             # wiederholt.
+            block = reglementstatus(REGLEMENT_FAILED, fehler=exc)
             with _JOBS_LOCK:
                 job = _JOBS[job_id]
-                job.update(status="teilweise" if job.get("teilergebnis") else "error",
-                           fehler=str(exc))
+                _reglement_setzen(job, block)
+                if job.get("teilergebnis"):
+                    job.update(status="teilweise", fehler=block["meldung"])
+                else:
+                    job.update(status="error", fehler=str(exc))
             return
         except (Modul1Error, Modul3Error) as exc:
             with _JOBS_LOCK:
@@ -2068,6 +2157,8 @@ class Handler(BaseHTTPRequestHandler):
                 _JOBS[job_id].update(status="error", fehler="Unerwarteter Fehler bei der Analyse (siehe Server-Log).")
             return
         with _JOBS_LOCK:
+            _reglement_setzen(_JOBS[job_id], reglementstatus(
+                REGLEMENT_COMPLETED, ergebnis=analyse.kontext.get("modul2") or {}))
             _JOBS[job_id].update(status="done", ergebnis=analyse.ergebnis, kontext=analyse.kontext)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 -- http.server API
