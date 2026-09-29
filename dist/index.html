@@ -158,6 +158,54 @@ img { max-width: 100%; }
 }
 .kartenbuehne #map { position: absolute; inset: 0; }
 
+/* --- Gemeinsame Huelle: Arbeitsflaeche links, Werkzeuge/Details rechts -
+   Karte (Analyseebene) und 3D-Entwurf (Projektierungsebene) teilen diese
+   Grundstruktur, statt je eine Buehne mit einer langen Boxenreihe darunter
+   zu sein. Bewusst EINE Huelle statt eigener Dateien: das Frontend bleibt
+   in dist/index.html. */
+.werkflaeche { display: flex; align-items: flex-start; gap: 16px; }
+.wf-buehne { flex: 1 1 auto; min-width: 0; }
+.wf-panel {
+  flex: 0 0 328px; width: 328px;
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 2px;
+}
+.wf-panel .accordion {
+  border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg-2);
+  overflow: hidden;
+}
+.wf-panel .accordion > summary {
+  list-style: none; cursor: pointer; padding: 9px 12px; font-weight: 700;
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  display: flex; align-items: center; gap: 8px; color: var(--ink-2);
+}
+.wf-panel .accordion > summary::-webkit-details-marker { display: none; }
+.wf-panel .accordion > summary::after { content: "\25B8"; margin-left: auto; color: var(--ink-3); }
+.wf-panel .accordion[open] > summary::after { content: "\25BE"; }
+.wf-panel .accordion > .accbody { padding: 2px 12px 12px; border-top: 1px solid var(--line-2); }
+.wf-inspektor-leer { font-size: 12px; color: var(--ink-3); padding: 9px 11px;
+  border: 1px dashed var(--line); border-radius: 8px; }
+.wf-inspektor-kopf { font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink-3); margin-bottom: 6px; }
+
+/* Auf der Buehne selbst schwebende Steuerung -- ergaenzt die bestehende
+   Maus-/Gestenbedienung, ersetzt sie nicht. */
+.wf-buehnensteuer {
+  position: absolute; right: 12px; bottom: 12px; z-index: 5;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.wf-buehnenknopf {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink-2);
+  font-size: 16px; line-height: 1; cursor: pointer; box-shadow: var(--shadow-s);
+}
+.wf-buehnenknopf:hover { border-color: var(--ink-3); color: var(--ink); }
+
+@media (max-width: 980px) {
+  .werkflaeche { flex-direction: column; }
+  .wf-panel { flex: none; width: 100%; max-height: none; }
+}
+
 @media (max-width: 1100px) {
   .dossier { flex-basis: 400px; width: 400px; }
 }
@@ -797,6 +845,11 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s; }
 .szbtn:hover { border-color: var(--ink-3); }
 .szbtn.aktiv { border-color: var(--ink); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--ink); }
+/* Fuer einen Versuch, der technisch moeglich, aber nicht als normale
+   Wiederholung zu verstehen ist (nicht wiederholbarer Fehler) -- bewusst
+   zurueckhaltender als der normale .szbtn. */
+.szbtn.muted { border-style: dashed; color: var(--ink-3); background: var(--panel-2); }
+.szbtn.muted:hover { border-color: var(--ink-3); color: var(--ink-2); }
 .szaktion { margin-top: 10px; }
 .card.szenario .szgrund { margin: 6px 0 10px; font-size: 13px; line-height: 1.5; }
 .pjleiste { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px;
@@ -932,9 +985,11 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
   margin-bottom: 4px; cursor: pointer; font-variant-numeric: tabular-nums; }
 .ekliste li.an { border-color: var(--accent); background: var(--accent-soft); }
 .ekinhalt { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.ekdetail { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 10px 20px; padding: 10px 12px; border: 1px solid var(--line);
-  border-radius: 8px; background: var(--bg-2); }
+/* Drei Akkordeons uebereinander statt zwei Spalten nebeneinander -- die
+   Tafel wohnt jetzt in der schmalen rechten Spalte, nicht mehr auf voller
+   Breite unter der Buehne. */
+.ekdetail { display: flex; flex-direction: column; gap: 8px; }
+.ekdetail .accbody { padding-top: 8px; }
 .ekkopf { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
   color: var(--ink-2); font-weight: 700; }
 .ekunter { font-size: 10.5px; color: var(--ink-3); margin-bottom: 6px; }
@@ -1193,6 +1248,17 @@ var STIL = {
   restrikt:  { color: "#b4661a", weight: 2,   fillColor: "#b4661a", fillOpacity: .22, dashArray: "6,3" },
   bestand:   { color: "#6b7280", weight: 2,   fillColor: "#6b7280", fillOpacity: .45 }
 };
+/* Die rechte Spalte des Kartenreiters: derselbe Inhalt, der schon als
+   Popup an der Flaeche haengt, landet zusaetzlich hier -- kein zweiter,
+   eigener Text, der vom Popup abweichen koennte. Existiert das Panel
+   nicht (anderer Reiter, z.B. Kombination/Screening auf derselben Karte),
+   ist der Aufruf folgenlos. */
+function zeigeKarteninfo(html) {
+  var ziel = document.getElementById("karte-inspektor");
+  if (!ziel || !html) return;
+  ziel.innerHTML = html;
+}
+
 var selektiert = null;
 function selektiere(layer, sectionId) {
   if (selektiert && selektiert !== layer && selektiert.setStyle && selektiert._basisStil) {
@@ -1205,6 +1271,9 @@ function selektiere(layer, sectionId) {
       fillOpacity: Math.min(.55, (layer._basisStil.fillOpacity || .2) + .18)
     });
     if (layer.bringToFront) layer.bringToFront();
+  }
+  if (layer && layer.getPopup && layer.getPopup()) {
+    zeigeKarteninfo(layer.getPopup().getContent());
   }
   void sectionId;
 }
@@ -1348,11 +1417,16 @@ map.on("click", function (ev) {
   if (pickMarker) map.removeLayer(pickMarker);
   pickMarker = L.circleMarker(ev.latlng, { radius: 6, color: "#0d5c68", weight: 2, fillColor: "#fff", fillOpacity: 1 })
     .addTo(map).bindPopup("<b>Abfrage läuft …</b>").openPopup();
+  zeigeKarteninfo("<b>Abfrage läuft …</b>");
   var lv = wgs84ToLv95(ev.latlng.lat, ev.latlng.lng);
   fetch("/api/pick?e=" + lv[0].toFixed(1) + "&n=" + lv[1].toFixed(1))
     .then(function (x) { return x.json(); })
     .then(function (r) {
-      if (!r.ok) { pickMarker.setPopupContent("<b>Keine Daten an dieser Stelle.</b>"); return; }
+      if (!r.ok) {
+        pickMarker.setPopupContent("<b>Keine Daten an dieser Stelle.</b>");
+        zeigeKarteninfo("<b>Keine Daten an dieser Stelle.</b>");
+        return;
+      }
       var pz = r.parzelle || {}, gw = r.gwr || {}, zeilen = [];
       if (pz.found) {
         zeilen.push('<span class="m">Parzelle ' + esc(pz.parzellennummer) + " · " +
@@ -1368,9 +1442,14 @@ map.on("click", function (ev) {
         if (gw.gebaeudevolumen_m3) g.push(fmt(gw.gebaeudevolumen_m3) + " m³");
         zeilen.push('<span class="m">Gebäude: ' + (g.length ? esc(g.join(" · ")) : "GWR ohne Kennwerte") + "</span>");
       }
-      pickMarker.setPopupContent("<b>Direktabfrage</b>" + zeilen.join("<br>"));
+      var inhalt = "<b>Direktabfrage</b>" + zeilen.join("<br>");
+      pickMarker.setPopupContent(inhalt);
+      zeigeKarteninfo(inhalt);
     })
-    .catch(function () { pickMarker.setPopupContent("<b>Abfrage fehlgeschlagen.</b>"); });
+    .catch(function () {
+      pickMarker.setPopupContent("<b>Abfrage fehlgeschlagen.</b>");
+      zeigeKarteninfo("<b>Abfrage fehlgeschlagen.</b>");
+    });
 });
 
 /* ===================== Parzellenkombination A vs. A+B =====================
@@ -2222,40 +2301,78 @@ var SCHRITT_KURZ = {
 };
 function kurzSchritt(t) { return SCHRITT_KURZ[t] || t; }
 
-function standLeiste(schritte, fehler) {
+/* Zwei Fehlerzustaende, zwei Darstellungen -- nicht Wortspiel, sondern
+   Handlungsanweisung an den Benutzer:
+
+   temporarily_unavailable: ein spaeterer Versuch kann gelingen (Rate-Limit,
+   ueberlasteter Dienst, Timeout, Netzwerk...). Der Wiederholen-Knopf ist
+   eine normale, sinnvolle Handlung.
+
+   failed: ein neuer Versuch wird aller Voraussicht nach dasselbe Ergebnis
+   liefern (fehlende Dokumente, blockierte Antwort, fehlende Konfiguration).
+   Der Knopf bleibt technisch nutzbar (derselbe Endpunkt), darf aber nicht
+   wie eine normale Wiederholung aussehen.
+
+   Was hier NICHT steht: eine eigene Formulierung des Fehlergrunds. Die
+   liefert der Server bereits fertig in reglement.meldung. */
+function reglementNote(reglement) {
+  reglement = reglement || {};
+  var status = reglement.status;
+  if (status !== "temporarily_unavailable" && status !== "failed") return "";
+  // Ton und Knopf folgen AUSSCHLIESSLICH wiederholbar, nicht dem
+  // Status-String: nur ein explizites true zeigt den normalen Knopf und
+  // die "vorübergehend"-Formulierung. Alles andere (false, fehlend) gilt
+  // als endgueltig -- so entsteht nie eine Zusicherung, die nicht gedeckt ist.
+  var wiederholbar = reglement.wiederholbar === true;
+  var titel = wiederholbar
+    ? "Reglementsauswertung vorübergehend nicht verfügbar."
+    : "Reglementsauswertung nicht möglich.";
+  var label = wiederholbar ? "Reglementsauswertung wiederholen" : "Trotzdem erneut versuchen";
+
+  return '<div class="note ' + (wiederholbar ? "warn" : "stop") + '">' +
+    '<b>' + esc(titel) + '</b> ' +
+    'Amtliche Grundstücks- und Geometriedaten wurden erfolgreich erhoben — es fehlt nur ' +
+    'die Auswertung der Bau- und Nutzungsordnung.' +
+    (reglement.meldung ? '<br>' + esc(reglement.meldung) : "") +
+    '<div class="szwahl">' +
+      '<button class="szbtn' + (wiederholbar ? "" : " muted") + '" id="reglement-nochmal">' +
+      esc(label) + '</button>' +
+    "</div>" +
+    (reglement.detail
+      ? '<details class="more"><summary>Technische Details</summary>' +
+        '<div class="qsyst">' + esc(reglement.detail) + "</div></details>"
+      : "") +
+  "</div>";
+}
+
+function standLeiste(schritte, reglement) {
   schritte = alsListe(schritte);
   if (!schritte.length) return "";
   var offen = schritte.filter(function (s) { return s.stand !== "fertig"; });
   var fertig = !offen.length;
+  var gestoert = reglement && (reglement.status === "temporarily_unavailable" || reglement.status === "failed");
 
   // Ist alles fertig und nichts schiefgegangen, verschwindet die Leiste.
   // Ein dauerhaftes "Analyse vollstaendig" ist keine Information, sondern
   // eine Zeile, die dem Ergebnis Platz wegnimmt.
-  if (fertig && !fehler) return "";
+  if (fertig && !gestoert) return "";
 
-  return '<div class="ladestand' + (fehler ? " gestoert" : "") + '" id="ladestand">' +
+  return '<div class="ladestand' + (gestoert ? " gestoert" : "") + '" id="ladestand">' +
     '<div class="lsliste">' +
-      '<span class="lspraefix">' + (fehler ? "Nicht vollständig" : "Läuft") + "</span>" +
+      '<span class="lspraefix">' + (gestoert ? "Nicht vollständig" : "Läuft") + "</span>" +
       schritte.map(function (s) {
         var st = s.stand || "offen";
         return '<span class="lsschritt ' + st + '" title="' + esc(s.bezeichnung) + '">' +
           '<i>' + (STAND_SYMBOL[st] || "·") + "</i>" + esc(kurzSchritt(s.bezeichnung)) + "</span>";
       }).join("") +
     "</div>" +
-    (fehler
-      ? '<div class="note stop"><b>Die Reglementsauswertung ist fehlgeschlagen.</b> ' +
-        esc(fehler) + '<br>Die amtlichen Daten oben bleiben gültig — es fehlt nur ' +
-        'die Auswertung der Bau- und Nutzungsordnung. Ein neuer Versuch holt ' +
-        'ausschliesslich diesen Schritt nach, nicht die ganze Analyse.' +
-        '<div class="szwahl"><button class="szbtn" id="reglement-nochmal">' +
-        'Reglementsauswertung wiederholen</button></div></div>'
-      : "") +
+    reglementNote(reglement) +
   "</div>";
 }
 
-function zeigeStand(schritte, fehler) {
+function zeigeStand(schritte, reglement) {
   var vorhanden = document.getElementById("ladestand");
-  var html = standLeiste(schritte, fehler);
+  var html = standLeiste(schritte, reglement);
   if (!html) return;
   if (vorhanden) {
     vorhanden.outerHTML = html;
@@ -2274,7 +2391,13 @@ function reglementWiederholen() {
     body: JSON.stringify({ job_id: jobIdAktuell })
   }).then(function (a) {
     if (!a.ok) {
-      zeigeStand(letzteSchritte, a.fehler || "Erneut fehlgeschlagen.");
+      // Kein reglement-Objekt vom Server (technischer Abbruch VOR dem
+      // eigentlichen Auswertungsversuch, z.B. abgelaufene job_id) -- eines
+      // minimal nachbauen, damit dieselbe Darstellung greift.
+      zeigeStand(letzteSchritte, {
+        status: "failed", wiederholbar: false,
+        meldung: a.fehler || "Erneut fehlgeschlagen."
+      });
       return;
     }
     // Der Aufruf wartet NICHT mehr auf das Ergebnis, er stoesst nur an.
@@ -2340,7 +2463,7 @@ function pollStatus(jobId) {
           zeichneErgebnisAufKarte(data.teilergebnis);
           renderDossier(data.teilergebnis);
         }
-        if (teilGezeigt) zeigeStand(letzteSchritte, data.status === "teilweise" ? data.fehler : null);
+        if (teilGezeigt) zeigeStand(letzteSchritte, data.reglement);
 
         if (data.status === "error") {
           stopLoading();
@@ -2348,7 +2471,7 @@ function pollStatus(jobId) {
           resolve(); return;
         }
         if (data.status === "teilweise") {
-          // Amtliche Daten vollstaendig, Reglementsauswertung fehlgeschlagen.
+          // Amtliche Daten vollstaendig, Reglementsauswertung (vorerst) nicht moeglich.
           stopLoading();
           resolve(); return;
         }
@@ -2357,7 +2480,7 @@ function pollStatus(jobId) {
           ergebnisAktuell = data.ergebnis;
           zeichneErgebnisAufKarte(data.ergebnis);
           renderDossier(data.ergebnis);
-          zeigeStand(letzteSchritte);
+          zeigeStand(letzteSchritte, data.reglement);
           resolve();
           return;
         }
@@ -3176,13 +3299,25 @@ function secUebersicht(erg, m1, zz) {
 function secKarte() {
   return '<section class="sec" id="sec-karte">' +
     '<div class="sechead"><h3>Karte</h3></div>' +
-    '<div class="kartenbuehne" id="kartenbuehne"></div>' +
-    '<div class="note">Beim Öffnen sind Parzelle und Baubereich eingeblendet. ' +
-    'Zonen, Restriktionen, Bestand und Szenario lassen sich dazuschalten — ' +
-    'alle gleichzeitig machen die Karte unlesbar. Ein Klick auf eine Fläche zeigt, ' +
-    'worum es sich handelt; ein Klick auf freie Fläche fragt die amtlichen Daten an ' +
-    'dieser Stelle direkt ab.</div>' +
-    '<div id="karte-steuerung"></div>' +
+    '<div class="werkflaeche">' +
+      '<div class="wf-buehne">' +
+        '<div class="kartenbuehne" id="kartenbuehne"></div>' +
+        '<div class="note">Beim Öffnen sind Parzelle und Baubereich eingeblendet. ' +
+        'Zonen, Restriktionen, Bestand und Szenario lassen sich rechts dazuschalten — ' +
+        'alle gleichzeitig machen die Karte unlesbar. Ein Klick auf eine Fläche zeigt rechts, ' +
+        'worum es sich handelt; ein Klick auf freie Fläche fragt die amtlichen Daten an ' +
+        'dieser Stelle direkt ab.</div>' +
+      "</div>" +
+      '<div class="wf-panel">' +
+        '<div id="karte-steuerung"></div>' +
+        '<details class="accordion" open><summary>Auswahl</summary>' +
+          '<div class="accbody" id="karte-inspektor">' +
+            '<div class="wf-inspektor-leer">Grundstück, Baubereich, Restriktion, Baulinie oder ' +
+            'freie Fläche anklicken, um Details zu sehen.</div>' +
+          "</div>" +
+        "</details>" +
+      "</div>" +
+    "</div>" +
   "</section>";
 }
 
@@ -6391,61 +6526,98 @@ function secEntwurf(erg) {
   return '<section class="sec" id="sec-entwurf">' + kopf +
     '<div class="note">Realer Bestand, reales Gelände, reale Nachbarschaft — und darüber ' +
     'Ihr <b>Projektkörper</b> als Drahtmodell. Eine Projektstudie, keine Baubewilligung: ' +
-    'die linke Spalte der Tafel ist Ihre Geometrie, die rechte der Befund der Engine. ' +
-    'Volumen aus einem berechneten Szenario bleiben davon getrennt — ist deren Höhe ' +
-    'unbekannt, werden sie flach dargestellt statt geraten.</div>' +
-    wahl + hinweisOhneKoerper +
-    '<div class="d3steuer">' +
-      '<div class="d3gruppe"><span class="d3titel">Bestand</span>' +
-        d3schalter("terrain", "Terrain") + d3schalter("gebaeude", "Gebäude") +
-        d3schalter("strassen", "Strassen") + "</div>" +
-      '<div class="d3gruppe"><span class="d3titel">Grundstück</span>' +
-        d3schalter("parzelle", "Parzellengrenze") +
-        d3schalter("korridor", "Abstandskorridor") + "</div>" +
-      '<div class="d3gruppe"><span class="d3titel">Baurecht</span>' +
-        d3schalter("baubereich", "Baubereich") + d3schalter("baulinien", "Baulinien") +
-        d3schalter("restriktionen", "Restriktionen") + "</div>" +
-      '<div class="d3gruppe"><span class="d3titel">Projekt</span>' +
-        d3schalter("projekt", "Szenarienkörper") +
-        d3schalter("entwurf", "Projektstudie") + "</div>" +
-      '<div class="d3gruppe"><span class="d3titel">Entwerfen</span>' +
-        '<button class="m3knopf m3haupt" id="entwurf-neu">+ Baukörper</button>' + "</div>" +
-      '<div class="d3gruppe"><span class="d3titel">Blickrichtung</span>' +
-        '<button class="m3knopf" data-blick="sued">Süd</button>' +
-        '<button class="m3knopf" data-blick="west">West</button>' +
-        '<button class="m3knopf" data-blick="nord">Nord</button>' +
-        '<button class="m3knopf" data-blick="ost">Ost</button>' +
-        '<button class="m3knopf" data-blick="oben">Aufsicht</button>' +
-        '<button class="m3knopf m3neben" data-blick="start">Zurücksetzen</button>' + "</div>" +
-      '<div class="d3gruppe"><span class="d3titel">Analyse</span>' +
-        '<label class="d3opt"><input type="checkbox" id="sonne-an">Sonne &amp; Schatten</label>' +
-        '<button class="m3knopf" data-mess="distanz">Distanz</button>' +
-        '<button class="m3knopf" data-mess="flaeche">Fläche</button>' +
-        '<button class="m3knopf" data-mess="hoehe">Höhe</button>' +
-        '<button class="m3knopf" data-mess="punkt">Punkt</button>' +
-        '<button class="m3knopf m3neben" id="mess-abschliessen" hidden>Messung beenden</button>' +
-        '<button class="m3knopf m3neben" id="mess-reset">Zurücksetzen</button>' +
+    'links die Bühne, rechts der Inspektor — oben darin Ihre Geometrie, darunter der ' +
+    'Befund der Engine. Volumen aus einem berechneten Szenario bleiben davon getrennt — ' +
+    'ist deren Höhe unbekannt, werden sie flach dargestellt statt geraten.</div>' +
+    hinweisOhneKoerper +
+    '<div class="werkflaeche">' +
+      '<div class="wf-buehne">' +
+        wahl +
+        '<div class="v3rahmen">' +
+          '<div id="view3d"></div>' +
+          '<div id="view3d-schilder"></div>' +
+          '<div class="wf-buehnensteuer">' +
+            '<button type="button" class="wf-buehnenknopf" id="d3-zoom-in" ' +
+              'title="Vergrössern">+</button>' +
+            '<button type="button" class="wf-buehnenknopf" id="d3-zoom-out" ' +
+              'title="Verkleinern">−</button>' +
+            '<button type="button" class="wf-buehnenknopf" data-blick="start" ' +
+              'title="Ansicht zurücksetzen">⌂</button>' +
+          "</div>" +
+        "</div>" +
+        '<div id="view3d-legende"></div>' +
+        '<div class="note">Ziehen dreht, Scrollen zoomt, <b>Rechtsklick ziehen</b> oder ' +
+        '<b>Umschalt + ziehen</b> verschiebt den Blickpunkt. Der Mittelpunkt liegt beim ' +
+        'Grundstück. Die Knöpfe rechts unten auf der Bühne ergänzen das nur — Maus und ' +
+        'Touch bleiben wie gewohnt.</div>' +
+      "</div>" +
+      '<div class="wf-panel">' +
+        '<details class="accordion" open><summary>Ebenen</summary><div class="accbody">' +
+          '<div class="d3steuer">' +
+            '<div class="d3gruppe"><span class="d3titel">Bestand</span>' +
+              d3schalter("terrain", "Terrain") + d3schalter("gebaeude", "Gebäude") +
+              d3schalter("strassen", "Strassen") + "</div>" +
+            '<div class="d3gruppe"><span class="d3titel">Grundstück</span>' +
+              d3schalter("parzelle", "Parzellengrenze") +
+              d3schalter("korridor", "Abstandskorridor") + "</div>" +
+            '<div class="d3gruppe"><span class="d3titel">Baurecht</span>' +
+              d3schalter("baubereich", "Baubereich") + d3schalter("baulinien", "Baulinien") +
+              d3schalter("restriktionen", "Restriktionen") + "</div>" +
+            '<div class="d3gruppe"><span class="d3titel">Projekt</span>' +
+              d3schalter("projekt", "Szenarienkörper") +
+              d3schalter("entwurf", "Projektstudie") + "</div>" +
+          "</div>" +
+        "</div></details>" +
+        '<details class="accordion"><summary>Blickrichtung</summary><div class="accbody">' +
+          '<div class="d3steuer">' +
+            '<div class="d3gruppe">' +
+              '<button class="m3knopf" data-blick="sued">Süd</button>' +
+              '<button class="m3knopf" data-blick="west">West</button>' +
+              '<button class="m3knopf" data-blick="nord">Nord</button>' +
+              '<button class="m3knopf" data-blick="ost">Ost</button>' +
+              '<button class="m3knopf" data-blick="oben">Aufsicht</button>' +
+              '<button class="m3knopf m3neben" data-blick="start">Zurücksetzen</button>' +
+            "</div>" +
+          "</div>" +
+        "</div></details>" +
+        '<details class="accordion"><summary>Werkzeuge</summary><div class="accbody">' +
+          '<div class="d3steuer">' +
+            '<div class="d3gruppe"><span class="d3titel">Entwerfen</span>' +
+              '<button class="m3knopf m3haupt" id="entwurf-neu">+ Baukörper</button>' + "</div>" +
+            '<div class="d3gruppe"><span class="d3titel">Analyse</span>' +
+              '<label class="d3opt"><input type="checkbox" id="sonne-an">Sonne &amp; Schatten</label>' +
+            "</div>" +
+            '<div class="d3gruppe"><span class="d3titel">Messen</span>' +
+              '<button class="m3knopf" data-mess="distanz">Distanz</button>' +
+              '<button class="m3knopf" data-mess="flaeche">Fläche</button>' +
+              '<button class="m3knopf" data-mess="hoehe">Höhe</button>' +
+              '<button class="m3knopf" data-mess="punkt">Punkt</button>' +
+              '<button class="m3knopf m3neben" id="mess-abschliessen" hidden>Messung beenden</button>' +
+              '<button class="m3knopf m3neben" id="mess-reset">Zurücksetzen</button>' +
+            "</div>" +
+          "</div>" +
+          '<div class="s3leiste" id="sonne-regler" hidden>' +
+            '<label class="d3opt">Datum <input type="date" id="sonne-datum"></label>' +
+            '<button class="m3knopf" id="sonne-heute">Heute</button>' +
+            '<input type="range" id="sonne-zeit" min="0" max="144" value="72" step="1">' +
+            '<button class="m3knopf" id="sonne-play">▶ Ablauf</button>' +
+            '<span class="s3info" id="sonne-info"></span>' +
+            '<span class="s3zeiten" id="sonne-zeiten"></span>' +
+          "</div>" +
+          '<div class="m3tafel"><span class="m3hinweis" id="mess-hinweis"></span>' +
+            '<div id="mess-liste"></div></div>' +
+        "</div></details>" +
+        '<details class="accordion" open><summary>Varianten</summary><div class="accbody">' +
+          '<div id="entwurf-varianten"></div>' +
+        "</div></details>" +
+        '<details class="accordion"><summary>Baurecht im Raum</summary><div class="accbody">' +
+          '<div id="entwurf-recht"></div>' +
+        "</div></details>" +
+        '<details class="accordion" open><summary>Projektkörper</summary><div class="accbody">' +
+          '<div id="entwurf-tafel" class="ektafel"></div>' +
+        "</div></details>" +
       "</div>" +
     "</div>" +
-    '<div class="s3leiste" id="sonne-regler" hidden>' +
-      '<label class="d3opt">Datum <input type="date" id="sonne-datum"></label>' +
-      '<button class="m3knopf" id="sonne-heute">Heute</button>' +
-      '<input type="range" id="sonne-zeit" min="0" max="144" value="72" step="1">' +
-      '<button class="m3knopf" id="sonne-play">▶ Ablauf</button>' +
-      '<span class="s3info" id="sonne-info"></span>' +
-      '<span class="s3zeiten" id="sonne-zeiten"></span>' +
-    "</div>" +
-    '<div id="entwurf-varianten"></div>' +
-    '<div id="entwurf-recht"></div>' +
-    '<div class="v3rahmen"><div id="view3d"></div>' +
-      '<div id="view3d-schilder"></div></div>' +
-    '<div id="entwurf-tafel" class="ektafel"></div>' +
-    '<div class="m3tafel"><span class="m3hinweis" id="mess-hinweis"></span>' +
-      '<div id="mess-liste"></div></div>' +
-    '<div id="view3d-legende"></div>' +
-    '<div class="note">Ziehen dreht, Scrollen zoomt, <b>Rechtsklick ziehen</b> oder ' +
-    '<b>Umschalt + ziehen</b> verschiebt den Blickpunkt. Der Mittelpunkt liegt beim ' +
-    'Grundstück.</div>' +
   "</section>";
 }
 
@@ -8852,9 +9024,14 @@ function secEntwurf(erg) {
     var k = entwurfVon(entwurfGewaehlt);
     var detail = "";
     if (k) {
+      // Drei Gruppen statt zwei Spalten: Geometrie ist Ihre Eingabe,
+      // Fachliche Pruefung der Befund der Engine dazu, Flaechenmodell die
+      // daraus abgeleiteten SIA-416-Werte -- drei verschiedene Fragen,
+      // drei eigene, einzeln auf- und zuklappbare Bereiche statt einer
+      // langen Spalte.
       detail =
         '<div class="ekdetail">' +
-          '<div class="ekspalte"><div class="ekkopf">Projektstudie</div>' +
+          '<details class="accordion" open><summary>Geometrie</summary><div class="accbody">' +
             '<div class="ekunter">aus der gezeichneten Geometrie</div>' +
             ekFeld("Breite", "breite", k.breite.toFixed(1), "0.5", "m") +
             ekFeld("Tiefe", "tiefe", k.tiefe.toFixed(1), "0.5", "m") +
@@ -8862,12 +9039,14 @@ function secEntwurf(erg) {
             ekFeld("Geschosse", "geschosse", k.geschosse, "1", "") +
             ekFeld("Geschosshöhe", "geschosshoehe", k.geschosshoehe.toFixed(2), "0.1", "m") +
             '<div id="entwurf-werte"></div>' +
-          "</div>" +
-          '<div class="ekspalte"><div class="ekkopf">Fachliche Prüfung</div>' +
+          "</div></details>" +
+          '<details class="accordion" open><summary>Fachliche Prüfung</summary><div class="accbody">' +
             '<div class="ekunter">aus der Engine bzw. eindeutiger Geometrie</div>' +
             '<div id="entwurf-pruef"></div>' +
+          "</div></details>" +
+          '<details class="accordion"><summary>Flächenmodell</summary><div class="accbody">' +
             '<div id="entwurf-flaechen"></div>' +
-          "</div>" +
+          "</div></details>" +
         "</div>";
     }
 
@@ -9174,6 +9353,13 @@ function secEntwurf(erg) {
     // eine Richtung waehlt, will den Ausschnitt behalten, den er sich
     // gerade zurechtgeschoben hat.
     if (b.zurueck && blickpunkt) blickpunkt.set(0, 0, 0);
+  };
+
+  // Dieselbe Klemme wie das Mausrad (siehe "wheel"-Horcher oben) -- die
+  // Knoepfe auf der Buehne sind eine zweite Bedienung fuer denselben
+  // Zoom, keine eigene Logik.
+  window.aendereZoom = function (faktor) {
+    zoom = Math.max(0.12, Math.min(6.0, zoom * faktor));
   };
 
   /* Die Buehne misst sich nur beim Anlegen und bei resize.
@@ -9568,6 +9754,21 @@ function verdrahte3DSteuerung() {
       if (window.setze3DBlick) window.setze3DBlick(b.dataset.blick);
     });
   });
+  // Auf-der-Buehne-Zoom -- ergaenzt Mausrad/Pinch, ersetzt sie nicht.
+  var zoomEin = document.getElementById("d3-zoom-in");
+  if (zoomEin && !zoomEin._verdrahtet) {
+    zoomEin._verdrahtet = true;
+    zoomEin.addEventListener("click", function () {
+      if (window.aendereZoom) window.aendereZoom(0.9);
+    });
+  }
+  var zoomAus = document.getElementById("d3-zoom-out");
+  if (zoomAus && !zoomAus._verdrahtet) {
+    zoomAus._verdrahtet = true;
+    zoomAus.addEventListener("click", function () {
+      if (window.aendereZoom) window.aendereZoom(1.1);
+    });
+  }
   document.querySelectorAll(".d3box").forEach(function (box) {
     if (box._verdrahtet) return;
     box._verdrahtet = true;
