@@ -769,6 +769,30 @@ def test_aushub_haengt_am_fussabdruck() -> None:
         {"bezeichnung": "AT", "flaeche_m2": 120.0, "zaehlt_als_vollgeschoss": False})
     pruefe(w._fussabdruck_aus(mit_attika) == FUSS,
            "ein kleineres Attikageschoss aendert den Fussabdruck nicht")
+
+    # 7. Nicht jedes Szenario hat eine Baugrube -- und nicht bei jedem
+    #    beschreibt der Geschossaufbau den NEUEN Baukoerper. Live gesehen:
+    #    Anbau, Aufstockung und Bestand+Neubau tragen den Geschossaufbau des
+    #    ganzen zulaessigen Baukoerpers, waehrend ihre Zusatzflaeche nur ein
+    #    Bruchteil davon ist. Dessen Fussabdruck waere dort die falsche Grube.
+    def aushub_von(sid: str) -> dict:
+        erg = w.berechne_fuer_szenario(
+            {"id": sid, "bezeichnung": sid, "machbarkeit": "eingeschraenkt_moeglich",
+             "flaechen": aufbau(3)}, 1200.0, markt())
+        return {p["schluessel"]: p for p in erg["kosten"]["positionen"]}["bkp1_aushub"]
+
+    pruefe(aushub_von("ersatzneubau")["betrag_chf"] == ERWARTET,
+           "Ersatzneubau: die Grube des neuen Gebaeudes")
+    for sid in ("aufstockung", "dachausbau", "sanierung", "bestand"):
+        a = aushub_von(sid)
+        pruefe(a["betrag_chf"] == 0 and "Keine Baugrube" in a["begruendung"],
+               f"{sid}: keine Baugrube, und das steht als Grund da")
+    for sid in ("anbau", "bestand_plus_neubau"):
+        a = aushub_von(sid)
+        pruefe(a["betrag_chf"] is None and a["herkunft"] == "nicht_bestimmbar"
+               and "hinzukommenden Teil" in a["begruendung"],
+               f"{sid}: der Fussabdruck des neuen Teils ist unbekannt -- offen statt "
+               f"die Grube des ganzen Baukoerpers")
     print()
 
 
