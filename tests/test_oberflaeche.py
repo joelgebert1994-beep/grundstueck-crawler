@@ -1240,6 +1240,18 @@ def test_baurechtsgrenzen_raeumlich(s: str) -> None:
     pruefe("function grenzabstandBefund(k)" in s
            and "function pruefeGrenzabstand(k) { return grenzabstandBefund(k); }" in s,
            "ein Befund, zwei Verbraucher: Tafel und Szene koennen nicht auseinanderlaufen")
+    # naehesteVerbindung() misst reine Streckengeometrie zu jeder Kante --
+    # ihr ist gleichgueltig, auf welcher Seite der Koerper liegt. Ohne diese
+    # Vorpruefung konnte ein Koerper VOLLSTAENDIG ausserhalb der Parzelle zu
+    # einer einzelnen, zufaellig weit entfernten Kante "eingehalten" zeigen,
+    # waehrend die Baubereichspruefung fuer denselben Koerper bereits
+    # "verletzt" meldete -- ein Widerspruch zwischen Gesamt- und
+    # Einzelbefund. Eigener Node-Regressionstest: tests/js/grenzabstand.test.js
+    gab = s[s.index("function grenzabstandBefund(k)"): s.index("function pruefeGrenzabstand(k)")]
+    pruefe("ringGanzIn(ecken, parzelle)" in gab,
+           "ein Koerper ausserhalb der Parzelle wird VOR der Kantenmessung erkannt")
+    pruefe('kurz: "über die Parzellengrenze"' in gab,
+           "und zeigt dafuer keinen erfundenen Abstandswert, sondern einen eigenen Befund")
     pruefe('" m / erforderlich "' in s,
            "bei einer Verletzung steht Ist UND Soll an der Geometrie")
     pruefe("zeigen.indexOf(ga.kritisch) < 0" in s,

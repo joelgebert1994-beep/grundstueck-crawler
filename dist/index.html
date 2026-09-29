@@ -8702,6 +8702,25 @@ function secEntwurf(erg) {
                kritisch: null, verletzte: [] };
     }
     var ecken = koerperEcken(k);
+    // naehesteVerbindung() misst den Abstand zu jeder Kante als reine
+    // Streckengeometrie -- ihr ist gleichgueltig, auf welcher Seite der
+    // Kante der Koerper liegt. Ein Koerper ausserhalb der Parzelle kann
+    // deshalb zu einer EINZELNEN, zufaellig weit entfernten Kante einen
+    // grossen Abstand haben und als "eingehalten" erscheinen, waehrend
+    // pruefeBaubereich() (dieselbe ringGanzIn()-Pruefung, nur gegen den
+    // Baubereich) fuer denselben Koerper bereits "verletzt" meldet -- ein
+    // Widerspruch zwischen Gesamt- und Einzelbefund. Der Grenzabstand wird
+    // von der Parzelle aus INNEN gemessen; liegt der Fussabdruck nicht
+    // vollstaendig darin, ist er sicher unterschritten, ohne dass ein
+    // einzelnes Mass dafuer aussagekraeftig waere. Live beobachtet.
+    var parzelle = entwurfRaum.parzelle;
+    if (parzelle && parzelle.length >= 3 && !ringGanzIn(ecken, parzelle)) {
+      return { art: "verletzt", kurz: "über die Parzellengrenze",
+               text: "Der Fussabdruck liegt nicht vollständig in der Parzelle — der " +
+                     "Grenzabstand ist damit nicht eingehalten. Ein Abstandsmass wird " +
+                     "nicht angegeben: gemessen wird er nur innerhalb der Parzelle.",
+               kritisch: null, verletzte: [] };
+    }
     var kritisch = null, verletzte = [];
     mit.forEach(function (kt) {
       var v = naehesteVerbindung(ecken, kt.a, kt.b);
