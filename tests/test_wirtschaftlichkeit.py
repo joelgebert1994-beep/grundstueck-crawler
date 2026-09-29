@@ -289,9 +289,20 @@ def test_kosten() -> None:
            f"mit benannter Bezugsgroesse ({nach['bkp4_umgebung']['rechnung']})")
     pruefe(nach["vermarktung"]["betrag_chf"] == round(6251000 * 0.025, 0),
            "Vermarktung: 2.5 % des Verkaufserloeses")
-    pruefe(k["vollstaendig"] is True, "alle Positionen berechenbar")
-    pruefe(all(p["herkunft"] == HERKUNFT_SYSTEMANNAHME for p in k["positionen"]),
-           "alle Standardansaetze sind als Systemannahme gekennzeichnet")
+    # Der Aushub hat im Standardmodell bewusst KEINEN Wert: er haengt am
+    # Fussabdruck, und der ist hier nicht bekannt. berechne_fuer_szenario()
+    # setzt ihn ein. Frueher stand hier ein Ansatz je m2 Geschossflaeche --
+    # damit wuchs die Baugrube mit jedem Geschoss.
+    pruefe(nach["bkp1_aushub"]["betrag_chf"] is None
+           and nach["bkp1_aushub"]["herkunft"] == "nicht_bestimmbar",
+           "der Aushub bleibt ohne Fussabdruck offen, statt falsch gerechnet zu werden")
+    pruefe("Fussabdruck" in nach["bkp1_aushub"]["begruendung"],
+           "und der Grund nennt den fehlenden Fussabdruck")
+    pruefe(k["vollstaendig"] is False,
+           "die Kosten sind damit nicht vollstaendig -- und das steht auch so da")
+    uebrige = [p for p in k["positionen"] if p["schluessel"] != "bkp1_aushub"]
+    pruefe(all(p["herkunft"] == HERKUNFT_SYSTEMANNAHME for p in uebrige),
+           "alle uebrigen Standardansaetze sind als Systemannahme gekennzeichnet")
 
     # Benutzer aendert BKP 2.
     geaendert = [p.mit_benutzerwert(3250) if p.schluessel == "bkp2_gebaeude" else p for p in positionen]
@@ -651,6 +662,116 @@ def test_rueckwaertsrechnung() -> None:
     print()
 
 
+def test_aushub_haengt_am_fussabdruck() -> None:
+    """Die Baugrube waechst nicht mit der Geschosszahl.
+
+    Bis September 2026 rechnete BKP 1 Aushub `Tiefe x Preis` als CHF/m2 auf
+    die GESCHOSSFLAECHE. Damit wurde die Grube bei jedem zusaetzlichen
+    Geschoss groesser -- obwohl sie einmal ausgehoben wird und an der
+    Grundflaeche des Gebaeudes haengt.
+
+    Der Fehler war bei EINGESCHOSSIGER Bauweise unsichtbar, weil
+    Geschossflaeche und Fussabdruck dort denselben Wert haben. Genau
+    deshalb steht der eingeschossige Fall hier mit drin: ein Test, der nur
+    ein Geschoss prueft, haette den Fehler nie gefunden.
+    """
+    print("=== BKP 1 Aushub: der Fussabdruck zaehlt, nicht die Geschosszahl ===")
+
+    FUSS = 275.0          # m2 Fussabdruck, in allen vier Faellen gleich
+    TIEFE = 3.5           # m -- Richtwert Modul 3
+    PREIS = 30.0          # CHF/m3 -- Richtwert Modul 3
+    ERWARTET = round(FUSS * TIEFE * PREIS, 0)   # 28'875 CHF
+
+    def aufbau(geschosse: int) -> dict:
+        """Ein Flaechenergebnis, wie es das Flaechenmodell liefert."""
+        return {
+            "geschossaufbau": {
+                "vollgeschosse": geschosse,
+                "geschosse": [
+                    {"bezeichnung": "EG" if i == 0 else f"OG{i}",
+                     "flaeche_m2": FUSS, "zaehlt_als_vollgeschoss": True}
+                    for i in range(geschosse)
+                ],
+            },
+            "flaechen": {
+                "geschossflaeche_gf": {"wert": FUSS * geschosse},
+                "wohnflaeche_nwf": {"wert": FUSS * geschosse * 0.66},
+                "hauptnutzflaeche_hnf": {"wert": FUSS * geschosse * 0.66},
+                "nutzflaeche_nf": {"wert": FUSS * geschosse * 0.73},
+                "nettogeschossflaeche_ngf": {"wert": FUSS * geschosse * 0.85},
+            },
+        }
+
+    # 1. Der Fussabdruck wird aus dem Geschossaufbau gelesen -- nicht aus GF.
+    for n in (1, 2, 3, 4):
+        pruefe(w._fussabdruck_aus(aufbau(n)) == FUSS,
+               f"{n} Geschoss(e): Fussabdruck bleibt {FUSS:,.0f} m²")
+
+    # 2. Der Aushub ist in allen vier Faellen DERSELBE Betrag.
+    betraege = {}
+    for n in (1, 2, 3, 4):
+        szen = {"id": "neubau", "bezeichnung": f"{n} Geschosse",
+                "machbarkeit": "machbar", "flaechen": aufbau(n)}
+        erg = w.berechne_fuer_szenario(szen, 1200.0, markt())
+        nach = {p["schluessel"]: p for p in erg["kosten"]["positionen"]}
+        betraege[n] = nach["bkp1_aushub"]["betrag_chf"]
+        pruefe(betraege[n] == ERWARTET,
+               f"{n} Geschoss(e): Aushub {betraege[n]:,.0f} CHF "
+               f"(erwartet {ERWARTET:,.0f})")
+
+    pruefe(len(set(betraege.values())) == 1,
+           f"alle vier Geschosszahlen ergeben denselben Aushub ({betraege})")
+
+    # 3. Die alte Formel zum Vergleich -- so waere es gewesen.
+    #    Das ist der eigentliche Regressionsschutz: waechst der Aushub
+    #    wieder mit der Geschosszahl, faellt genau diese Zusicherung.
+    alte_rate = TIEFE * PREIS                      # 105 CHF/m2
+    for n, faktor in ((1, 1), (2, 2), (3, 3), (4, 4)):
+        alt = round(alte_rate * FUSS * n, 0)       # auf die Geschossflaeche
+        pruefe(alt == round(ERWARTET * faktor, 0),
+               f"die alte Formel haette bei {n} Geschoss(en) das {faktor}-fache "
+               f"ergeben ({alt:,.0f} statt {ERWARTET:,.0f})")
+        if n == 1:
+            pruefe(alt == ERWARTET,
+                   "bei EINEM Geschoss waren alt und neu gleich -- deshalb blieb "
+                   "der Fehler bisher unbemerkt")
+        else:
+            pruefe(betraege[n] != alt,
+                   f"bei {n} Geschossen weicht die Rechnung jetzt bewusst von der "
+                   f"alten ab ({betraege[n]:,.0f} statt {alt:,.0f})")
+
+    # 4. Ohne Fussabdruck wird nichts geschaetzt -- wie beim Abbruch.
+    ohne = w.berechne_fuer_szenario(
+        {"id": "neubau", "bezeichnung": "ohne Aufbau", "machbarkeit": "machbar",
+         "flaechen": {"flaechen": {"geschossflaeche_gf": {"wert": 1100.0}}}},
+        1200.0, markt())
+    a = {p["schluessel"]: p for p in ohne["kosten"]["positionen"]}["bkp1_aushub"]
+    pruefe(a["betrag_chf"] is None and a["herkunft"] == "nicht_bestimmbar",
+           "ohne Geschossaufbau bleibt der Aushub offen")
+    pruefe("Fussabdruck" in a["begruendung"] and "waechst" in a["begruendung"],
+           "und der Grund sagt, warum ein Ansatz je m² Geschossflaeche falsch waere")
+
+    # 5. Ein vom Benutzer gesetzter Aushub bleibt unangetastet.
+    eigene = [p.mit_benutzerwert(50000.0, art=w.KOSTEN_ABSOLUT)
+              if p.schluessel == "bkp1_aushub" else p
+              for p in w.standard_kostenmodell()]
+    mit = w.berechne_fuer_szenario(
+        {"id": "neubau", "bezeichnung": "eigen", "machbarkeit": "machbar",
+         "flaechen": aufbau(4)}, 1200.0, markt(), eigene)
+    b = {p["schluessel"]: p for p in mit["kosten"]["positionen"]}["bkp1_aushub"]
+    pruefe(b["betrag_chf"] == 50000.0 and b["herkunft"] == "benutzerannahme",
+           "eine eigene Angabe wird nicht ueberschrieben")
+
+    # 6. Die groesste Geschossflaeche zaehlt: ein kleineres Attikageschoss
+    #    darf die Grube nicht schrumpfen lassen.
+    mit_attika = aufbau(3)
+    mit_attika["geschossaufbau"]["geschosse"].append(
+        {"bezeichnung": "AT", "flaeche_m2": 120.0, "zaehlt_als_vollgeschoss": False})
+    pruefe(w._fussabdruck_aus(mit_attika) == FUSS,
+           "ein kleineres Attikageschoss aendert den Fussabdruck nicht")
+    print()
+
+
 def main() -> None:
     test_rueckwaertsrechnung()
     test_marktwert()
@@ -663,6 +784,7 @@ def main() -> None:
     test_landansatz()
     test_unvollstaendig()
     test_vergleich()
+    test_aushub_haengt_am_fussabdruck()
 
     print("=" * 60)
     if FEHLER:
