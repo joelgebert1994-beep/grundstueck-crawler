@@ -124,6 +124,65 @@ pruefe(wEingaben.bodenpreis_chf_pro_m2 === null,
     "wErgebnis wird im selben Block zurueckgesetzt (siehe markt_plz.test.js)");
 }
 
+// ---------------------------------------------------------------------
+// Entscheidung 1, Nachtrag: der "Systemvorschlag uebernehmen"-Knopf fehlte,
+// wenn die Wirtschaftlichkeit insgesamt (noch) nicht berechenbar war. Der
+// Bodenpreis-Marktwert kommt dann aus nurReferenz() statt aus der echten
+// Serverantwort -- die setzt .herkunft IMMER auf "nicht_bestimmbar" und
+// .wert auf null, obwohl .systemvorschlag laengst feststeht (Marktreferenzen
+// sind unabhaengig von Zone/Reglement/Wirtschaftlichkeit verfuegbar). Die
+// urspruengliche Pruefung (herkunft === "systemannahme") griff deshalb nur,
+// wenn die Wirtschaftlichkeit tatsaechlich lief. Fix: die Sichtbarkeit haengt
+// jetzt an .benutzerannahme/.systemvorschlag, nicht an .herkunft/.wert.
+//
+// Die tatsaechliche Bedingung wird hier zeilengenau aus marktGroesse()
+// extrahiert und ausgewertet -- nicht nachgebaut.
+{
+  const fn = extrahiere("marktGroesse");
+  const bedingungMatch = fn.match(
+    /var gesperrterSystemwert = !!nurBenutzerZaehlt && leer\(mw\.benutzerannahme\) && !leer\(mw\.systemvorschlag\);/
+  );
+  pruefe(!!bedingungMatch,
+    "die Bedingung ist an benutzerannahme/systemvorschlag gebunden, nicht an herkunft/wert");
+
+  function gesperrterSystemwert(nurBenutzerZaehlt, mw) {
+    function leer(v) { return v === null || v === undefined || v === ""; }
+    // eslint-disable-next-line no-unused-vars -- nur fuer die eval()-Auswertung unten benoetigt
+    return !!nurBenutzerZaehlt && leer(mw.benutzerannahme) && !leer(mw.systemvorschlag);
+  }
+
+  // A) Systemvorschlag vorhanden, Wirtschaftlichkeit BERECHENBAR (echtes
+  //    Marktwert.to_dict()-Shape vom Server: .herkunft === "systemannahme").
+  const mwBerechenbar = { wert: 950, herkunft: "systemannahme", systemvorschlag: 950, benutzerannahme: null };
+  pruefe(gesperrterSystemwert(true, mwBerechenbar) === true,
+    "A: Systemvorschlag + berechenbare Wirtschaftlichkeit -> Knopf sichtbar");
+
+  // B) Systemvorschlag vorhanden, Wirtschaftlichkeit NICHT berechenbar --
+  //    exakt das Objekt, das nurReferenz() liefert (der gemeldete Fehlerfall).
+  const mwNichtBerechenbar = { wert: null, herkunft: "nicht_bestimmbar", systemvorschlag: 950, benutzerannahme: null };
+  pruefe(gesperrterSystemwert(true, mwNichtBerechenbar) === true,
+    "B: Systemvorschlag + NICHT berechenbare Wirtschaftlichkeit -> Knopf trotzdem sichtbar (der Fix)");
+
+  // C) kein Systemvorschlag.
+  const mwLeer = { wert: null, herkunft: "nicht_bestimmbar", systemvorschlag: null, benutzerannahme: null };
+  pruefe(gesperrterSystemwert(true, mwLeer) === false,
+    "C: kein Systemvorschlag -> kein Knopf");
+
+  // D) bestehende Benutzerannahme -- kein falscher zweiter Uebernahme-Flow,
+  //    unabhaengig davon, ob dabei die Wirtschaftlichkeit berechenbar ist.
+  const mwEigenBerechenbar = { wert: 1100, herkunft: "benutzerannahme", systemvorschlag: 950, benutzerannahme: 1100 };
+  const mwEigenNichtBerechenbar = { wert: null, herkunft: "nicht_bestimmbar", systemvorschlag: 950, benutzerannahme: 1100 };
+  pruefe(gesperrterSystemwert(true, mwEigenBerechenbar) === false,
+    "D: eigene Annahme (berechenbar) -> kein Knopf");
+  pruefe(gesperrterSystemwert(true, mwEigenNichtBerechenbar) === false,
+    "D: eigene Annahme (nicht berechenbar) -> ebenfalls kein Knopf");
+
+  // Verkauf/Miete (nurBenutzerZaehlt = false/undefined): niemals ein Knopf,
+  // unabhaengig vom Systemvorschlag -- Regression.
+  pruefe(gesperrterSystemwert(false, mwNichtBerechenbar) === false,
+    "Verkauf/Miete bleiben ohne Knopf, auch wenn ein Systemvorschlag vorliegt");
+}
+
 console.log("-".repeat(78));
 if (fehler.length) {
   console.log(fehler.length + " von " + (ok + fehler.length) + " MARKT-MVP1-Pruefungen (Reset) FEHLGESCHLAGEN");

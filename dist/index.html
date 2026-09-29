@@ -10944,7 +10944,17 @@ function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt, nurBe
   // (siehe potenzial_engine/wirtschaftlichkeit.py). Hier deshalb dieselbe
   // Unterscheidung: "gerechnet" heisst ab jetzt nur noch eine echte
   // Benutzerannahme, kein blosser Systemvorschlag.
-  var gesperrterSystemwert = !!nurBenutzerZaehlt && mw.herkunft === "systemannahme" && !leer(mw.wert);
+  //
+  // Bewusst gegen .benutzerannahme/.systemvorschlag geprueft, NICHT gegen
+  // .herkunft/.wert: ist die Wirtschaftlichkeit insgesamt (noch) nicht
+  // berechenbar, kommt mw hier aus nurReferenz() statt aus der echten
+  // Serverantwort -- die setzt .herkunft immer auf "nicht_bestimmbar" und
+  // .wert auf null, obwohl .systemvorschlag laengst da ist (die
+  // Marktreferenzen sind unabhaengig von Zone/Reglement/Wirtschaftlichkeit
+  // verfuegbar, siehe secMarkt()). Mit der alten, an "systemannahme"
+  // gebundenen Pruefung fehlte der Uebernehmen-Knopf deshalb genau dann,
+  // wenn die Wirtschaftlichkeit nicht rechnete -- live beobachtet.
+  var gesperrterSystemwert = !!nurBenutzerZaehlt && leer(mw.benutzerannahme) && !leer(mw.systemvorschlag);
   var WERTFELD = { miete: "mietzins_chf_pro_m2_jahr", boden: "bodenpreis_chf_pro_m2",
                    verkauf: "preis_chf_pro_m2" };
   var HERKUNFT_TEXT = { extern: "extern", gebimo: "gebimo", manuell: "manuell" };
@@ -11080,7 +11090,12 @@ function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt, nurBe
           // Bewusst KEIN "systemannahme"-Abzeichen hier: das behauptete,
           // der Wert waere bereits im Einsatz. Ist er nicht -- solange
           // niemand ihn uebernommen hat.
-          ? '<div class="fuss">Systemvorschlag ' + esc(chf(mw.wert) + " " + einheit) +
+          //
+          // Bewusst .systemvorschlag, nicht .wert: ist die Wirtschaftlichkeit
+          // insgesamt nicht berechenbar, liefert nurReferenz() .wert als
+          // null, obwohl .systemvorschlag laengst feststeht -- sonst haette
+          // hier ein Gedankenstrich statt der tatsaechlichen Zahl gestanden.
+          ? '<div class="fuss">Systemvorschlag ' + esc(chf(mw.systemvorschlag) + " " + einheit) +
             " — erst nach Übernahme ein Rechenwert.</div>"
           : (leer(mw.wert) && mw.herkunft === "nicht_bestimmbar"
             // Wer einen Wert eingetippt hat, will wissen, ob er angekommen

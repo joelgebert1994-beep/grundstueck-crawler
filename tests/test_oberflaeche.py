@@ -738,10 +738,21 @@ def test_bodenpreis_systemvorschlag_keine_stille_uebernahme(s: str) -> None:
     fn = s[s.index("function marktGroesse("): s.index("function marktSegment(")]
     pruefe("gesperrterSystemwert" in fn,
            "die Unterscheidung 'Systemvorschlag vs. echte Benutzerannahme' existiert")
+    # Bewusst NICHT gegen .herkunft/.wert pruefen: ist die Wirtschaftlichkeit
+    # insgesamt (noch) nicht berechenbar, liefert nurReferenz() .herkunft
+    # immer als "nicht_bestimmbar" und .wert als null, obwohl .systemvorschlag
+    # laengst feststeht -- eine an "systemannahme" gebundene Pruefung liess
+    # den Uebernehmen-Knopf dann verschwinden. Live beobachtet.
+    pruefe("leer(mw.benutzerannahme) && !leer(mw.systemvorschlag)" in fn,
+           "die Sichtbarkeit haengt an benutzerannahme/systemvorschlag, nicht an herkunft/wert "
+           "-- sonst fehlt der Knopf genau dann, wenn die Wirtschaftlichkeit nicht berechenbar ist")
     pruefe('data-uebernehmen="' in fn,
            "der Uebernehmen-Knopf traegt das Zielfeld")
     pruefe('data-uebernehmenwert="\' + esc(mw.systemvorschlag)' in fn,
            "der Knopf uebertraegt genau den angezeigten Systemvorschlag, keinen erfundenen Wert")
+    pruefe('Systemvorschlag \' + esc(chf(mw.systemvorschlag)' in fn,
+           "auch der Hinweistext zeigt .systemvorschlag, nicht .wert (das waere im "
+           "nicht-berechenbaren Fall null und erschiene als Gedankenstrich statt der Zahl)")
 
     block = s[s.index('function marktBlock('): s.index("\nfunction ", s.index('function marktBlock('))]
     pruefe('"w-boden", wEingaben.bodenpreis_chf_pro_m2, "50", true)' in block,
