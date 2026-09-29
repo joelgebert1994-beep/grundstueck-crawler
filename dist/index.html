@@ -942,7 +942,17 @@ tr.wzeile.aktiv td { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--in
    sich der schmaleren rechten Spalte anzupassen -- die Bruehne blieb dann
    auf ihrer alten Breite stehen, wenn der verfuegbare Platz kleiner
    wurde. Live beobachtet. */
-.v3rahmen { position: relative; min-width: 0; }
+/* overflow: hidden hier, nicht nur an #view3d: die Massschilder in
+   #view3d-schilder werden aus der projizierten 3D-Position berechnet
+   (messSchilderZeichnen()) und dabei NICHT auf die Buehne begrenzt -- ein
+   stark verschobener oder stark herangezoomter Ankerpunkt kann eine Lage
+   weit ausserhalb der sichtbaren Flaeche ergeben. Ohne Klemme an ihrem
+   gemeinsamen Rahmen vergroesserte ein einzelnes, unsichtbar weit
+   abseits stehendes Schild-<span> die Seite selbst -- auf Mobile zoomte
+   der Browser dadurch die ganze Seite heraus. Die Bühne selbst, ihre
+   Geometrie und die Projektion bleiben unveraendert; nur was ausserhalb
+   ihrer eigenen Flaeche landet, wird nicht mehr gezeichnet. */
+.v3rahmen { position: relative; min-width: 0; overflow: hidden; border-radius: 10px; }
 #view3d-schilder { position: absolute; inset: 0; pointer-events: none; }
 .m3schild { position: absolute; transform: translate(-50%, -50%);
   background: var(--bg); border: 1px solid; border-radius: 4px;
