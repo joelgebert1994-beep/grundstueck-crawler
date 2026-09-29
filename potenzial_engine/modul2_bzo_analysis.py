@@ -55,6 +55,7 @@ import base64
 import hashlib
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -71,8 +72,19 @@ GEMINI_MODEL = "gemini-3.6-flash"  # gemini-2.5-flash ist fuer neue Nutzer nicht
 CLAUDE_MODEL = "claude-opus-5"
 MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB roh -- bleibt nach Base64 (~+33%) sicher unter dem 32-MB-Requestlimit
 DEFAULT_TIMEOUT = 60
-GEMINI_MAX_RETRIES = 3
+GEMINI_MAX_RETRIES = 3  # Versuche insgesamt, nicht Wiederholungen
 GEMINI_RETRY_BASE_DELAY_S = 8  # kostenloses Tier hat niedrige Requests/Minute -- 429 ist erwartbar, kein Fehler
+GEMINI_RETRY_MAX_DELAY_S = 30
+GEMINI_RETRY_JITTER_ANTEIL = 0.25
+# Ein regulaerer Aufruf dauert gemessen ~110 s (5 PDF, 8 MB). Der Timeout
+# darf ihn nicht abschneiden, soll aber einen haengenden Aufruf beenden.
+GEMINI_TIMEOUT_S = 180
+# Obergrenze fuer alle Versuche zusammen. Die Oberflaeche fragt rund sechs
+# Minuten lang nach; danach noch zu rechnen, sieht niemand mehr.
+GEMINI_GESAMTFENSTER_S = 300
+# Einen Versuch mit weniger Restzeit zu starten lohnt nicht -- er wuerde
+# einen regulaeren Aufruf ohnehin abschneiden.
+GEMINI_MIN_RESTZEIT_S = 60
 
 
 # Von Hand gepflegte Fassung der Auswertung. Sie wird erhoeht, wenn eine
@@ -83,8 +95,160 @@ GEMINI_RETRY_BASE_DELAY_S = 8  # kostenloses Tier hat niedrige Requests/Minute -
 AUSWERTUNG_VERSION = 1
 
 
+# --- Fehlerarten -----------------------------------------------------------
+#
+# Temporaer: ein spaeterer Versuch mit denselben Eingaben kann gelingen.
+FEHLERART_RATE_LIMIT = "rate_limit"                     # HTTP 429
+FEHLERART_DIENST_UEBERLASTET = "dienst_nicht_verfuegbar"  # HTTP 500/502/503
+FEHLERART_ZEITUEBERSCHREITUNG = "zeitueberschreitung"   # Timeout, HTTP 504
+FEHLERART_NETZWERK = "netzwerk"
+# Dauerhaft: dieselben Eingaben fuehren wieder zum selben Ergebnis.
+FEHLERART_ANTWORT_BLOCKIERT = "antwort_blockiert"       # RECITATION, SAFETY ...
+FEHLERART_ANTWORT_UNGUELTIG = "antwort_ungueltig"       # kein JSON, abgeschnitten
+FEHLERART_DOKUMENTE_FEHLEN = "dokumente_fehlen"
+FEHLERART_API_FEHLER = "api_fehler"                     # uebrige HTTP 4xx
+FEHLERART_KONFIGURATION = "konfiguration"               # Key/Paket fehlt
+FEHLERART_UNBEKANNT = "unbekannt"
+
+TEMPORAERE_FEHLERARTEN = frozenset({
+    FEHLERART_RATE_LIMIT, FEHLERART_DIENST_UEBERLASTET,
+    FEHLERART_ZEITUEBERSCHREITUNG, FEHLERART_NETZWERK,
+})
+
+_BLOCKIERENDE_FINISH_REASONS = ("RECITATION", "SAFETY", "BLOCKLIST",
+                                "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY")
+
+
 class Modul2Error(Exception):
-    """Fehler innerhalb der BZO-Analyse-Pipeline."""
+    """Fehler innerhalb der BZO-Analyse-Pipeline.
+
+    `fehlerart` ist eine der FEHLERART_*-Konstanten. `wiederholbar` folgt
+    daraus, sofern nicht ausdruecklich gesetzt. `versuche` zaehlt die
+    Modellaufrufe, `detail` ist der technische Originaltext.
+    """
+
+    def __init__(self, meldung: str, *, fehlerart: str = FEHLERART_UNBEKANNT,
+                 wiederholbar: Optional[bool] = None, versuche: Optional[int] = None,
+                 detail: Optional[str] = None):
+        super().__init__(meldung)
+        self.fehlerart = fehlerart
+        self.wiederholbar = (fehlerart in TEMPORAERE_FEHLERARTEN
+                             if wiederholbar is None else wiederholbar)
+        self.versuche = versuche
+        self.detail = detail if detail is not None else meldung
+
+
+def _http_code(exc: BaseException) -> Optional[int]:
+    for attr in ("code", "status_code"):
+        wert = getattr(exc, attr, None)
+        if isinstance(wert, int):
+            return wert
+    return None
+
+
+def klassifiziere_fehler(exc: BaseException) -> str:
+    """Ordnet eine Exception aus dem Modellaufruf einer Fehlerart zu.
+
+    Zuerst ueber den HTTP-Code (google-genai: APIError.code, anthropic:
+    status_code), dann ueber den Exception-Typ (Timeouts, Netz), zuletzt
+    ueber den Text -- die SDK-Taxonomie ist nicht verlaesslich dokumentiert.
+    Die Klassennamen werden verglichen statt importiert, damit httpx,
+    requests und die Standardbibliothek gleich behandelt werden.
+    """
+    if isinstance(exc, Modul2Error):
+        return exc.fehlerart
+
+    code = _http_code(exc)
+    if code == 429:
+        return FEHLERART_RATE_LIMIT
+    if code in (500, 502, 503, 529):
+        return FEHLERART_DIENST_UEBERLASTET
+    if code == 504:
+        return FEHLERART_ZEITUEBERSCHREITUNG
+    if code is not None and 400 <= code < 500:
+        return FEHLERART_API_FEHLER
+
+    typnamen = {k.__name__ for k in type(exc).__mro__}
+    if typnamen & {"TimeoutError", "TimeoutException", "ReadTimeout", "ConnectTimeout",
+                   "WriteTimeout", "PoolTimeout", "Timeout", "APITimeoutError"}:
+        return FEHLERART_ZEITUEBERSCHREITUNG
+    if typnamen & {"ConnectionError", "ConnectError", "NetworkError", "ReadError",
+                   "WriteError", "RemoteProtocolError", "APIConnectionError"}:
+        return FEHLERART_NETZWERK
+
+    text = str(exc)
+    klein = text.lower()
+    if "429" in text or "RESOURCE_EXHAUSTED" in text or "rate limit" in klein:
+        return FEHLERART_RATE_LIMIT
+    if ("503" in text or "UNAVAILABLE" in text or "overloaded" in klein
+            or "high demand" in klein):
+        return FEHLERART_DIENST_UEBERLASTET
+    if "DEADLINE_EXCEEDED" in text or "timed out" in klein or "timeout" in klein:
+        return FEHLERART_ZEITUEBERSCHREITUNG
+    return FEHLERART_UNBEKANNT
+
+
+def _wartezeit(versuch: int) -> float:
+    """Exponentielles Backoff mit kleinem Zufallsanteil, nach oben begrenzt."""
+    basis = min(GEMINI_RETRY_BASE_DELAY_S * (2 ** (versuch - 1)), GEMINI_RETRY_MAX_DELAY_S)
+    return basis + random.uniform(0, basis * GEMINI_RETRY_JITTER_ANTEIL)
+
+
+_STATUS_MELDUNG = {
+    FEHLERART_RATE_LIMIT: "Das Anfragekontingent des KI-Dienstes (Gemini) ist vorübergehend "
+                          "ausgeschöpft.",
+    FEHLERART_DIENST_UEBERLASTET: "Der KI-Dienst (Gemini) ist momentan überlastet oder nicht "
+                                  "erreichbar.",
+    FEHLERART_ZEITUEBERSCHREITUNG: "Der KI-Dienst (Gemini) hat nicht rechtzeitig geantwortet.",
+    FEHLERART_NETZWERK: "Die Verbindung zum KI-Dienst (Gemini) ist fehlgeschlagen.",
+    FEHLERART_ANTWORT_BLOCKIERT: "Der KI-Dienst hat die Antwort zu diesem Reglement verweigert "
+                                 "bzw. abgebrochen.",
+    FEHLERART_ANTWORT_UNGUELTIG: "Der KI-Dienst hat keine verwertbare Auswertung geliefert.",
+    FEHLERART_DOKUMENTE_FEHLEN: "Für diese Parzelle liegt kein auswertbares Reglementsdokument vor.",
+    FEHLERART_API_FEHLER: "Der KI-Dienst hat die Anfrage abgelehnt.",
+    FEHLERART_KONFIGURATION: "Die Reglementsauswertung ist auf dem Server nicht eingerichtet.",
+    FEHLERART_UNBEKANNT: "Die Reglementsauswertung ist mit einem unerwarteten Fehler abgebrochen.",
+}
+
+REGLEMENT_PENDING = "pending"
+REGLEMENT_RUNNING = "running"
+REGLEMENT_COMPLETED = "completed"
+REGLEMENT_TEMPORAER = "temporarily_unavailable"
+REGLEMENT_FAILED = "failed"
+
+
+def reglementstatus(status: str, *, fehler: Optional[BaseException] = None,
+                    ergebnis: Optional[dict] = None) -> dict[str, Any]:
+    """Der Zustand des Reglementsschritts, so wie die API ihn ausliefert.
+
+    Mit `fehler` wird `status` ueberschrieben: `wiederholbar` entscheidet,
+    ob der Schritt als temporarily_unavailable oder als failed endet. Werte
+    der Auswertung stehen hier nie -- fehlt sie, fehlt sie.
+    """
+    block: dict[str, Any] = {"status": status, "versuche": None, "fehlerart": None,
+                             "wiederholbar": None, "meldung": None, "detail": None}
+    if fehler is not None:
+        fehlerart = klassifiziere_fehler(fehler)
+        wiederholbar = (fehler.wiederholbar if isinstance(fehler, Modul2Error)
+                        else fehlerart in TEMPORAERE_FEHLERARTEN)
+        versuche = fehler.versuche if isinstance(fehler, Modul2Error) else None
+        meldung = _STATUS_MELDUNG.get(fehlerart, _STATUS_MELDUNG[FEHLERART_UNBEKANNT])
+        if versuche:
+            meldung += f" Abgebrochen nach {versuche} Versuch{'en' if versuche > 1 else ''}."
+        meldung += (" Ein späterer Versuch kann gelingen." if wiederholbar
+                    else " Ein automatischer neuer Versuch ist nicht sinnvoll.")
+        block.update(
+            status=REGLEMENT_TEMPORAER if wiederholbar else REGLEMENT_FAILED,
+            versuche=versuche, fehlerart=fehlerart, wiederholbar=wiederholbar,
+            meldung=meldung,
+            detail=(fehler.detail if isinstance(fehler, Modul2Error) else f"{type(fehler).__name__}: {fehler}"),
+        )
+    elif ergebnis is not None:
+        meta = ergebnis.get("_meta") or {}
+        zs = ergebnis.get("_zwischenspeicher") or {}
+        block["versuche"] = 0 if zs.get("aus_zwischenspeicher") else meta.get("versuche")
+        block["aus_zwischenspeicher"] = bool(zs.get("aus_zwischenspeicher"))
+    return block
 
 
 # ---------------------------------------------------------------------------
@@ -107,14 +271,16 @@ def download_pdf(url: str, timeout: int = DEFAULT_TIMEOUT) -> bytes:
     content_type = resp.headers.get("Content-Type", "")
     if "pdf" not in content_type.lower():
         raise Modul2Error(
-            f"URL liefert kein PDF (Content-Type: {content_type!r}) -- {url}"
+            f"URL liefert kein PDF (Content-Type: {content_type!r}) -- {url}",
+            fehlerart=FEHLERART_DOKUMENTE_FEHLEN,
         )
 
     data = resp.content
     if len(data) > MAX_PDF_BYTES:
         raise Modul2Error(
             f"PDF zu gross ({len(data) / 1024 / 1024:.1f} MB > "
-            f"{MAX_PDF_BYTES / 1024 / 1024:.0f} MB Limit) -- {url}"
+            f"{MAX_PDF_BYTES / 1024 / 1024:.0f} MB Limit) -- {url}",
+            fehlerart=FEHLERART_DOKUMENTE_FEHLEN,
         )
     return data
 
@@ -431,18 +597,21 @@ def _analyze_bzo_documents_gemini(
     dasselbe JSON-Schema wie die Claude-Variante (siehe _BzoAnalyseGemini).
     """
     if _GeminiBaseModel is None:
-        raise Modul2Error("pydantic ist nicht installiert -- fuer das Gemini-Backend erforderlich (`pip install pydantic`).")
+        raise Modul2Error("pydantic ist nicht installiert -- fuer das Gemini-Backend erforderlich (`pip install pydantic`).",
+                          fehlerart=FEHLERART_KONFIGURATION)
     if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GOOGLE_API_KEY"):
         raise Modul2Error(
             "GEMINI_API_KEY ist nicht gesetzt. Kostenlosen Key ohne Kreditkarte holen unter "
-            "https://aistudio.google.com/apikey und als Umgebungsvariable GEMINI_API_KEY setzen."
+            "https://aistudio.google.com/apikey und als Umgebungsvariable GEMINI_API_KEY setzen.",
+            fehlerart=FEHLERART_KONFIGURATION,
         )
 
     try:
         from google import genai
         from google.genai import types
     except ImportError as exc:
-        raise Modul2Error("google-genai ist nicht installiert (`pip install google-genai`).") from exc
+        raise Modul2Error("google-genai ist nicht installiert (`pip install google-genai`).",
+                          fehlerart=FEHLERART_KONFIGURATION) from exc
 
     client = genai.Client()  # liest GEMINI_API_KEY/GOOGLE_API_KEY automatisch aus der Umgebung
 
@@ -461,48 +630,36 @@ def _analyze_bzo_documents_gemini(
         "Dokumente, nenne das unter 'unklarheiten_und_pruefhinweise'." + kontext
     )
 
-    config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
-        response_mime_type="application/json",
-        response_json_schema=_BzoAnalyseGemini.model_json_schema(),
-    )
+    def config_mit_timeout(timeout_s: float):
+        return types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_json_schema=_BzoAnalyseGemini.model_json_schema(),
+            http_options=types.HttpOptions(timeout=int(timeout_s * 1000)),
+        )
 
-    last_exc: Optional[Exception] = None
-    for attempt in range(1, GEMINI_MAX_RETRIES + 1):
-        try:
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=[*document_parts, prompt_text],
-                config=config,
-            )
-            break
-        except Exception as exc:  # noqa: BLE001 -- SDK-Exception-Taxonomie nicht zuverlaessig dokumentiert, siehe unten
-            last_exc = exc
-            msg = str(exc)
-            is_transient = (
-                "429" in msg or "RESOURCE_EXHAUSTED" in msg or "rate limit" in msg.lower()
-                or "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg.lower()
-                or "high demand" in msg.lower()
-            )
-            if is_transient and attempt < GEMINI_MAX_RETRIES:
-                # Kostenloses Tier hat niedrige Requests/Minute (429) und der
-                # Dienst meldet unter Last auch mal 503 UNAVAILABLE ("high
-                # demand", live beobachtet 2026-08-26) -- beides erwartbares,
-                # transientes Verhalten, kein Fehler. Exponentielles Backoff.
-                time.sleep(GEMINI_RETRY_BASE_DELAY_S * (2 ** (attempt - 1)))
-                continue
-            raise Modul2Error(f"Gemini-API-Fehler: {exc}") from exc
-    else:
-        raise Modul2Error(f"Gemini-API-Fehler nach {GEMINI_MAX_RETRIES} Versuchen: {last_exc}") from last_exc
+    response, versuche = _rufe_mit_wiederholung(
+        lambda timeout_s: client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[*document_parts, prompt_text],
+            config=config_mit_timeout(timeout_s),
+        ))
 
     finish_reason = getattr(response.candidates[0], "finish_reason", None) if response.candidates else None
     if finish_reason and str(finish_reason).upper() not in ("STOP", "1", "FINISHREASON.STOP"):
-        raise Modul2Error(f"Gemini hat die Antwort nicht regulaer abgeschlossen (finish_reason={finish_reason}).")
+        grund = str(finish_reason).upper()
+        raise Modul2Error(
+            f"Gemini hat die Antwort nicht regulaer abgeschlossen (finish_reason={finish_reason}).",
+            fehlerart=(FEHLERART_ANTWORT_BLOCKIERT
+                       if any(b in grund for b in _BLOCKIERENDE_FINISH_REASONS)
+                       else FEHLERART_ANTWORT_UNGUELTIG),
+            versuche=versuche)
 
     try:
         result = json.loads(response.text)
     except (ValueError, TypeError) as exc:
-        raise Modul2Error(f"Gemini-Antwort war kein valides JSON: {exc}") from exc
+        raise Modul2Error(f"Gemini-Antwort war kein valides JSON: {exc}",
+                          fehlerart=FEHLERART_ANTWORT_UNGUELTIG, versuche=versuche) from exc
 
     usage = getattr(response, "usage_metadata", None)
     result["_meta"] = {
@@ -516,8 +673,48 @@ def _analyze_bzo_documents_gemini(
         "modul2_version": modul2_fingerabdruck("gemini"),
         "input_tokens": getattr(usage, "prompt_token_count", None),
         "output_tokens": getattr(usage, "candidates_token_count", None),
+        "versuche": versuche,
     }
     return _ergaenze_pruefung(result)
+
+
+def _rufe_mit_wiederholung(aufruf, *, schlafe=None, uhr=None):
+    """Fuehrt `aufruf(timeout_s)` aus und wiederholt NUR temporaere Fehler.
+
+    Begrenzt durch GEMINI_MAX_RETRIES Versuche UND GEMINI_GESAMTFENSTER_S:
+    jeder Versuch bekommt hoechstens die Restzeit als Timeout, und ein
+    Versuch mit weniger als GEMINI_MIN_RESTZEIT_S wird nicht mehr begonnen.
+    Dauerhafte Fehler (4xx, blockierte Antwort ...) werden sofort
+    weitergereicht -- ein zweiter Versuch kostet nur Zeit.
+
+    Hintergrund: das kostenlose Tier hat niedrige Requests/Minute (429), und
+    der Dienst meldet unter Last 503 UNAVAILABLE ("high demand", live
+    beobachtet 2026-08-26 und 17.09.2026 ganztags). Die SDK wiederholt
+    selbst nicht (HttpOptions.retry_options ist None).
+
+    Gibt (antwort, anzahl_versuche) zurueck.
+    """
+    schlafe = schlafe or time.sleep
+    uhr = uhr or time.monotonic
+    beginn = uhr()
+    versuch = 0
+    while True:
+        versuch += 1
+        restzeit = GEMINI_GESAMTFENSTER_S - (uhr() - beginn)
+        try:
+            return aufruf(min(GEMINI_TIMEOUT_S, max(restzeit, 1))), versuch
+        except Exception as exc:  # noqa: BLE001 -- SDK-Taxonomie nicht verlaesslich, klassifiziert wird unten
+            fehlerart = klassifiziere_fehler(exc)
+            temporaer = fehlerart in TEMPORAERE_FEHLERARTEN
+            if temporaer and versuch < GEMINI_MAX_RETRIES:
+                pause = _wartezeit(versuch)
+                restzeit = GEMINI_GESAMTFENSTER_S - (uhr() - beginn) - pause
+                if restzeit >= GEMINI_MIN_RESTZEIT_S:
+                    schlafe(pause)
+                    continue
+            zusatz = f" nach {versuch} Versuch{'en' if versuch > 1 else ''}" if temporaer else ""
+            raise Modul2Error(f"Gemini-API-Fehler{zusatz}: {exc}", fehlerart=fehlerart,
+                              versuche=versuch, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -591,9 +788,11 @@ def _analyze_bzo_documents_claude(
             }],
         )
     except anthropic.APIStatusError as exc:
-        raise Modul2Error(f"Claude-API-Fehler ({exc.status_code}): {exc.message}") from exc
+        raise Modul2Error(f"Claude-API-Fehler ({exc.status_code}): {exc.message}",
+                          fehlerart=klassifiziere_fehler(exc), versuche=1) from exc
     except anthropic.APIConnectionError as exc:
-        raise Modul2Error(f"Verbindung zur Claude-API fehlgeschlagen: {exc}") from exc
+        raise Modul2Error(f"Verbindung zur Claude-API fehlgeschlagen: {exc}",
+                          fehlerart=klassifiziere_fehler(exc), versuche=1) from exc
     except TypeError as exc:
         # Die SDK wirft hier (nicht als anthropic.APIStatusError, sondern als
         # rohen TypeError) wenn keinerlei Credentials aufgeloest werden konnten
@@ -602,21 +801,25 @@ def _analyze_bzo_documents_claude(
         if "authentication" in str(exc).lower() or "api_key" in str(exc).lower():
             raise Modul2Error(
                 "Keine Claude-API-Credentials gefunden (ANTHROPIC_API_KEY nicht "
-                f"gesetzt, kein `ant auth login`-Profil). Original: {exc}"
+                f"gesetzt, kein `ant auth login`-Profil). Original: {exc}",
+                fehlerart=FEHLERART_KONFIGURATION,
             ) from exc
         raise
 
     if response.stop_reason == "refusal":
-        raise Modul2Error("Claude hat die Analyse aus Sicherheitsgruenden abgelehnt.")
+        raise Modul2Error("Claude hat die Analyse aus Sicherheitsgruenden abgelehnt.",
+                          fehlerart=FEHLERART_ANTWORT_BLOCKIERT, versuche=1)
     if response.stop_reason == "max_tokens":
         raise Modul2Error(
             f"Antwort wurde bei max_tokens={max_tokens} abgeschnitten -- "
-            "max_tokens erhoehen (grosses/komplexes Reglement)."
+            "max_tokens erhoehen (grosses/komplexes Reglement).",
+            fehlerart=FEHLERART_ANTWORT_UNGUELTIG, versuche=1,
         )
 
     text_block = next((b for b in response.content if b.type == "text"), None)
     if text_block is None:
-        raise Modul2Error("Keine Textantwort von Claude erhalten.")
+        raise Modul2Error("Keine Textantwort von Claude erhalten.",
+                          fehlerart=FEHLERART_ANTWORT_UNGUELTIG, versuche=1)
 
     result = json.loads(text_block.text)
     result["_meta"] = {
@@ -790,14 +993,15 @@ def analyze_bzo_documents(
     ungewollt Kosten verursachen bzw. eine bewusste Wahl unterlaufen.
     """
     if not pdf_documents:
-        raise Modul2Error("Keine PDF-Dokumente uebergeben.")
+        raise Modul2Error("Keine PDF-Dokumente uebergeben.", fehlerart=FEHLERART_DOKUMENTE_FEHLEN)
 
     chosen_backend = backend or DEFAULT_BACKEND
     if chosen_backend == "gemini":
         return _analyze_bzo_documents_gemini(pdf_documents, gemeinde=gemeinde, kanton=kanton)
     if chosen_backend == "claude":
         return _analyze_bzo_documents_claude(pdf_documents, gemeinde=gemeinde, kanton=kanton, max_tokens=max_tokens)
-    raise Modul2Error(f"Unbekanntes backend {chosen_backend!r} -- erlaubt: 'gemini', 'claude'.")
+    raise Modul2Error(f"Unbekanntes backend {chosen_backend!r} -- erlaubt: 'gemini', 'claude'.",
+                      fehlerart=FEHLERART_KONFIGURATION)
 
 
 def analyze_bzo_document(
@@ -881,7 +1085,8 @@ def analyze_bzo_from_urls(
     if not geladen:
         raise Modul2Error(
             f"Keine der {len(urls)} URLs lieferte ein ladbares PDF. "
-            f"Details: {skipped}"
+            f"Details: {skipped}",
+            fehlerart=FEHLERART_DOKUMENTE_FEHLEN,
         )
 
     result = analyze_bzo_documents([d["daten"] for d in geladen],
@@ -910,7 +1115,8 @@ def waehle_bzo_dokumente(
     """
     provisions = oereb_result.get("rechtsvorschriften", [])
     if not provisions:
-        raise Modul2Error("Keine Rechtsvorschriften im OEREB-Ergebnis von Modul 1 vorhanden.")
+        raise Modul2Error("Keine Rechtsvorschriften im OEREB-Ergebnis von Modul 1 vorhanden.",
+                          fehlerart=FEHLERART_DOKUMENTE_FEHLEN)
     likely = [p for p in provisions if p.get("ist_wahrscheinlich_bzo_reglement")]
     return (likely or provisions)[:max_documents]
 
