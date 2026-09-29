@@ -676,6 +676,26 @@ def test_marktauswertung_zwei_wege(s: str) -> None:
            "mktLaden behaelt das Referenzgebiet -- es wurde bisher verworfen")
 
 
+def test_wergebnis_zurueckgesetzt_bei_neuer_analyse(s: str) -> None:
+    """Keine Marktabfrage einer neuen Analyse mit der PLZ der vorigen.
+
+    wErgebnis (Wirtschaftlichkeit inkl. referenzgebiet.plz) ist eine
+    globale Variable, die erst ueberschrieben wird, wenn wRechne() fuer
+    die NEUE Analyse asynchron antwortet. verdrahteWirtschaft() laeuft
+    aber synchron direkt nach renderDossier() und liest darueber schon
+    vorher mktGebiet() -> wErgebnis.referenzgebiet.plz. Live beobachtet:
+    nach Buchs AG (PLZ 5033) ging Rorschachs erste Marktanfrage noch mit
+    plz=5033 hinaus. Funktionaler Regressionstest: tests/js/markt_plz.test.js.
+    """
+    fn = s[s.index("function starteAnalyse("):]
+    fn = fn[: fn.index("\nfunction ", 10)]
+    vor_abruf = fn[: fn.index("apiAbruf(")]
+    pruefe("wErgebnis = null;" in vor_abruf,
+           "wErgebnis wird zurueckgesetzt, SYNCHRON vor dem Netzwerkaufruf")
+    pruefe("ergebnisAktuell = null;" in vor_abruf,
+           "der bestehende ergebnisAktuell-Reset ist weiterhin vorhanden")
+
+
 def test_markt_ohne_standortdaten(s: str) -> None:
     """Der Marktreiter beantwortet nur: Was ist am Markt plausibel?
 
@@ -1445,7 +1465,8 @@ def main() -> int:
                test_wirtschaft_kernkennzahlen,
                test_daten_und_quellen, test_umschrift_diphthong,
                test_teilfehler_sperrt_keinen_reiter, test_rechenstand_eine_stelle,
-               test_marktauswertung_zwei_wege, test_markt_ohne_standortdaten,
+               test_marktauswertung_zwei_wege, test_wergebnis_zurueckgesetzt_bei_neuer_analyse,
+               test_markt_ohne_standortdaten,
                test_marktsatz_stimmt_mit_der_engine,
                test_qualitaetsauswahl_passt_zur_engine,
                test_quellen_nie_vermischt, test_sechs_marktsegmente,

@@ -2261,6 +2261,17 @@ function starteAnalyse(neuRechnen) {
   goBtn.disabled = true;
   goBtn.textContent = "Analyse läuft …";
   ergebnisAktuell = null;
+  // wErgebnis (Wirtschaftlichkeit der VORIGEN Analyse, samt referenzgebiet)
+  // lebt als eigene globale Variable und wird erst ueberschrieben, wenn
+  // wRechne() fuer die NEUE Analyse asynchron antwortet. verdrahteWirtschaft()
+  // laeuft aber synchron direkt nach renderDossier() und liest ueber
+  // mktGebiet() schon vorher wErgebnis.referenzgebiet.plz fuer die
+  // Marktabfrage -- ohne diesen Reset ging die erste Marktanfrage einer
+  // neuen Analyse noch mit der PLZ der vorigen hinaus (gemeinde/kanton
+  // kommen aus ergebnisAktuell und waren bereits korrekt, nur die PLZ
+  // nicht). Live beobachtet: nach Buchs AG war Rorschachs erste
+  // Marktanfrage noch mit plz=5033 (Buchs) unterwegs.
+  wErgebnis = null;
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
   ["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
   renderLoading();
