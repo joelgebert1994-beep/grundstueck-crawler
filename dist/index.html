@@ -2565,7 +2565,14 @@ function renderFehler(msg, art, unterart) {
 /* ===================== Karte befuellen ===================== */
 var SZENARIO_G1_LABEL = {
   alle_kanten_klein: "kleiner Grenzabstand an allen Kanten",
-  alle_kanten_gross: "grosser Grenzabstand an allen Kanten"
+  alle_kanten_gross: "grosser Grenzabstand an allen Kanten",
+  // Aus g1_verdrahtung.py (_anordnungen_hauptseite_strasse): die Anordnung,
+  // bei der die Hauptwohnseite zur Strasse zeigt und deshalb an allen
+  // Nachbargrenzen der kleine, an den Strassenkanten der klassifizierte
+  // Strassenabstand gilt. Netz derselben Art wie die beiden obigen --
+  // greift nur, wenn ANORDNUNG_TEXT die von der Engine mitgelieferte
+  // "beschreibung" (mit den tatsaechlichen Metern) ausnahmsweise nicht hat.
+  hauptseite_an_strasse: "Hauptwohnseite an der Strasse"
 };
 
 /* Die zulaessigen Abstandsanordnungen heissen intern "hauptseite_kante_3".
@@ -2580,9 +2587,19 @@ function merkeAnordnungen(erg) {
   });
 }
 function anordnungsName(name) {
+  if (ANORDNUNG_TEXT[name]) return lesbar(ANORDNUNG_TEXT[name]);
+  if (SZENARIO_G1_LABEL[name]) return lesbar(SZENARIO_G1_LABEL[name]);
+  // Letzter Ausweg fuer "hauptseite_kante_3" & Co (g1_verdrahtung.py,
+  // _anordnungen_hauptseite_kante): dieselbe Anordnung wie oben, nur an
+  // einer bestimmten Nachbarkante statt an der Strasse. Die Nummer ist der
+  // Kantenindex aus der Engine, kein erfundener Wert -- nur seine
+  // Formulierung ist neu, nicht die Zahl selbst. Greift nur, wenn auch hier
+  // die "beschreibung" der Engine ausnahmsweise fehlt.
+  var kante = /^hauptseite_kante_(\d+)$/.exec(name || "");
+  if (kante) return "Hauptwohnseite an Nachbarkante " + kante[1];
   // Die Engine schreibt ASCII-Umschrift ("uebrigen") -- lesbar() ist die
   // Anzeigeschicht dafuer, hier wie ueberall sonst.
-  return lesbar(ANORDNUNG_TEXT[name] || SZENARIO_G1_LABEL[name] || name);
+  return lesbar(name);
 }
 function zeichneErgebnisAufKarte(erg) {
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
