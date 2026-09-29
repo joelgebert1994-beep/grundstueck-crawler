@@ -1319,7 +1319,14 @@ function zeichnePolygone(gruppe, geom, stil, popupHtml, sectionId, beschriftung,
         direction: lage.direction || "center", offset: lage.offset || [0, 0],
         className: "kartenlabel", opacity: 1 });
     }
-    poly.on("click", function () { selektiere(poly, sectionId); });
+    // bindPopup hielt den Klick frueher selbst an (Leaflet: DomEvent.stop in
+    // _openPopup). Ohne Popup lief er bis zu map.on("click") durch, und die
+    // Direktabfrage ueberschrieb die Objektinfo im Panel sofort wieder.
+    // Angehalten wird genau dort, wo frueher ein Popup hing.
+    poly.on("click", function (e) {
+      if (poly._panelHtml) L.DomEvent.stop(e);
+      selektiere(poly, sectionId);
+    });
     poly.addTo(gruppe);
     layers.push(poly);
   });
@@ -1335,7 +1342,10 @@ function zeichneLinien(gruppe, geom, stil, popupHtml, sectionId, beschriftung) {
   if (beschriftung) {
     line.bindTooltip(beschriftung, { direction: "center", className: "kartenlabel", opacity: 1 });
   }
-  line.on("click", function () { selektiere(line, sectionId); });
+  line.on("click", function (e) {
+    if (line._panelHtml) L.DomEvent.stop(e);   // siehe zeichnePolygone()
+    selektiere(line, sectionId);
+  });
   line.addTo(gruppe);
   return [line];
 }
