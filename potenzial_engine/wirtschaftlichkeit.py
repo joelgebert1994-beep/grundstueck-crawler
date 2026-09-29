@@ -586,6 +586,7 @@ def aushubposition(
     fussabdruck_m2: Optional[float],
     tiefe_m: float = BKP1_AUSHUB_TIEFE_M_DEFAULT,
     chf_pro_m3: float = BKP1_AUSHUB_CHF_PRO_M3_DEFAULT,
+    grund: Optional[str] = None,
 ) -> Kostenposition:
     """Die Baugrube -- auf dem FUSSABDRUCK, nicht auf der Geschossflaeche.
 
@@ -605,7 +606,7 @@ def aushubposition(
         return Kostenposition(
             "bkp1_aushub", "1", "Aushub und Vorbereitung", KOSTEN_ABSOLUT, None,
             herkunft=HERKUNFT_NICHT_BESTIMMBAR,
-            begruendung=(
+            begruendung=grund or (
                 "Der Fussabdruck des geplanten Gebaeudes ist nicht bekannt. Ohne ihn "
                 "laesst sich keine Baugrube bemessen -- ein Ansatz je Quadratmeter "
                 "Geschossflaeche waere falsch, weil die Grube nicht mit der Geschosszahl "
@@ -622,6 +623,35 @@ def aushubposition(
             "Projektspezifisch stark abweichend."
         ),
     )
+
+
+# Welche Szenarien ueberhaupt eine eigene Baugrube haben -- und bei welchen
+# der Geschossaufbau den NEUEN Baukoerper beschreibt. Bei Anbau und
+# Bestand+Neubau traegt er den ganzen zulaessigen Baukoerper, nicht den
+# hinzukommenden Teil; sein Fussabdruck waere dort die falsche Grube.
+AUSHUB_OHNE_BAUGRUBE = frozenset({"bestand", "sanierung", "aufstockung", "dachausbau"})
+AUSHUB_FUSSABDRUCK_IST_NEUBAU = frozenset({"ersatzneubau", "neubau"})
+
+
+def aushub_fuer_szenario(szenario: dict[str, Any]) -> Kostenposition:
+    """Die Aushubposition, die zu DIESEM Szenario passt."""
+    sid = szenario.get("id")
+    if sid in AUSHUB_OHNE_BAUGRUBE:
+        return Kostenposition(
+            "bkp1_aushub", "1", "Aushub und Vorbereitung", KOSTEN_ABSOLUT, 0.0,
+            begruendung=(
+                "Keine Baugrube: das Szenario baut auf dem bestehenden Gebaeude auf "
+                "oder erneuert es. Vorbereitende Arbeiten am Bestand sind hier nicht "
+                "enthalten."
+            ),
+        )
+    if sid in AUSHUB_FUSSABDRUCK_IST_NEUBAU:
+        return aushubposition(_fussabdruck_aus(szenario.get("flaechen")))
+    return aushubposition(None, grund=(
+        "Der Fussabdruck des neuen Gebaeudeteils ist nicht bekannt. Der Geschossaufbau "
+        "dieses Szenarios beschreibt den ganzen zulaessigen Baukoerper, nicht nur den "
+        "hinzukommenden Teil -- dessen Grube waere zu gross."
+    ))
 
 
 def _fussabdruck_aus(flaechen_ergebnis: Optional[dict[str, Any]]) -> Optional[float]:
@@ -787,13 +817,12 @@ def berechne_fuer_szenario(
 
     positionen = list(kostenpositionen) if kostenpositionen is not None else standard_kostenmodell()
 
-    # Der Aushub braucht den Fussabdruck DIESES Szenarios. Dieselbe
-    # Positionsliste wird fuer mehrere Szenarien benutzt -- deshalb wird er
-    # erst hier eingesetzt, wo der Fussabdruck bekannt ist. Ein vom Benutzer
-    # gesetzter Wert bleibt unangetastet.
-    fussabdruck = _fussabdruck_aus(szenario.get("flaechen"))
+    # Der Aushub haengt am Szenario: ob es eine Baugrube gibt und wie gross
+    # sie ist. Dieselbe Positionsliste wird fuer mehrere Szenarien benutzt --
+    # deshalb wird er erst hier eingesetzt. Ein vom Benutzer gesetzter Wert
+    # bleibt unangetastet.
     positionen = [
-        aushubposition(fussabdruck)
+        aushub_fuer_szenario(szenario)
         if p.schluessel == "bkp1_aushub" and p.herkunft != HERKUNFT_BENUTZERANNAHME
         else p
         for p in positionen
