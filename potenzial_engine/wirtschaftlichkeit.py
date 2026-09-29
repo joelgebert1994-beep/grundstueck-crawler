@@ -512,6 +512,10 @@ def standard_kostenmodell(
 
     Alle Ansaetze sind Modellannahmen und ueberschreibbar. Die Richtwerte
     stammen unveraendert aus Modul 3 -- es gibt im Projekt nur EINEN Satz.
+
+    `kostenbasis` gilt fuer BKP 2. Der Aushub hat sie bewusst NICHT: er
+    haengt am Fussabdruck, nicht an einer Nutzflaeche, und wird von
+    berechne_fuer_szenario() je Szenario eingesetzt.
     """
     if ausbaustandard not in AUSBAUSTANDARD_CHF_PRO_M2_BGF:
         raise WirtschaftlichkeitError(
@@ -523,17 +527,11 @@ def standard_kostenmodell(
             f"Unbekannte Kostengenauigkeit '{kostengenauigkeit}' -- "
             f"bekannt: {sorted(BKP9_PROZENT_BY_GENAUIGKEIT)}"
         )
-    aushub_rate = BKP1_AUSHUB_TIEFE_M_DEFAULT * BKP1_AUSHUB_CHF_PRO_M3_DEFAULT
     return [
-        Kostenposition(
-            "bkp1_aushub", "1", "Aushub und Vorbereitung", KOSTEN_PRO_M2,
-            round(aushub_rate, 0), kostenbasis,
-            begruendung=(
-                f"{BKP1_AUSHUB_TIEFE_M_DEFAULT:g} m Aushubtiefe × "
-                f"{BKP1_AUSHUB_CHF_PRO_M3_DEFAULT:g} CHF/m³ (Richtwert Modul 3). "
-                "Projektspezifisch stark abweichend."
-            ),
-        ),
+        # Der Aushub steht hier ohne Wert. Er braucht den Fussabdruck, und der
+        # haengt am einzelnen Szenario -- dieselbe Liste wird fuer mehrere
+        # Szenarien benutzt. berechne_fuer_szenario() setzt ihn ein.
+        aushubposition(None),
         Kostenposition(
             "bkp2_gebaeude", "2", "Gebäude", KOSTEN_PRO_M2,
             AUSBAUSTANDARD_CHF_PRO_M2_BGF[ausbaustandard], kostenbasis,
@@ -582,6 +580,62 @@ def standard_kostenmodell(
             ),
         ),
     ]
+
+
+def aushubposition(
+    fussabdruck_m2: Optional[float],
+    tiefe_m: float = BKP1_AUSHUB_TIEFE_M_DEFAULT,
+    chf_pro_m3: float = BKP1_AUSHUB_CHF_PRO_M3_DEFAULT,
+) -> Kostenposition:
+    """Die Baugrube -- auf dem FUSSABDRUCK, nicht auf der Geschossflaeche.
+
+    Bis September 2026 rechnete diese Position `tiefe x preis` als CHF/m2
+    auf die Geschossflaeche. Damit wuchs die Baugrube mit jedem Geschoss:
+    bei 275 m2 Fussabdruck und vier Geschossen ergab das 115'500 statt
+    28'875 CHF -- genau das Vierfache. Bei eingeschossiger Bauweise fiel es
+    nicht auf, weil Geschossflaeche und Fussabdruck dort dasselbe sind.
+
+    Eine Baugrube wird einmal ausgehoben. Sie haengt an der Grundflaeche
+    des Gebaeudes und an der Aushubtiefe, nicht daran, wie viele Geschosse
+    darueber stehen.
+
+    Ohne bekannten Fussabdruck wird nichts geschaetzt -- wie beim Abbruch.
+    """
+    if not fussabdruck_m2:
+        return Kostenposition(
+            "bkp1_aushub", "1", "Aushub und Vorbereitung", KOSTEN_ABSOLUT, None,
+            herkunft=HERKUNFT_NICHT_BESTIMMBAR,
+            begruendung=(
+                "Der Fussabdruck des geplanten Gebaeudes ist nicht bekannt. Ohne ihn "
+                "laesst sich keine Baugrube bemessen -- ein Ansatz je Quadratmeter "
+                "Geschossflaeche waere falsch, weil die Grube nicht mit der Geschosszahl "
+                "waechst."
+            ),
+        )
+    volumen = fussabdruck_m2 * tiefe_m
+    return Kostenposition(
+        "bkp1_aushub", "1", "Aushub und Vorbereitung", KOSTEN_ABSOLUT,
+        round(volumen * chf_pro_m3, 0),
+        begruendung=(
+            f"{fussabdruck_m2:,.0f} m² Fussabdruck × {tiefe_m:g} m Aushubtiefe = "
+            f"{volumen:,.0f} m³ × {chf_pro_m3:g} CHF/m³ (Richtwert Modul 3). "
+            "Projektspezifisch stark abweichend."
+        ),
+    )
+
+
+def _fussabdruck_aus(flaechen_ergebnis: Optional[dict[str, Any]]) -> Optional[float]:
+    """Der Fussabdruck aus dem Geschossaufbau des Flaechenmodells.
+
+    Das Modell gibt jedem Vollgeschoss die Flaeche des Fussabdrucks; ein
+    zusaetzlich uebergebenes Attika- oder Untergeschoss kann kleiner sein.
+    Massgebend fuer die Baugrube ist das GROESSTE Geschoss -- so tief und
+    so breit muss die Grube mindestens sein.
+    """
+    aufbau = (flaechen_ergebnis or {}).get("geschossaufbau") or {}
+    werte = [g.get("flaeche_m2") for g in (aufbau.get("geschosse") or [])
+             if isinstance(g.get("flaeche_m2"), (int, float))]
+    return max(werte) if werte else None
 
 
 def abbruchposition(bestand_volumen_m3: Optional[float]) -> Kostenposition:
@@ -732,6 +786,19 @@ def berechne_fuer_szenario(
     wohnungen = szenario.get("wohnungen")
 
     positionen = list(kostenpositionen) if kostenpositionen is not None else standard_kostenmodell()
+
+    # Der Aushub braucht den Fussabdruck DIESES Szenarios. Dieselbe
+    # Positionsliste wird fuer mehrere Szenarien benutzt -- deshalb wird er
+    # erst hier eingesetzt, wo der Fussabdruck bekannt ist. Ein vom Benutzer
+    # gesetzter Wert bleibt unangetastet.
+    fussabdruck = _fussabdruck_aus(szenario.get("flaechen"))
+    positionen = [
+        aushubposition(fussabdruck)
+        if p.schluessel == "bkp1_aushub" and p.herkunft != HERKUNFT_BENUTZERANNAHME
+        else p
+        for p in positionen
+    ]
+
     # Abbruch nur beim Ersatzneubau, und nur wenn nicht schon gesetzt.
     if szenario.get("id") == "ersatzneubau" and not any(p.schluessel == "bkp1_abbruch" for p in positionen):
         positionen = [abbruchposition(bestand_volumen_m3), *positionen]
