@@ -9426,8 +9426,17 @@ function secEntwurf(erg) {
   window.passe3DAn = function () {
     var el = behaelter();
     if (!renderer || !el || !el.clientWidth || !el.clientHeight) return false;
-    if (renderer.domElement.width === el.clientWidth
-        && renderer.domElement.height === el.clientHeight) return true;
+    // Verglichen wird die CSS-Groesse, nicht domElement.width: der
+    // Zeichenpuffer ist um devicePixelRatio groesser (125 % Skalierung,
+    // Retina), und der Vergleich schluege dort IMMER fehl -- das 500-ms-
+    // Polling setzte dann den Puffer ohne Anlass dauernd neu. Aendert sich
+    // das Pixelverhaeltnis selbst (Fenster auf anderen Bildschirm), wird es
+    // nachgezogen.
+    var dpr = window.devicePixelRatio || 1;
+    var ist = renderer.getSize(new THREE.Vector2());
+    if (ist.x === el.clientWidth && ist.y === el.clientHeight
+        && renderer.getPixelRatio() === dpr) return true;
+    if (renderer.getPixelRatio() !== dpr) renderer.setPixelRatio(dpr);
     kamera.aspect = el.clientWidth / el.clientHeight;
     kamera.updateProjectionMatrix();
     renderer.setSize(el.clientWidth, el.clientHeight);
