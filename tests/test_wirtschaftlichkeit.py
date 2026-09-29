@@ -450,6 +450,58 @@ def test_landansatz() -> None:
     print()
 
 
+def test_bodenpreis_systemvorschlag_nicht_automatisch() -> None:
+    """Der Bodenpreis-Systemvorschlag ist eine Orientierung, kein Rechenwert.
+
+    MVP 1 "Markt absichern": ein aus Vergleichsobjekten abgeleiteter
+    Bodenpreis darf nicht mehr STILL als Landwert einfliessen, nur weil
+    Referenzen vorhanden sind. Er bleibt sichtbar (systemvorschlag,
+    referenzen, sicherheitsgrad unveraendert im Ergebnis), aber erst eine
+    echte Benutzerannahme darf den Landwert bestimmen.
+    """
+    print("=== Bodenpreis: Systemvorschlag orientiert, uebernimmt sich nicht selbst ===")
+    referenzen = [
+        w.Referenzwert("AkquiseRadar", "2026-06", "Vergleich A", 900, "CHF/m2", "mittel"),
+        w.Referenzwert("AkquiseRadar", "2026-06", "Vergleich B", 1000, "CHF/m2", "mittel"),
+        w.Referenzwert("AkquiseRadar", "2026-06", "Vergleich C", 1100, "CHF/m2", "mittel"),
+    ]
+    nur_systemvorschlag = w.marktwert("boden", "CHF/m2", referenzen=referenzen)
+    pruefe(nur_systemvorschlag.systemvorschlag == 1000.0,
+           f"Systemvorschlag ist der Median der Referenzen ({nur_systemvorschlag.systemvorschlag})")
+    pruefe(nur_systemvorschlag.wert == 1000.0,
+           ".wert selbst faellt weiterhin auf den Systemvorschlag zurueck (unveraendertes Verhalten der Klasse)")
+
+    ohne_uebernahme = w.berechne_fuer_szenario(
+        szenario(), 1200.0, markt(bodenpreis_chf_pro_m2=nur_systemvorschlag))
+    pruefe(ohne_uebernahme["land"]["wert_chf"] is None,
+           "ohne Benutzerannahme bleibt der Landwert unbestimmt, trotz vorhandenem Systemvorschlag")
+    pruefe(ohne_uebernahme["land"]["herkunft"] == HERKUNFT_NICHT_BESTIMMBAR,
+           "und die Herkunft sagt das ehrlich")
+    pruefe(ohne_uebernahme["land"]["bodenpreis"]["systemvorschlag"] == 1000.0,
+           "der Systemvorschlag bleibt im Ergebnis sichtbar (Anzeige unveraendert)")
+    pruefe(ohne_uebernahme["land"]["bodenpreis"]["anzahl_referenzen"] == 3,
+           "ebenso die Anzahl Referenzen, fuer den Sicherheitsgrad in der Oberflaeche")
+    pruefe(ohne_uebernahme["ergebnis"]["gesamtinvestition_chf"] is None,
+           "ohne Landwert bleibt auch die Gesamtinvestition unbestimmt -- keine stille Teilrechnung")
+
+    # Bewusste Uebernahme: derselbe Wert, jetzt als Benutzerannahme --
+    # exakt das, was der "Systemvorschlag uebernehmen"-Knopf im Frontend ausloest.
+    uebernommen = w.marktwert("boden", "CHF/m2", referenzen=referenzen,
+                              benutzerannahme=nur_systemvorschlag.systemvorschlag)
+    mit_uebernahme = w.berechne_fuer_szenario(
+        szenario(), 1200.0, markt(bodenpreis_chf_pro_m2=uebernommen))
+    pruefe(mit_uebernahme["land"]["wert_chf"] is not None,
+           "nach bewusster Uebernahme wird der Landwert berechnet")
+    pruefe(mit_uebernahme["land"]["herkunft"] == HERKUNFT_BENUTZERANNAHME,
+           "und als Benutzerannahme ausgewiesen -- nicht als stille Systemannahme")
+
+    # Eine eigene, andere Zahl bleibt selbstverstaendlich unveraendert moeglich.
+    eigene_zahl = w.berechne_fuer_szenario(szenario(), 1200.0, markt())  # markt() setzt benutzerannahme=1050
+    pruefe(eigene_zahl["land"]["wert_chf"] is not None and eigene_zahl["land"]["herkunft"] == HERKUNFT_BENUTZERANNAHME,
+           "eine direkt eingegebene Benutzerannahme funktioniert weiterhin wie bisher")
+    print()
+
+
 def test_unvollstaendig() -> None:
     print("=== Fehlende Grundlagen: nicht bestimmbar MIT Ursache ===")
     ohne_preis = w.berechne_fuer_szenario(szenario(), 1200.0, w.Marktannahmen())
@@ -806,6 +858,7 @@ def main() -> None:
     test_gesamtrechnung()
     test_dynamik()
     test_landansatz()
+    test_bodenpreis_systemvorschlag_nicht_automatisch()
     test_unvollstaendig()
     test_vergleich()
     test_aushub_haengt_am_fussabdruck()

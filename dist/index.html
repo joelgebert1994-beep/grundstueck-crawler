@@ -2256,22 +2256,42 @@ goBtn.addEventListener("click", function () { starteAnalyse(false); });
 
 // `neuRechnen` umgeht den Zwischenspeicher. Nur auf ausdrueckliche Anweisung
 // -- sonst kostet jeder Klick wieder zwei Minuten und einen LLM-Aufruf.
+// Welche Adresse wEingaben/wErgebnis zuletzt gehoerten. "Neu rechnen"
+// (starteAnalyse(true) auf DIESELBE gewaehlteAdresse, z.B. um den
+// Zwischenspeicher zu umgehen) darf die bereits eingetippten Marktannahmen
+// nicht wegwerfen -- nur ein echter Adresswechsel tut das.
+var wEingabenAdresse = null;
+
 function starteAnalyse(neuRechnen) {
   if (!gewaehlteAdresse) return;
   goBtn.disabled = true;
   goBtn.textContent = "Analyse läuft …";
   ergebnisAktuell = null;
-  // wErgebnis (Wirtschaftlichkeit der VORIGEN Analyse, samt referenzgebiet)
-  // lebt als eigene globale Variable und wird erst ueberschrieben, wenn
-  // wRechne() fuer die NEUE Analyse asynchron antwortet. verdrahteWirtschaft()
-  // laeuft aber synchron direkt nach renderDossier() und liest ueber
-  // mktGebiet() schon vorher wErgebnis.referenzgebiet.plz fuer die
-  // Marktabfrage -- ohne diesen Reset ging die erste Marktanfrage einer
-  // neuen Analyse noch mit der PLZ der vorigen hinaus (gemeinde/kanton
-  // kommen aus ergebnisAktuell und waren bereits korrekt, nur die PLZ
-  // nicht). Live beobachtet: nach Buchs AG war Rorschachs erste
-  // Marktanfrage noch mit plz=5033 (Buchs) unterwegs.
-  wErgebnis = null;
+  if (gewaehlteAdresse !== wEingabenAdresse) {
+    wEingabenAdresse = gewaehlteAdresse;
+    // wErgebnis (Wirtschaftlichkeit der VORIGEN Analyse, samt
+    // referenzgebiet) und wEingaben (eigene Marktannahmen: Verkaufspreis,
+    // Miete, Bodenpreis, Wohnungsmix, ...) leben als eigene globale
+    // Variablen und wurden bisher NIE auf eine neue Adresse zurueckgesetzt.
+    //
+    // Fuer wErgebnis: verdrahteWirtschaft() laeuft synchron direkt nach
+    // renderDossier() und liest ueber mktGebiet() schon vorher
+    // wErgebnis.referenzgebiet.plz fuer die Marktabfrage -- ohne Reset
+    // ging die erste Marktanfrage einer neuen Analyse noch mit der PLZ der
+    // vorigen hinaus (gemeinde/kanton kommen aus ergebnisAktuell und waren
+    // bereits korrekt, nur die PLZ nicht). Live beobachtet: nach Buchs AG
+    // war Rorschachs erste Marktanfrage noch mit plz=5033 unterwegs.
+    //
+    // Fuer wEingaben: ohne Reset zeigte eine neue Adresse B noch den
+    // Verkaufspreis/Bodenpreis/etc., den der Benutzer bei der vorigen
+    // Adresse A eingetippt hatte -- eine fremde Annahme, stillschweigend
+    // uebernommen. Bereits GESPEICHERTE Varianten sind davon nicht
+    // betroffen: die laden ihre eigenen Werte ueber
+    // uebernehmeVariantenEingaben() beim Oeffnen (siehe wendeVarianteAn()).
+    wErgebnis = null;
+    wEingaben = wEingabenStandard();
+    wBeruehrt = {};
+  }
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
   ["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
   renderLoading();
@@ -10238,27 +10258,38 @@ var HERKUNFT_KURZ = {
 };
 
 /* Die Eingaben. Alles, was hier steht, ist editierbar und geht 1:1 an den
-   Endpunkt. Vorbelegt mit dem, was die Engine als Systemannahme vorschlaegt. */
-var wEingaben = {
-  verkauf_chf_pro_m2: null,
-  verkauf_basis: "nwf",
-  miete_chf_pro_m2_jahr: null,
-  bodenpreis_chf_pro_m2: null,
-  zielmarge: 0.15,
-  land_ansatz: "kauf",
-  ausbaustandard: "rendite",
-  kostenbasis: "gf",
-  bkp: {},
-  restflaeche_verteilen: false,
-  // Tatsaechliche Wohnflaeche des Bestands, aus Plaenen oder Abrechnung.
-  // Bleibt leer: die Engine leitet sie NICHT aus der Geschossflaeche ab.
-  bestand_flaeche_nwf_m2: null,
-  wohnungsmix: [
-    { typ: "2.5 Zi", flaeche_m2: 62, anteil: 0.20 },
-    { typ: "3.5 Zi", flaeche_m2: 88, anteil: 0.50 },
-    { typ: "4.5 Zi", flaeche_m2: 112, anteil: 0.30 }
-  ]
-};
+   Endpunkt. Vorbelegt mit dem, was die Engine als Systemannahme vorschlaegt.
+
+   Eine FUNKTION statt eines einzelnen Literals, weil starteAnalyse() bei
+   jeder neuen Adresse einen frischen Satz braucht (siehe dort) -- sonst
+   traegt eine neue Analyse die Annahmen der vorigen weiter (Verkaufspreis,
+   Miete, Bodenpreis, Wohnungsmix, ...). Jeder Aufruf liefert ein neues
+   Objekt samt neuem wohnungsmix-Array und neuem bkp-Objekt: wuerden diese
+   geteilt, haette das Loeschen eines Wohnungsmix-Eintrags in Analyse B
+   auch den "Standard" fuer die naechste Analyse veraendert. */
+function wEingabenStandard() {
+  return {
+    verkauf_chf_pro_m2: null,
+    verkauf_basis: "nwf",
+    miete_chf_pro_m2_jahr: null,
+    bodenpreis_chf_pro_m2: null,
+    zielmarge: 0.15,
+    land_ansatz: "kauf",
+    ausbaustandard: "rendite",
+    kostenbasis: "gf",
+    bkp: {},
+    restflaeche_verteilen: false,
+    // Tatsaechliche Wohnflaeche des Bestands, aus Plaenen oder Abrechnung.
+    // Bleibt leer: die Engine leitet sie NICHT aus der Geschossflaeche ab.
+    bestand_flaeche_nwf_m2: null,
+    wohnungsmix: [
+      { typ: "2.5 Zi", flaeche_m2: 62, anteil: 0.20 },
+      { typ: "3.5 Zi", flaeche_m2: 88, anteil: 0.50 },
+      { typ: "4.5 Zi", flaeche_m2: 112, anteil: 0.30 }
+    ]
+  };
+}
+var wEingaben = wEingabenStandard();
 var wErgebnis = null;
 var wLaeuft = false;
 var wTimer = null;
@@ -10898,13 +10929,22 @@ function mktNameOderKennung(o) {
   return (o || {}).bezeichnung ? String(o.bezeichnung) : name;
 }
 
-function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt) {
+function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt, nurBenutzerZaehlt) {
   // Auch ohne jede Referenz bleibt die Karte stehen. Fiele sie weg, fiele
   // ihr Eingabefeld mit -- und wSammleEingaben liest ein fehlendes Feld
   // als null. Eine gesetzte Annahme waere beim naechsten Tastendruck
   // still geloescht, ohne dass irgendwo etwas danach aussieht.
   mw = mw || { wert: null, herkunft: "nicht_bestimmbar", systemvorschlag: null,
                referenzspanne: null, anzahl_referenzen: 0 };
+  // MVP 1 "Markt absichern", nur beim Bodenpreis (nurBenutzerZaehlt): ein
+  // aus Referenzen abgeleiteter Systemvorschlag darf dort nicht mehr
+  // stillschweigend als Rechenwert gelten -- der Server liefert .wert dann
+  // zwar weiterhin (der Systemvorschlag bleibt sichtbar), aber
+  // berechne_fuer_szenario() nimmt ihn nicht mehr in den Landwert auf
+  // (siehe potenzial_engine/wirtschaftlichkeit.py). Hier deshalb dieselbe
+  // Unterscheidung: "gerechnet" heisst ab jetzt nur noch eine echte
+  // Benutzerannahme, kein blosser Systemvorschlag.
+  var gesperrterSystemwert = !!nurBenutzerZaehlt && mw.herkunft === "systemannahme" && !leer(mw.wert);
   var WERTFELD = { miete: "mietzins_chf_pro_m2_jahr", boden: "bodenpreis_chf_pro_m2",
                    verkauf: "preis_chf_pro_m2" };
   var HERKUNFT_TEXT = { extern: "extern", gebimo: "gebimo", manuell: "manuell" };
@@ -11032,25 +11072,38 @@ function marktGroesse(mw, label, einheit, lage, feldId, feldWert, schritt) {
       '<span class="right">' + sicherheitsMeter(sicher) + "</span></div>" +
     '<div class="mgrhaupt">' +
       '<div class="mgrwert"><div class="lbl">Gerechnet mit</div>' +
-        '<div class="val' + (leer(mw.wert) ? " na" : "") + '">' +
-        (leer(mw.wert) ? "noch nicht gesetzt"
-          : chf(mw.wert) + ' <span class="einheit">' + esc(einheit) + "</span>") + "</div>" +
-        (leer(mw.wert) && mw.herkunft === "nicht_bestimmbar"
-          // Wer einen Wert eingetippt hat, will wissen, ob er angekommen
-          // ist. "noch kein gerechneter Wert" allein liest sich, als
-          // waere die Eingabe verschwunden.
-          ? '<div class="fuss">' + (leer(feldWert)
-              ? "noch kein gerechneter Wert"
-              : "Ihre Eingabe " + esc(chf(feldWert) + " " + einheit) +
-                " ist gespeichert und wird angewendet, sobald gerechnet werden kann") +
-            "</div>"
-          : '<div class="fuss"><span class="badge ' + badge[1] + '">' + esc(badge[0]) +
-            "</span></div>") + "</div>" +
+        '<div class="val' + ((leer(mw.wert) || gesperrterSystemwert) ? " na" : "") + '">' +
+        (gesperrterSystemwert ? "noch nicht übernommen"
+          : (leer(mw.wert) ? "noch nicht gesetzt"
+            : chf(mw.wert) + ' <span class="einheit">' + esc(einheit) + "</span>")) + "</div>" +
+        (gesperrterSystemwert
+          // Bewusst KEIN "systemannahme"-Abzeichen hier: das behauptete,
+          // der Wert waere bereits im Einsatz. Ist er nicht -- solange
+          // niemand ihn uebernommen hat.
+          ? '<div class="fuss">Systemvorschlag ' + esc(chf(mw.wert) + " " + einheit) +
+            " — erst nach Übernahme ein Rechenwert.</div>"
+          : (leer(mw.wert) && mw.herkunft === "nicht_bestimmbar"
+            // Wer einen Wert eingetippt hat, will wissen, ob er angekommen
+            // ist. "noch kein gerechneter Wert" allein liest sich, als
+            // waere die Eingabe verschwunden.
+            ? '<div class="fuss">' + (leer(feldWert)
+                ? "noch kein gerechneter Wert"
+                : "Ihre Eingabe " + esc(chf(feldWert) + " " + einheit) +
+                  " ist gespeichert und wird angewendet, sobald gerechnet werden kann") +
+              "</div>"
+            : '<div class="fuss"><span class="badge ' + badge[1] + '">' + esc(badge[0]) +
+              "</span></div>")) + "</div>" +
       '<label class="wfeld mgrfeld"><span class="wlab">Eigener Wert</span>' +
         '<span class="winput"><input type="number" id="' + feldId + '" value="' +
         (leer(feldWert) ? "" : esc(feldWert)) + '" step="' + esc(schritt) +
         '" placeholder="' + (leer(mw.systemvorschlag) ? "Ihr Wert" : "Systemvorschlag") +
-        '"><em>' + esc(einheit) + "</em></span></label>" +
+        '"><em>' + esc(einheit) + "</em></span>" +
+        (gesperrterSystemwert && leer(feldWert)
+          ? '<button type="button" class="szbtn klein" data-uebernehmen="' + feldId +
+            '" data-uebernehmenwert="' + esc(mw.systemvorschlag) +
+            '">Systemvorschlag übernehmen</button>'
+          : "") +
+      "</label>" +
     "</div>" +
     '<div class="ezeilen">' +
       ebeneZeile("Marktreferenzen", refText, null, refHinweis) +
@@ -11200,7 +11253,7 @@ function marktBlock(erg) {
     marktSegment("efh", "Einfamilienhaus", "CHF", true) +
     marktSegment("mfh", "Renditeliegenschaft", "CHF", true) +
     marktGroesse((e.land || {}).bodenpreis || nurReferenz("boden"), "Bauland",
-                 "CHF/m²", wLage("boden"), "w-boden", wEingaben.bodenpreis_chf_pro_m2, "50") +
+                 "CHF/m²", wLage("boden"), "w-boden", wEingaben.bodenpreis_chf_pro_m2, "50", true) +
     marktGroesse((e.miete || {}).ansatz || nurReferenz("miete"), "Mietzins",
                  "CHF/m²/Jahr", wLage("miete"), "w-miete", wEingaben.miete_chf_pro_m2_jahr, "5") +
     ((e.land || {}).ansatz_bedeutung
@@ -12021,6 +12074,25 @@ function verdrahteWirtschaft() {
     };
     el.addEventListener("input", merken);
     el.addEventListener("change", merken);
+  });
+  // "Systemvorschlag übernehmen" (bisher nur beim Bodenpreis, siehe
+  // marktGroesse()): kopiert exakt den angezeigten Systemvorschlag als
+  // eigene Annahme -- keine andere, keine erfundene Zahl. Danach verhaelt
+  // sich das Feld wie jede getippte Eingabe (wBeruehrt, wAngestossen()).
+  document.querySelectorAll("[data-uebernehmen]").forEach(function (b) {
+    if (b.dataset.verdrahtet) return;
+    b.dataset.verdrahtet = "1";
+    b.addEventListener("click", function () {
+      var feldId = b.dataset.uebernehmen;
+      var wert = Number(b.dataset.uebernehmenwert);
+      var feld = document.getElementById(feldId);
+      if (feld) feld.value = wert;
+      var schluessel = FELD_ZU_EINGABE[feldId];
+      if (schluessel) { wEingaben[schluessel] = wert; wBeruehrt[schluessel] = true; }
+      b.disabled = true;
+      b.textContent = "übernommen";
+      wAngestossen();
+    });
   });
   document.querySelectorAll(".wmix-weg").forEach(function (b) {
     if (b.dataset.verdrahtet) return;

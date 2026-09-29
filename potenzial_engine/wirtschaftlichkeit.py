@@ -855,13 +855,23 @@ def berechne_fuer_szenario(
         landwert = markt.landpreis_total_chf
         landwert_herkunft = HERKUNFT_BENUTZERANNAHME if landwert is not None else HERKUNFT_NICHT_BESTIMMBAR
         landwert_rechnung = "Gesamtkaufpreis (Benutzerannahme)" if landwert is not None else None
-        if landwert is None and markt.bodenpreis_chf_pro_m2 and markt.bodenpreis_chf_pro_m2.wert is not None:
+        # Bewusst .benutzerannahme, nicht .wert: .wert faellt automatisch auf
+        # den Systemvorschlag (Median der Referenzen) zurueck, sobald keine
+        # Benutzerannahme gesetzt ist. Genau dieser stille Fallback darf fuer
+        # den Landwert NICHT gelten -- ein aus Vergleichsobjekten
+        # abgeleiteter Bodenpreis ist eine Orientierung, kein Rechenwert,
+        # solange niemand ihn bewusst uebernommen hat. Systemvorschlag,
+        # Referenzen und Sicherheitsgrad bleiben unveraendert sichtbar
+        # (siehe markt.bodenpreis_chf_pro_m2.to_dict() unten); nur der
+        # Eingang in den Landwert ist jetzt an eine echte Benutzerannahme
+        # gebunden.
+        if landwert is None and markt.bodenpreis_chf_pro_m2 and markt.bodenpreis_chf_pro_m2.benutzerannahme is not None:
             if grundstuecksflaeche_m2:
-                landwert = round(markt.bodenpreis_chf_pro_m2.wert * grundstuecksflaeche_m2, 0)
+                landwert = round(markt.bodenpreis_chf_pro_m2.benutzerannahme * grundstuecksflaeche_m2, 0)
                 landwert_herkunft = markt.bodenpreis_chf_pro_m2.herkunft
                 landwert_rechnung = (
                     f"{grundstuecksflaeche_m2:,.1f} m² × "
-                    f"{markt.bodenpreis_chf_pro_m2.wert:,.0f} CHF/m²"
+                    f"{markt.bodenpreis_chf_pro_m2.benutzerannahme:,.0f} CHF/m²"
                 )
 
     gesamtinvestition = None

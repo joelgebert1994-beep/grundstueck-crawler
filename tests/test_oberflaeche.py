@@ -696,6 +696,62 @@ def test_wergebnis_zurueckgesetzt_bei_neuer_analyse(s: str) -> None:
            "der bestehende ergebnisAktuell-Reset ist weiterhin vorhanden")
 
 
+def test_weingaben_zurueckgesetzt_bei_neuer_analyse(s: str) -> None:
+    """Markt MVP 1: eigene Marktannahmen wandern nicht in eine neue Analyse.
+
+    wEingaben (Verkaufspreis-, Miet- und Bodenpreisannahme, Wohnungsmix,
+    ...) wurde bisher nie auf eine neue Adresse zurueckgesetzt. Der Reset
+    haengt bewusst an einem echten Adresswechsel (gewaehlteAdresse !==
+    wEingabenAdresse), nicht an jedem starteAnalyse()-Aufruf: sonst wuerfe
+    "neu rechnen" fuer DIESELBE Adresse (Zwischenspeicher umgehen) die
+    gerade eingetippten Annahmen versehentlich weg. Gespeicherte Varianten
+    sind vom Reset nicht betroffen -- sie laden ihre eigenen Werte
+    unveraendert ueber uebernehmeVariantenEingaben() beim Oeffnen.
+    Funktionaler Regressionstest: tests/js/markt_mvp1.test.js.
+    """
+    pruefe("function wEingabenStandard()" in s,
+           "die Standardwerte stehen in einer eigenen Funktion, nicht in einem geteilten Literal")
+    pruefe("var wEingaben = wEingabenStandard();" in s,
+           "die erste Belegung nutzt dieselbe Funktion wie der spaetere Reset")
+
+    fn = s[s.index("function starteAnalyse("):]
+    fn = fn[: fn.index("\nfunction ", 10)]
+    pruefe("if (gewaehlteAdresse !== wEingabenAdresse)" in fn,
+           "der Reset ist an einen echten Adresswechsel gebunden")
+    block = fn[fn.index("if (gewaehlteAdresse !== wEingabenAdresse)"):]
+    pruefe("wEingaben = wEingabenStandard();" in block,
+           "wEingaben wird beim Adresswechsel zurueckgesetzt")
+    pruefe("wBeruehrt = {};" in block,
+           "wBeruehrt wird mit zurueckgesetzt -- sonst gaelte eine geloeschte Eingabe noch als beruehrt")
+
+
+def test_bodenpreis_systemvorschlag_keine_stille_uebernahme(s: str) -> None:
+    """Markt MVP 1: Bodenpreis-Systemvorschlag ist Orientierung, kein Rechenwert.
+
+    marktGroesse() bekommt einen vierten, optionalen Steuerungsparameter
+    (nurBenutzerZaehlt), der ausschliesslich beim Bodenpreis-Aufruf gesetzt
+    ist -- Verkaufspreis und Miete duerfen sich nicht aendern. Backend-
+    seitig gehoert dazu potenzial_engine/wirtschaftlichkeit.py (dort per
+    Python-Test abgedeckt); hier nur die Anzeige- und Knopf-Logik.
+    Funktionaler Regressionstest: tests/js/markt_mvp1.test.js (Faelle E, F, G).
+    """
+    fn = s[s.index("function marktGroesse("): s.index("function marktSegment(")]
+    pruefe("gesperrterSystemwert" in fn,
+           "die Unterscheidung 'Systemvorschlag vs. echte Benutzerannahme' existiert")
+    pruefe('data-uebernehmen="' in fn,
+           "der Uebernehmen-Knopf traegt das Zielfeld")
+    pruefe('data-uebernehmenwert="\' + esc(mw.systemvorschlag)' in fn,
+           "der Knopf uebertraegt genau den angezeigten Systemvorschlag, keinen erfundenen Wert")
+
+    block = s[s.index('function marktBlock('): s.index("\nfunction ", s.index('function marktBlock('))]
+    pruefe('"w-boden", wEingaben.bodenpreis_chf_pro_m2, "50", true)' in block,
+           "nur der Bodenpreis-Aufruf setzt nurBenutzerZaehlt")
+    pruefe('"w-verkauf", wEingaben.verkauf_chf_pro_m2, "50")' in block,
+           "Verkaufspreis bleibt unveraendert (kein fuenfter/sechster Parameter)")
+    pruefe('"w-miete", wEingaben.miete_chf_pro_m2_jahr, "5")' in block,
+           "Miete bleibt ebenso unveraendert")
+
+
 def test_markt_ohne_standortdaten(s: str) -> None:
     """Der Marktreiter beantwortet nur: Was ist am Markt plausibel?
 
@@ -1466,6 +1522,8 @@ def main() -> int:
                test_daten_und_quellen, test_umschrift_diphthong,
                test_teilfehler_sperrt_keinen_reiter, test_rechenstand_eine_stelle,
                test_marktauswertung_zwei_wege, test_wergebnis_zurueckgesetzt_bei_neuer_analyse,
+               test_weingaben_zurueckgesetzt_bei_neuer_analyse,
+               test_bodenpreis_systemvorschlag_keine_stille_uebernahme,
                test_markt_ohne_standortdaten,
                test_marktsatz_stimmt_mit_der_engine,
                test_qualitaetsauswahl_passt_zur_engine,
