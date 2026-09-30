@@ -102,6 +102,74 @@ pruefe(darfAutoSpeichern(vA, projektA, {}) === false,
 pruefe(darfAutoSpeichern(vA, projektA, ergA) === true,
   "Wechsel zurueck auf die urspruengliche Adresse A -- Autospeichern greift wieder");
 
+// ---------------------------------------------------------------------
+// 3. Der Nachtrag: der EGRID-Schutz allein reichte nicht. Kehrte man nach
+//    B zu EGRID A zurueck, WAEHREND Projekt A weiterhin als "offen" galt
+//    (niemand hatte es geschlossen), passte egridJetzt wieder zu
+//    projektAktuell.egrid -- und wRechne() speicherte das inzwischen auf B
+//    zurueckgesetzte (leere) wEingaben in Variante A. Live in Variante 15
+//    nachgewiesen.
+//
+//    Fix: ein echter Adresswechsel schliesst das offene Projekt automatisch
+//    (dieselbe Rueckstellung wie der bestehende #pj-schliessen-Knopf).
+//    Extrahiert und geprueft wird hier starteAnalyse() selbst -- nicht
+//    nachgebaut.
+// ---------------------------------------------------------------------
+{
+  const fn = extrahiere("starteAnalyse");
+  pruefe(fn.indexOf("if (gewaehlteAdresse !== wEingabenAdresse)") >= 0,
+    "der Projekt-Reset sitzt im selben, an einen echten Adresswechsel gebundenen Block");
+  const block = fn.slice(fn.indexOf("if (gewaehlteAdresse !== wEingabenAdresse)"));
+  pruefe(/projektAktuell = null;/.test(block),
+    "ein echter Adresswechsel schliesst das offene Projekt (projektAktuell = null)");
+  pruefe(/varianteErgebnisse = \{\};/.test(block),
+    "varianteErgebnisse wird mit zurueckgesetzt -- dieselbe Rueckstellung wie #pj-schliessen");
+  pruefe(/variantenVergleich = null;/.test(block),
+    "variantenVergleich wird ebenfalls zurueckgesetzt");
+}
+
+// Funktionale Nachbildung des vollen A -> B -> C -> D -> E Ablaufs mit den
+// echten, extrahierten Bausteinen (wEingabenStandard(), darfAutoSpeichern()).
+{
+  const wEingabenStandardQuelle = extrahiere("wEingabenStandard");
+  eval(wEingabenStandardQuelle); // eslint-disable-line no-eval -- Testabsicht: echten Code pruefen
+
+  // A: Projekt A (EGRID A) offen, eigene Werte gesetzt -> Autospeichern aktiv.
+  var wEingabenA = wEingabenStandard();
+  wEingabenA.verkauf_chf_pro_m2 = 9100;
+  wEingabenA.bodenpreis_chf_pro_m2 = 1000;
+  pruefe(darfAutoSpeichern(vA, projektA, ergA) === true,
+    "A: Projekt A offen, EGRID A -- Autospeichern aktiv");
+
+  // B: Adresswechsel zu EGRID B -- derselbe Reset wie in starteAnalyse():
+  // wEingaben neu, UND projektAktuell wird geschlossen.
+  var wEingabenB = wEingabenStandard();
+  var projektNachB = null;
+  pruefe(darfAutoSpeichern(vA, projektNachB, ergB) === false,
+    "B: nach dem Adresswechsel ist das Projekt geschlossen -- kein Speichern");
+
+  // C: Rueckkehr zu EGRID A -- derselbe Reset laeuft (es ist wieder ein
+  // Adresswechsel), projektAktuell bleibt null, bis es jemand bewusst
+  // wieder oeffnet. DAS ist der behobene Fehlerfall: fruerher passte
+  // egridJetzt wieder zu einem noch offenen projektAktuell.
+  var wEingabenC = wEingabenStandard();
+  var projektNachC = null; // niemand hat "Meine Projekte" -> Projekt A angeklickt
+  pruefe(darfAutoSpeichern(vA, projektNachC, ergA) === false,
+    "C (der Fix): Rueckkehr zu EGRID A speichert NICHT automatisch in das noch geschlossene Projekt A");
+
+  // D: Projekt A wird bewusst wieder geoeffnet (ueber "Meine Projekte") --
+  // uebernehmeVariantenEingaben() (unveraendert) laedt seine gespeicherten
+  // Werte; hier nur die Kernaussage: das Projekt ist wieder aktiv.
+  var projektNachD = projektA;
+  pruefe(!!projektNachD && projektNachD.egrid === "EGRID-A",
+    "D: bewusst wieder geoeffnet -- Projekt A ist wieder der aktive Kontext");
+
+  // E: EGRID A erneut rechnen, waehrend Projekt A bewusst offen ist --
+  // Autospeichern funktioniert weiterhin normal.
+  pruefe(darfAutoSpeichern(vA, projektNachD, ergA) === true,
+    "E: Projekt A bewusst offen, dieselbe EGRID -- Autospeichern funktioniert weiterhin");
+}
+
 console.log("-".repeat(78));
 if (fehler.length) {
   console.log(fehler.length + " von " + (ok + fehler.length) + " VARIANTE-EGRID-Pruefungen FEHLGESCHLAGEN");

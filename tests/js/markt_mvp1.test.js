@@ -183,6 +183,67 @@ pruefe(wEingaben.bodenpreis_chf_pro_m2 === null,
     "Verkauf/Miete bleiben ohne Knopf, auch wenn ein Systemvorschlag vorliegt");
 }
 
+// ---------------------------------------------------------------------
+// Nachtrag zu Entscheidung 1 (Live-Test von a2769ab): nach einem Klick auf
+// "Systemvorschlag übernehmen" stand in der Kopfzeile weiterhin "noch nicht
+// übernommen", obwohl wEingaben.bodenpreis_chf_pro_m2 laengst den richtigen
+// Wert trug. Ursache: nurReferenz() -- der Platzhalter, den marktBlock()
+// verwendet, solange die Wirtschaftlichkeit insgesamt (noch) nicht
+// berechenbar ist -- kannte wEingaben ueberhaupt nicht und lieferte
+// benutzerannahme IMMER als null. Fix: nurReferenz() bekommt den aktuellen
+// wEingaben-Wert als zweites Argument (nur beim Bodenpreis-Aufruf
+// uebergeben) und setzt benutzerannahme/wert/herkunft entsprechend.
+//
+// nurReferenz() wird hier zeilengenau aus dist/index.html extrahiert und
+// mit ihren echten Abhaengigkeiten (wLage, leer) ausgefuehrt.
+// ---------------------------------------------------------------------
+{
+  let mktLage = null;
+  eval(extrahiere("leer")); // eslint-disable-line no-eval -- Testabsicht: echten Code pruefen
+  eval(extrahiere("wLage")); // eslint-disable-line no-eval
+  eval(extrahiere("nurReferenz")); // eslint-disable-line no-eval
+
+  wErgebnis = null; // Wirtschaftlichkeit NICHT berechenbar -- derselbe Fehlerfall
+  mktLage = { boden: { systemvorschlag: 950, spanne: [900, 1000], anzahl: 3 } };
+
+  const ohneEigenenWert = nurReferenz("boden");
+  pruefe(ohneEigenenWert.systemvorschlag === 950 && ohneEigenenWert.benutzerannahme === null,
+    "ohne eigenerWert: Systemvorschlag sichtbar, keine erfundene Benutzerannahme (Fall F)");
+
+  const mitEigenemWert = nurReferenz("boden", 950); // exakt der Wert aus dem Uebernehmen-Klick
+  pruefe(mitEigenemWert.benutzerannahme === 950 && mitEigenemWert.wert === 950,
+    "mit eigenerWert: benutzerannahme/wert tragen exakt den uebernommenen Wert (Fall G)");
+  pruefe(mitEigenemWert.herkunft === "benutzerannahme",
+    "und die Herkunft wechselt entsprechend auf 'benutzerannahme' (Fall H, dauerhaft -- kein Sonderfall nur beim Klick selbst)");
+  pruefe(mitEigenemWert.systemvorschlag === 950,
+    "der Systemvorschlag bleibt daneben unveraendert sichtbar");
+
+  mktLage = {}; // kein Systemvorschlag ueberhaupt
+  pruefe(nurReferenz("boden", 950) === null,
+    "ohne jede Referenz liefert nurReferenz() weiterhin null (Fall I, unveraendertes Verhalten)");
+}
+
+// Quelltext-Zusicherungen: die Verdrahtung liegt tatsaechlich dort, wo sie
+// wirken muss.
+{
+  const marktBlockFn = extrahiere("marktBlock");
+  pruefe(marktBlockFn.indexOf('nurReferenz("boden", wEingaben.bodenpreis_chf_pro_m2)') >= 0,
+    "nur der Bodenpreis-Aufruf uebergibt den aktuellen wEingaben-Wert an nurReferenz()");
+  pruefe(marktBlockFn.indexOf('nurReferenz("verkauf")') >= 0 && marktBlockFn.indexOf('nurReferenz("miete")') >= 0,
+    "Verkauf und Miete rufen nurReferenz() weiterhin ohne zweites Argument auf -- unveraendert");
+
+  // Der Uebernehmen-Klick zeichnet die Marktkarte SOFORT neu -- sonst kaeme
+  // die Korrektur nie an, wenn wRechne() (z.B. bei offenem Reglement) vor
+  // dem Serveraufruf abbricht und wZeichneNeu() nie erreicht.
+  const quelltext = fs.readFileSync(DIST, "utf8");
+  const knopfBlockStart = quelltext.indexOf('document.querySelectorAll("[data-uebernehmen]")');
+  const knopfBlock = quelltext.slice(knopfBlockStart, knopfBlockStart + 700);
+  pruefe(knopfBlock.indexOf('marktBlock(ergebnisAktuell || {})') >= 0,
+    "der Klick-Handler zeichnet #w-markt sofort mit marktBlock() neu, statt nur auf wRechne() zu warten");
+  pruefe(knopfBlock.indexOf("verdrahteWirtschaft()") >= 0,
+    "und verdrahtet das frisch gezeichnete Markup gleich wieder");
+}
+
 console.log("-".repeat(78));
 if (fehler.length) {
   console.log(fehler.length + " von " + (ok + fehler.length) + " MARKT-MVP1-Pruefungen (Reset) FEHLGESCHLAGEN");

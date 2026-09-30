@@ -2291,6 +2291,28 @@ function starteAnalyse(neuRechnen) {
     wErgebnis = null;
     wEingaben = wEingabenStandard();
     wBeruehrt = {};
+    // Ein offenes Projekt (samt aktiver Variante) gehoert zu EINER Adresse.
+    // Bleibt es beim Wechsel zu einer ANDEREN Adresse einfach "offen" --
+    // niemand hat es geschlossen --, griff der EGRID-Schutz in wRechne()
+    // zwar waehrend B korrekt (kein Speichern in Variante A). Aber bei
+    // einer spaeteren RUECKKEHR zu A passt egridJetzt wieder zu
+    // projektAktuell.egrid, und wRechne() speicherte dann das inzwischen
+    // auf B zurueckgesetzte (leere) wEingaben in Variante A -- derselbe
+    // Datenverlust, nur einen Schritt spaeter. Live in Variante 15
+    // nachgewiesen.
+    //
+    // Deshalb gilt ein Adresswechsel als Verlassen des Projektkontexts --
+    // dieselbe Rueckstellung wie beim bestehenden "schliessen"-Knopf
+    // (#pj-schliessen, siehe verdrahteProjektleiste()), nur automatisch
+    // ausgeloest. Das Projekt selbst bleibt in der Datenbank unveraendert;
+    // es ist nur nicht mehr automatisch aktiv. Wer zu A zurueckkehrt und
+    // es ueber "Meine Projekte" bewusst wieder oeffnet, bekommt seine
+    // gespeicherten Variantenwerte unveraendert ueber wendeVarianteAn()
+    // zurueck -- und Autospeichern greift dann wieder ganz normal.
+    projektAktuell = null;
+    varianteErgebnisse = {};
+    variantenVergleich = null;
+    if (typeof zeichneProjektleiste === "function") zeichneProjektleiste();
   }
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
   ["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
@@ -10774,15 +10796,29 @@ function wHatSanierung() {
 // Faellen leer, obwohl die Vergleichsobjekte vorlagen und der Benutzer genau
 // dann wissen will, worauf er sich stuetzen kann.
 //
-// Gerechnet wird hier nichts: jedes Feld stammt aus der Serverantwort.
-function nurReferenz(groesse) {
+// Gerechnet wird hier nichts: jedes Feld stammt aus der Serverantwort --
+// bis auf eigenerWert, der unveraendert das ist, was der Benutzer gerade
+// selbst eingetragen hat (siehe unten).
+//
+// eigenerWert (optional, bisher nur beim Bodenpreis uebergeben): ohne ihn
+// war dieser Platzhalter komplett blind fuer wEingaben -- "benutzerannahme"
+// stand hier IMMER auf null, ganz gleich, was der Benutzer bereits
+// eingetragen hatte. Solange die Wirtschaftlichkeit insgesamt nicht
+// berechenbar ist (wRechne() bricht dann VOR dem Serveraufruf ab, siehe
+// rechenstand()), bleibt dieser Platzhalter die einzige Datenquelle fuer
+// die Karte -- ohne eigenerWert konnte "Systemvorschlag uebernehmen" hier
+// deshalb nie als uebernommen erscheinen, auch nicht nach einem erneuten
+// Rendern. Verkauf und Miete rufen weiterhin ohne dieses Argument auf und
+// verhalten sich dadurch exakt wie zuvor.
+function nurReferenz(groesse, eigenerWert) {
   var lage = wLage(groesse);
   if (!lage || !lage.anzahl) return null;
+  var hatEigenen = !leer(eigenerWert);
   return {
     systemvorschlag: lage.systemvorschlag,
-    benutzerannahme: null,
-    wert: null,
-    herkunft: "nicht_bestimmbar",
+    benutzerannahme: hatEigenen ? eigenerWert : null,
+    wert: hatEigenen ? eigenerWert : null,
+    herkunft: hatEigenen ? "benutzerannahme" : "nicht_bestimmbar",
     referenzspanne: lage.spanne,
     anzahl_referenzen: lage.anzahl
   };
@@ -11260,6 +11296,12 @@ function marktBlock(erg) {
     'Wirtschaftlichkeit gemessen wird.</div>' +
   "</div>";
 
+  // bodenMw eigens vorberechnet (statt inline wie bei Verkauf/Miete): der
+  // Aufruf braucht den aktuellen wEingaben-Wert als zweites Argument fuer
+  // nurReferenz() (siehe dort), und ein zweites Komma direkt im ersten
+  // marktGroesse()-Argument waere unnoetig schwer lesbar.
+  var bodenMw = (e.land || {}).bodenpreis || nurReferenz("boden", wEingaben.bodenpreis_chf_pro_m2);
+
   return (wErgebnis && wErgebnis.marktlage_fehler
       ? '<div class="note warn">' + esc(wErgebnis.marktlage_fehler) + "</div>" : "") +
     marktGroesse((e.verkauf || {}).preis || nurReferenz("verkauf"), "Wohnung Neubau",
@@ -11267,7 +11309,7 @@ function marktBlock(erg) {
     marktSegment("wohnung_bestand", "Wohnung Bestand", "CHF/m²", false) +
     marktSegment("efh", "Einfamilienhaus", "CHF", true) +
     marktSegment("mfh", "Renditeliegenschaft", "CHF", true) +
-    marktGroesse((e.land || {}).bodenpreis || nurReferenz("boden"), "Bauland",
+    marktGroesse(bodenMw, "Bauland",
                  "CHF/m²", wLage("boden"), "w-boden", wEingaben.bodenpreis_chf_pro_m2, "50", true) +
     marktGroesse((e.miete || {}).ansatz || nurReferenz("miete"), "Mietzins",
                  "CHF/m²/Jahr", wLage("miete"), "w-miete", wEingaben.miete_chf_pro_m2_jahr, "5") +
@@ -12104,6 +12146,14 @@ function verdrahteWirtschaft() {
   // marktGroesse()): kopiert exakt den angezeigten Systemvorschlag als
   // eigene Annahme -- keine andere, keine erfundene Zahl. Danach verhaelt
   // sich das Feld wie jede getippte Eingabe (wBeruehrt, wAngestossen()).
+  //
+  // Die Karte wird SOFORT neu gezeichnet, nicht erst nach der Antwort von
+  // wRechne(): ist die Wirtschaftlichkeit insgesamt (noch) nicht
+  // berechenbar, bricht wRechne() vor dem Serveraufruf ab (siehe
+  // rechenstand()) -- dann kaeme wZeichneNeu() nie, und die Kopfzeile
+  // zeigte auf ewig "noch nicht übernommen", obwohl das Feld laengst den
+  // richtigen Wert traegt. marktBlock() liest jetzt (siehe nurReferenz())
+  // auch ohne Serverantwort bereits den soeben gesetzten wEingaben-Wert.
   document.querySelectorAll("[data-uebernehmen]").forEach(function (b) {
     if (b.dataset.verdrahtet) return;
     b.dataset.verdrahtet = "1";
@@ -12114,8 +12164,8 @@ function verdrahteWirtschaft() {
       if (feld) feld.value = wert;
       var schluessel = FELD_ZU_EINGABE[feldId];
       if (schluessel) { wEingaben[schluessel] = wert; wBeruehrt[schluessel] = true; }
-      b.disabled = true;
-      b.textContent = "übernommen";
+      var markt = document.getElementById("w-markt");
+      if (markt) { markt.innerHTML = marktBlock(ergebnisAktuell || {}); verdrahteWirtschaft(); }
       wAngestossen();
     });
   });

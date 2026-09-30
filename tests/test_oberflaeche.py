@@ -723,6 +723,18 @@ def test_weingaben_zurueckgesetzt_bei_neuer_analyse(s: str) -> None:
            "wEingaben wird beim Adresswechsel zurueckgesetzt")
     pruefe("wBeruehrt = {};" in block,
            "wBeruehrt wird mit zurueckgesetzt -- sonst gaelte eine geloeschte Eingabe noch als beruehrt")
+    # Nachtrag (Live-Test von f5188a1): der EGRID-Schutz allein reichte
+    # nicht. Kehrte man zu einer Adresse zurueck, deren Projekt weiterhin
+    # als "offen" galt, passte die EGRID wieder -- und wRechne() speicherte
+    # das inzwischen zurueckgesetzte (leere) wEingaben in dessen aktive
+    # Variante. Ein echter Adresswechsel schliesst das Projekt deshalb
+    # jetzt automatisch (dieselbe Rueckstellung wie der bestehende
+    # #pj-schliessen-Knopf). Funktionaler Regressionstest:
+    # tests/js/variante_egrid_schutz.test.js.
+    pruefe("projektAktuell = null;" in block,
+           "ein echter Adresswechsel schliesst das offene Projekt automatisch")
+    pruefe("varianteErgebnisse = {};" in block and "variantenVergleich = null;" in block,
+           "dieselbe Rueckstellung wie #pj-schliessen -- keine neue, zweite Schliesslogik")
 
 
 def test_bodenpreis_systemvorschlag_keine_stille_uebernahme(s: str) -> None:
@@ -761,6 +773,29 @@ def test_bodenpreis_systemvorschlag_keine_stille_uebernahme(s: str) -> None:
            "Verkaufspreis bleibt unveraendert (kein fuenfter/sechster Parameter)")
     pruefe('"w-miete", wEingaben.miete_chf_pro_m2_jahr, "5")' in block,
            "Miete bleibt ebenso unveraendert")
+
+    # Nachtrag (Live-Test von a2769ab): nach "Systemvorschlag übernehmen"
+    # blieb die Kopfzeile bei "noch nicht übernommen", obwohl wEingaben
+    # laengst den richtigen Wert trug. Ursache: nurReferenz() -- der
+    # Platzhalter fuer eine nicht berechenbare Wirtschaftlichkeit -- kannte
+    # wEingaben ueberhaupt nicht. Funktionaler Regressionstest:
+    # tests/js/markt_mvp1.test.js.
+    pruefe('nurReferenz("boden", wEingaben.bodenpreis_chf_pro_m2)' in block,
+           "der aktuelle wEingaben-Wert wird an nurReferenz() weitergereicht")
+    pruefe('nurReferenz("verkauf")' in block and 'nurReferenz("miete")' in block,
+           "Verkauf und Miete rufen nurReferenz() weiterhin ohne diesen Wert auf -- unveraendert")
+
+    nurReferenzFn = s[s.index("function nurReferenz("): s.index("function ", s.index("function nurReferenz(") + 1)]
+    pruefe("benutzerannahme: hatEigenen ? eigenerWert : null" in nurReferenzFn,
+           "nurReferenz() gibt eine echte Benutzerannahme weiter, statt sie immer als null auszuweisen")
+
+    knopf_start = s.index('document.querySelectorAll("[data-uebernehmen]")')
+    knopf_block = s[knopf_start: knopf_start + 700]
+    pruefe("marktBlock(ergebnisAktuell || {})" in knopf_block,
+           "der Klick zeichnet #w-markt sofort neu, statt nur auf wRechne() zu warten "
+           "-- sonst kaeme die Korrektur nie an, wenn wRechne() vor dem Serveraufruf abbricht")
+    pruefe("verdrahteWirtschaft()" in knopf_block,
+           "und verdrahtet das frisch gezeichnete Markup gleich wieder")
 
 
 def test_variante_egrid_schutz_beim_autospeichern(s: str) -> None:
