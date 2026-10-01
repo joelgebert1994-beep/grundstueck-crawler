@@ -163,6 +163,14 @@ def test_auswahl_kennung() -> None:
     pruefe(abs(geo["wgs84_lat"] - 47.42137) < 0.0002 and abs(geo["wgs84_lon"] - 8.43341) < 0.0002,
            "WGS84 aus der Naeherungsformel stimmt mit dem Suchdienst ueberein")
 
+    # Auch im GWR-Rueckfall: Kennung mit entfernter Koordinate wird abgewiesen.
+    try:
+        m1.geocode_auswahl("Püntenstrasse 2b 8104 Weiningen ZH", HOGERWIES_ID, PUENTEN_E, PUENTEN_N)
+        pruefe(False, "GWR-Rueckfall: Kennung mit 600 m entfernter Koordinate darf nicht angenommen werden")
+    except m1.Modul1Error as exc:
+        pruefe("laut GWR" in str(exc) and "entfernt" in str(exc),
+               "GWR-Rueckfall: Kennung und Koordinate passen nicht -> abgelehnt")
+
 
 def test_nur_einmal_gesucht() -> None:
     print("\n=== Die Adresse wird genau einmal aufgeloest ===")
