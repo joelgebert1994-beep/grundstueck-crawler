@@ -101,8 +101,11 @@ entwurfRaum = raum();
 {
   const ga = grenzabstandBefund(koerper([15, 10], 10, 6));
   pruefe(ga.art === "ok", "A: vollstaendig innerhalb, eingehaltener Grenzabstand -> art 'ok'");
-  pruefe(/^\d+\.\d \/ 4\.0 m$/.test(ga.kurz),
-    "A: kurz nennt Ist- und Sollmass im bisherigen Format (\"" + ga.kurz + "\")");
+  // Seit 30.09.2026 ausgeschrieben: "x / y" bedeutete hier gemessen/gefordert,
+  // in der Uebersicht aber klein/gross der BZO -- dieselbe Schreibweise fuer
+  // zwei verschiedene Aussagen.
+  pruefe(/^\d+\.\d m, gefordert 4\.0 m$/.test(ga.kurz),
+    "A: kurz nennt Ist- und Sollmass ausgeschrieben (\"" + ga.kurz + "\")");
   pruefe(ga.verletzte.length === 0, "A: keine verletzten Kanten");
 }
 

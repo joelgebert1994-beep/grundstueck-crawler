@@ -82,11 +82,22 @@ class Welt:
         self.gemini_dauer_s = 0.0
         self.lock = threading.Lock()
 
-    # Modul 1 -- zaehlt, ob eine Grundstuecksanalyse neu gestartet wird
-    def run_modul1(self, adresse):
+    # Modul 1 -- zaehlt, ob eine Grundstuecksanalyse neu gestartet wird.
+    # `geo` ist die bereits aufgeloeste Adresse (seit 30.09.2026 wird sie
+    # genau einmal aufgeloest und durchgereicht).
+    def run_modul1(self, adresse, geo=None):
         with self.lock:
             self.modul1_aufrufe += 1
         return copy.deepcopy(MODUL1)
+
+    # Die Adressaufloesung gehoert zur Welt der Attrappen -- sonst ginge
+    # dieser Offline-Test fuer den Suchdienst doch ans Netz.
+    def geocode(self, adresse, *_args):
+        g = copy.deepcopy(MODUL1.get("geocoding") or {})
+        g.setdefault("lv95_e", 2647000.0)
+        g.setdefault("lv95_n", 1248000.0)
+        g.update(query=adresse, feature_id="attrappe_0", auswahlmethode="text_exakt")
+        return g
 
     def hole_dokumente(self, urls):
         geladen = []
@@ -129,6 +140,11 @@ def einrichten(welt: Welt) -> Path:
     webapp.ZUGANGSSCHLUESSEL = ""
     os.environ["GEMINI_API_KEY"] = "attrappe"
     pipeline.run_modul1 = welt.run_modul1
+    webapp.geocode_address = welt.geocode
+    webapp.geocode_auswahl = welt.geocode
+    # Die Parzellenabfrage der Zwischenspeicher-Suche ebenso: ohne EGRID
+    # gibt es keinen Treffer, und das ist hier gewollt (neu_rechnen).
+    webapp.get_parcel_data = lambda e, n: {}
     m2.hole_dokumente = welt.hole_dokumente
     genai.Client = lambda *a, **k: SimpleNamespace(
         models=SimpleNamespace(generate_content=welt.generate_content))

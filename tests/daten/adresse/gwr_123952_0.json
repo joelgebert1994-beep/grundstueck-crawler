@@ -1,0 +1,138 @@
+{
+ "_abgerufen": "2026-09-30",
+ "feature": {
+  "type": "Feature",
+  "featureId": "123952_0",
+  "bbox": [
+   2675063.7,
+   1252760.9,
+   2675063.7,
+   1252760.9
+  ],
+  "layerBodId": "ch.bfs.gebaeude_wohnungs_register",
+  "layerName": "GWR: Gebäudestatus",
+  "id": "123952_0",
+  "geometry": {
+   "type": "Point",
+   "coordinates": [
+    2675063.7,
+    1252760.9
+   ]
+  },
+  "properties": {
+   "egid": "123952",
+   "strname_deinr": "Hogerwiesstrasse 1",
+   "plz_plz6": "8104/810400",
+   "ggdename": "Weiningen (ZH)",
+   "ggdenr": 251,
+   "gexpdat": "29.09.2026",
+   "gdekt": "ZH",
+   "egrid": "CH894177869943",
+   "lgbkr": 0,
+   "lparz": "1784",
+   "lparzsx": null,
+   "ltyp": null,
+   "gebnr": "542",
+   "gbez": "",
+   "gkode": 2675058.2,
+   "gkodn": 1252765.119,
+   "gksce": 901,
+   "gstat": 1004,
+   "gkat": 1020,
+   "gklas": 1110,
+   "gbauj": 1963,
+   "gbaum": null,
+   "gbaup": 8014,
+   "gabbj": null,
+   "garea": 150,
+   "gvol": null,
+   "gvolnorm": null,
+   "gvolsce": null,
+   "gastw": 3,
+   "ganzwhg": 1,
+   "gazzi": null,
+   "gschutzr": null,
+   "gebf": null,
+   "gwaerzh1": 7430,
+   "genh1": 7530,
+   "gwaersceh1": 860,
+   "gwaerdath1": "29.11.2001",
+   "gwaerzh2": null,
+   "genh2": null,
+   "gwaersceh2": null,
+   "gwaerdath2": "-",
+   "gwaerzw1": 7650,
+   "genw1": 7560,
+   "gwaerscew1": 865,
+   "gwaerdatw1": "23.04.2026",
+   "gwaerzw2": 7600,
+   "genw2": 7500,
+   "gwaerscew2": 860,
+   "gwaerdatw2": "29.11.2001",
+   "edid": "0",
+   "egaid": 100121031,
+   "deinr": "1",
+   "esid": 10005446,
+   "strname": [
+    "Hogerwiesstrasse"
+   ],
+   "strnamk": [
+    "Hogerwiesstr."
+   ],
+   "strindx": [
+    "Hog"
+   ],
+   "strsp": [
+    "DE"
+   ],
+   "stroffiziel": "1",
+   "dplz4": 8104,
+   "dplzz": 0,
+   "dplzname": "Weiningen ZH",
+   "dkode": 2675063.688,
+   "dkodn": 1252760.854,
+   "doffadr": 1,
+   "dexpdat": "29.09.2026",
+   "ewid": [
+    "2"
+   ],
+   "whgnr": [
+    null
+   ],
+   "wstwk": [
+    3100
+   ],
+   "wmehrg": [
+    1
+   ],
+   "weinr": [
+    null
+   ],
+   "wbez": [
+    null
+   ],
+   "wstat": [
+    3004
+   ],
+   "wexpdat": [
+    "2026-09-29T00:00:00"
+   ],
+   "wbauj": [
+    1999
+   ],
+   "wabbj": [
+    null
+   ],
+   "warea": [
+    145
+   ],
+   "wazim": [
+    5
+   ],
+   "wkche": [
+    1
+   ],
+   "label": "Hogerwiesstrasse 1"
+  }
+ }
+}

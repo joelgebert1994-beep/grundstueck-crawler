@@ -48,16 +48,24 @@ def lies() -> str:
 
 
 def test_reiter(s: str) -> None:
-    """Acht Reiter, in dieser Reihenfolge -- die Navigation des Dossiers.
+    """Neun Reiter, in dieser Reihenfolge -- die Navigation des Dossiers.
 
     "3D-Entwurf" steht nach "Potenzial": erst verstehen, was zulaessig
     ist, dann ausprobieren, was daraus entstehen koennte.
+
+    Seit 30.09.2026 steht "Grundstück & Standort" direkt nach der
+    Übersicht: Bestand, GWR und Standort beantworten "was ist hier?" und
+    lagen vorher hinter den Quellen. "Quellen" traegt nur noch die Herkunft.
     """
     block = s[s.index("var REITER = ["):]
     block = block[: block.index("];")]
     namen = re.findall(r'\["([a-z]+)", "', block)
-    erwartet = ["uebersicht", "baurecht", "karte", "potenzial", "entwurf",
+    erwartet = ["uebersicht", "grundstueck", "baurecht", "karte", "potenzial", "entwurf",
                 "markt", "wirtschaft", "quellen"]
+    pruefe('["quellen", "Quellen", ["sec-quellen"]]' in block,
+           "der Quellen-Reiter traegt nur noch die Quellen")
+    pruefe('["grundstueck", "Grundstück & Standort", ["sec-grundstueck", "sec-standort"]]' in block,
+           "Grundstück & Bestand und Standort liegen im eigenen Reiter nach der Übersicht")
     pruefe(namen == erwartet, f"Reiterfolge {erwartet} (gefunden: {namen})")
 
     # Jede in REITER genannte Sektion muss auch gebaut werden, sonst

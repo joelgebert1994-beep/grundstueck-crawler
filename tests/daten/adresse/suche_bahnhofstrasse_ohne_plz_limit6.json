@@ -1,0 +1,199 @@
+{
+ "_abgerufen": "2026-09-30",
+ "_anfrage": "Bahnhofstrasse 1",
+ "_limit": 6,
+ "results": [
+  {
+   "attrs": {
+    "detail": "bahnhofstrasse 1 4125 riehen 2703 riehen ch bs",
+    "featureId": "459000_0",
+    "geom_quadindex": "003323222320102113213",
+    "geom_st_box2d": "BOX(2616082.6059999987 1270433.9930000007,2616082.6059999987 1270433.9930000007)",
+    "label": "Bahnhofstrasse 1 <b>4125 Riehen</b>",
+    "lat": 47.58440399169922,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100263104",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/459000_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 7.652406692504883,
+    "num": 1,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1270434.0,
+    "y": 2616082.5,
+    "zoomlevel": 10
+   },
+   "id": 11746,
+   "weight": 100
+  },
+  {
+   "attrs": {
+    "detail": "bahnhofstrasse 1 7477 filisur 3544 berguen filisur ch gr",
+    "featureId": "502275275_0",
+    "geom_quadindex": "030331211123203202333",
+    "geom_st_box2d": "BOX(2771830.6149999984 1171628.2250000015,2771830.6149999984 1171628.2250000015)",
+    "label": "Bahnhofstrasse 1 <b>7477 Filisur</b>",
+    "lat": 46.67374801635742,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/103308089",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/502275275_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 9.68453311920166,
+    "num": 1,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1171628.25,
+    "y": 2771830.5,
+    "zoomlevel": 10
+   },
+   "id": 81537,
+   "weight": 100
+  },
+  {
+   "attrs": {
+    "detail": "bahnhofstrasse 1 7304 maienfeld 3953 maienfeld ch gr",
+    "featureId": "9033152_0",
+    "geom_quadindex": "030310102110013132322",
+    "geom_st_box2d": "BOX(2759018.8209999986 1208081.1559999995,2759018.8209999986 1208081.1559999995)",
+    "label": "Bahnhofstrasse 1 <b>7304 Maienfeld</b>",
+    "lat": 47.00471496582031,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/102119125",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/9033152_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 9.529858589172363,
+    "num": 1,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1208081.125,
+    "y": 2759018.75,
+    "zoomlevel": 10
+   },
+   "id": 90446,
+   "weight": 100
+  },
+  {
+   "attrs": {
+    "detail": "bahnhofstrasse 1 7231 pragg-jenaz 3863 jenaz ch gr",
+    "featureId": "1201722_0",
+    "geom_quadindex": "030311300203210111202",
+    "geom_st_box2d": "BOX(2772819.6950000003 1201208.4050000012,2772819.6950000003 1201208.4050000012)",
+    "label": "Bahnhofstrasse 1 <b>7231 Pragg-Jenaz</b>",
+    "lat": 46.93946838378906,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100745449",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/1201722_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 9.708639144897461,
+    "num": 1,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1201208.375,
+    "y": 2772819.75,
+    "zoomlevel": 10
+   },
+   "id": 100906,
+   "weight": 100
+  },
+  {
+   "attrs": {
+    "detail": "bahnhofstrasse 1 7205 zizers 3947 zizers ch gr",
+    "featureId": "1213795_0",
+    "geom_quadindex": "030310312023233132303",
+    "geom_st_box2d": "BOX(2761597.7129999995 1199703.2619999982,2761597.7129999995 1199703.2619999982)",
+    "label": "Bahnhofstrasse 1 <b>7205 Zizers</b>",
+    "lat": 46.92875671386719,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/102004182",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/1213795_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 9.560776710510254,
+    "num": 1,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1199703.25,
+    "y": 2761597.75,
+    "zoomlevel": 10
+   },
+   "id": 101250,
+   "weight": 100
+  },
+  {
+   "attrs": {
+    "detail": "bahnhofstrasse 1 7472 surava 3542 albula/alvra ch gr",
+    "featureId": "1172577_0",
+    "geom_quadindex": "030331201222210001210",
+    "geom_st_box2d": "BOX(2766939.344999999 1170739.8949999996,2766939.344999999 1170739.8949999996)",
+    "label": "Bahnhofstrasse 1 <b>7472 Surava</b>",
+    "lat": 46.6670036315918,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100810624",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/1172577_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 9.62031364440918,
+    "num": 1,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1170739.875,
+    "y": 2766939.25,
+    "zoomlevel": 10
+   },
+   "id": 103840,
+   "weight": 100
+  }
+ ]
+}

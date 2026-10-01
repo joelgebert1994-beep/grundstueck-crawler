@@ -260,6 +260,25 @@ img { max-width: 100%; }
 }
 .suggest button:last-child { border-bottom: none; }
 .suggest button:hover { background: var(--accent-soft); }
+/* Passt ein Vorschlag nicht zur Eingabe, steht das dabei -- er bleibt
+   waehlbar, aber nicht so, als waere er die gesuchte Adresse. */
+.suggest .suggestkopf { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--warn, #9a6a00);
+  border-bottom: 1px solid var(--line-2); background: var(--panel-2); }
+.suggest button.abweichend { color: var(--ink-2); }
+.suggest .passung { float: right; margin-left: 8px; font-size: 11px; padding: 1px 6px; border-radius: 9px;
+  background: var(--panel-2); color: var(--warn, #9a6a00); border: 1px solid var(--line); }
+/* Wertetyp: woher ein Wert kommt und was er bedeutet -- eine kleine Marke
+   statt eines Erklaersatzes. Ein Vokabular fuer das ganze Dossier. */
+.wtyp { display: inline-block; font-size: 10.5px; line-height: 1.5; padding: 0 6px; border-radius: 8px;
+  border: 1px solid var(--line); color: var(--ink-3); background: var(--panel-2); white-space: nowrap;
+  font-weight: 500; letter-spacing: .01em; vertical-align: middle; }
+.wtyp.vorgabe { color: var(--accent); border-color: var(--accent-soft); }
+.wtyp.nicht_bestimmbar { color: var(--warn, #9a6a00); }
+.adresskopf { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12.5px;
+  margin: 6px 0 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.adresskopf dt { color: var(--ink-3); }
+.adresskopf dd { margin: 0; color: var(--ink); }
+.adresskopf .warnzeile { grid-column: 1 / -1; color: var(--warn, #9a6a00); font-weight: 600; }
 
 /* ---------- Uebersicht: eine Antwort je Frage ----------
    Ruhige Flaeche, eine grosse Aussage, darunter hoechstens drei Zeilen.
@@ -2042,29 +2061,115 @@ setTimeout(function () {
   // die Abfrage an.
   apiAbruf("/api/projekte");
 }, 300);
-var gewaehlteAdresse = null, sucheTimer = null;
+/* Die gewaehlte Adresse ist mehr als ihr Text.
+
+   Live beobachtet 30.09.2026: "Horgenwiesstrasse 1, 8104 Weiningen ZH" --
+   die Strasse heisst "Hogerwiesstrasse". Der Suchdienst liefert dafuer
+   ANDERE Strassen derselben PLZ, und angeklickt wurde "Puentenstrasse 2b":
+   ein 600 m entferntes Grundstueck, ohne jeden Hinweis. Drei Dinge gegen
+   genau das:
+
+   1. Jede Suche hat eine Laufnummer. Eine verspaetete Antwort auf eine
+      fruehere Teileingabe darf die aktuelle Liste nie ueberschreiben.
+   2. Jeder Vorschlag wird gegen die Eingabe geprueft -- andere Strasse,
+      andere Hausnummer oder andere PLZ steht dabei. Passt keiner, steht
+      darueber "Keine passende Adresse gefunden".
+   3. Beim Anklicken geht die stabile Kennung des Treffers (featureId =
+      EGID_EDID des GWR) mit seiner Koordinate an das Backend. Dort wird
+      genau DIESER Treffer verwendet, statt den Text erneut zu suchen.
+
+   Dieselbe Regel wie adressteile()/vergleiche_adresse() in
+   potenzial_engine/modul1_geodata.py -- bewusst gleich gebaut. */
+var gewaehlteAdresse = null, gewaehlteAuswahl = null, sucheTimer = null, sucheLauf = 0;
+var ADRESS_UMLAUT = { "ä": "ae", "ö": "oe", "ü": "ue", "é": "e", "è": "e", "ê": "e",
+                      "à": "a", "â": "a", "ô": "o", "î": "i", "ç": "c", "ß": "ss" };
+function adressStrasse(t) {
+  t = String(t || "").toLowerCase().replace(/[äöüéèêàâôîçß]/g, function (c) { return ADRESS_UMLAUT[c]; }).trim();
+  t = t.replace(/str\.?$/, "strasse");
+  return t.replace(/[^a-z0-9]/g, "");
+}
+function adressTeile(text) {
+  var t = String(text || "").replace(/<[^>]*>/g, "").replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  var m = /^(.*?\D)\s*(\d+[a-zA-Z]?(?:\.\d+)?)\s*,?\s*(?:(\d{4})\b)?\s*(.*)$/.exec(t);
+  if (!m) return { strasse: null, nummer: null, plz: null };
+  return { strasse: adressStrasse(m[1]) || null,
+           nummer: String(m[2] || "").toLowerCase().replace(/\s+/g, "") || null,
+           plz: m[3] || null };
+}
+// "exakt" | "andere_nummer" | "andere_strasse" | "andere_plz" | "unbestimmt".
+// Beim Tippen darf die Strasse abgekuerzt sein ("Hogerwies 1") -- der
+// Vorschlag muss dann mit ihr BEGINNEN. "Horgenwies…" beginnt keinen
+// "Hogerwies…"-Namen und bleibt "andere Strasse".
+function adressPassung(eingabe, label) {
+  var e = adressTeile(eingabe), l = adressTeile(label);
+  if (!e.strasse || !e.nummer || !l.strasse) return "unbestimmt";
+  var gleicheStrasse = e.strasse === l.strasse ||
+    (e.strasse.length >= 4 && l.strasse.indexOf(e.strasse) === 0);
+  if (!gleicheStrasse) return "andere_strasse";
+  if (e.nummer !== l.nummer) return "andere_nummer";
+  if (e.plz && l.plz && e.plz !== l.plz) return "andere_plz";
+  return "exakt";
+}
+var ADRESS_PASSUNG_TEXT = { andere_strasse: "andere Strasse", andere_nummer: "andere Hausnummer",
+                            andere_plz: "andere PLZ" };
+// Die EGAID steht nicht als eigenes Feld im Treffer, nur im Link zum
+// amtlichen Gebaeudeadressverzeichnis.
+function adressEgaid(a) {
+  var link = (a.links || []).filter(function (l) {
+    return /amtliches-gebaeudeadressverzeichnis/.test(l.href || "");
+  })[0];
+  var m = link && /\/(\d+)$/.exec(link.href);
+  return m ? m[1] : null;
+}
+// Was angeklickt wurde, und wie es zur Eingabe passte -- fuer den Dossierkopf.
+var adressWahlInfo = null;
 
 inputEl.addEventListener("input", function () {
   gewaehlteAdresse = null;
+  gewaehlteAuswahl = null;
   goBtn.disabled = true;
   clearTimeout(sucheTimer);
+  sucheLauf++;   // laufende Antworten sind ab jetzt veraltet
   var q = inputEl.value.trim();
   if (q.length < 3) { suggestEl.classList.remove("on"); return; }
   sucheTimer = setTimeout(function () { sucheAdresse(q); }, 250);
 });
 function sucheAdresse(q) {
+  var lauf = ++sucheLauf;
   var url = GEOADMIN_SEARCH + "?searchText=" + encodeURIComponent(q) + "&type=locations&origins=address&limit=6&sr=2056";
   fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    // Veraltet: eine neuere Suche laeuft oder die Eingabe hat sich geaendert.
+    if (lauf !== sucheLauf || inputEl.value.trim() !== q) return;
     var treffer = (data.results || []).map(function (r) { return r.attrs; });
     if (!treffer.length) { suggestEl.classList.remove("on"); return; }
     suggestEl.innerHTML = "";
-    treffer.forEach(function (a) {
+    var passungen = treffer.map(function (a) { return adressPassung(q, a.label); });
+    var eingabeKonkret = passungen.some(function (p) { return p !== "unbestimmt"; });
+    if (eingabeKonkret && passungen.indexOf("exakt") < 0) {
+      var kopf = document.createElement("div");
+      kopf.className = "suggestkopf";
+      kopf.textContent = "Keine passende Adresse gefunden — ähnliche Adressen:";
+      suggestEl.appendChild(kopf);
+    }
+    treffer.forEach(function (a, i) {
       var label = (a.label || "").replace(/<[^>]*>/g, "");
+      var passung = passungen[i];
       var b = document.createElement("button");
       b.textContent = label;
+      if (ADRESS_PASSUNG_TEXT[passung]) {
+        b.className = "abweichend";
+        var hinweis = document.createElement("span");
+        hinweis.className = "passung";
+        hinweis.textContent = ADRESS_PASSUNG_TEXT[passung];
+        b.appendChild(hinweis);
+      }
       b.addEventListener("click", function () {
+        adressWahlInfo = { eingabe: q, label: label, passung: passung };
         inputEl.value = label;
         gewaehlteAdresse = label;
+        gewaehlteAuswahl = (a.featureId && a.x != null && a.y != null)
+          ? { feature_id: String(a.featureId), lv95_e: a.y, lv95_n: a.x, egaid: adressEgaid(a) }
+          : null;
         goBtn.disabled = false;
         suggestEl.classList.remove("on");
         var ll = lv95ToWgs84(a.y, a.x);
@@ -2319,7 +2424,12 @@ function starteAnalyse(neuRechnen) {
   renderLoading();
   apiAbruf("/api/analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adresse: gewaehlteAdresse, neu_rechnen: !!neuRechnen })
+    // Die angeklickte Adresse geht mit ihrer Kennung und Koordinate -- das
+    // Backend verwendet dann genau diesen Treffer, statt den Text erneut
+    // zu suchen. Ohne Auswahl (z.B. nach Neuladen) bleibt es beim Text, den
+    // das Backend nur bei genau einer passenden Adresse annimmt.
+    body: JSON.stringify({ adresse: gewaehlteAdresse, neu_rechnen: !!neuRechnen,
+                           auswahl: gewaehlteAuswahl || undefined })
   })
   .then(function (a) {
     if (!a.ok) { renderFehler(a.fehler, a.technisch ? "technisch" : "fachlich", a.art); return; }
@@ -2381,7 +2491,24 @@ function stopLoading() { clearInterval(ladeTimer); ladeTimer = null; }
    Die Zustaende kommen vom Server. Es gibt hier keine geschaetzte
    Prozentzahl mehr -- die hat nur so getan, als wuesste sie etwas.
 */
-var STAND_SYMBOL = { fertig: "✓", laeuft: "…", offen: "·", fehler: "!" };
+// Drei Zustaende, die man auf einen Blick unterscheidet: erledigt, gerade
+// in Arbeit, wartet. Vorher "…" und "·" -- das las sich wie Satzzeichen.
+// Keine Prozentzahlen: es gibt keine messbare Groesse, die sie traegt.
+var STAND_SYMBOL = { fertig: "✓", laeuft: "●", offen: "○", fehler: "!" };
+var SCHRITT_TAETIG = {
+  grundstueck: "wird ermittelt …",
+  grundnutzung: "wird abgefragt …",
+  reglement: "wird geprüft …",
+  potenzial: "wird berechnet …"
+};
+function schrittText(s) {
+  var name = kurzSchritt(s.bezeichnung);
+  var st = s.stand || "offen";
+  if (st === "laeuft") return name + " " + (SCHRITT_TAETIG[s.schluessel] || "läuft …");
+  if (st === "offen") return name + " wartet";
+  if (st === "fehler") return name + " — nicht abgeschlossen";
+  return name + (s.aus_zwischenspeicher ? " · aus Zwischenspeicher" : "");
+}
 
 // Kurzformen fuer die Statusleiste. Der volle Wortlaut bleibt als Tooltip.
 var SCHRITT_KURZ = {
@@ -2450,11 +2577,11 @@ function standLeiste(schritte, reglement) {
 
   return '<div class="ladestand' + (gestoert ? " gestoert" : "") + '" id="ladestand">' +
     '<div class="lsliste">' +
-      '<span class="lspraefix">' + (gestoert ? "Nicht vollständig" : "Läuft") + "</span>" +
+      '<span class="lspraefix">' + (gestoert ? "Nicht vollständig" : "Analyse läuft") + "</span>" +
       schritte.map(function (s) {
         var st = s.stand || "offen";
         return '<span class="lsschritt ' + st + '" title="' + esc(s.bezeichnung) + '">' +
-          '<i>' + (STAND_SYMBOL[st] || "·") + "</i>" + esc(kurzSchritt(s.bezeichnung)) + "</span>";
+          '<i>' + (STAND_SYMBOL[st] || "○") + "</i>" + esc(schrittText(s)) + "</span>";
       }).join("") +
     "</div>" +
     reglementNote(reglement) +
@@ -2558,7 +2685,8 @@ function pollStatus(jobId) {
 
         if (data.status === "error") {
           stopLoading();
-          renderFehler(data.fehler, "fachlich");
+          if (data.adresswahl) renderAdresswahl(data.adresswahl, data.fehler);
+          else renderFehler(data.fehler, "fachlich");
           resolve(); return;
         }
         if (data.status === "teilweise") {
@@ -2623,6 +2751,45 @@ function renderFehler(msg, art, unterart) {
   inner.innerHTML = '<div class="empty"><h2>Analyse nicht möglich</h2><div class="note stop">' +
     esc(msg) + "</div>" +
     '<p style="font-size:12.5px;color:var(--ink-3);margin-top:14px">Die Engine gibt bewusst keinen Wert aus, wenn die amtliche Grundlage fehlt — das ist ein Ergebnis, keine Oberflächenstörung.</p></div>';
+}
+
+/* Keine oder mehrere passende Adressen: es wird NICHTS analysiert, bis
+   jemand eine bestimmte Adresse waehlt. Frueher lief hier still der erste
+   Treffer -- in Weiningen ein 600 m entferntes Grundstueck. */
+function renderAdresswahl(wahl, msg) {
+  parkeKarte();
+  var mehrdeutig = wahl.art === "mehrdeutig";
+  var kandidaten = alsListe(wahl.kandidaten);
+  inner.innerHTML = '<div class="empty"><h2>' +
+    (mehrdeutig ? "Adresse nicht eindeutig" : "Keine passende Adresse gefunden") + "</h2>" +
+    '<div class="note warn">' + esc(msg) + "</div>" +
+    (kandidaten.length
+      ? '<p style="font-size:12.5px;color:var(--ink-2);margin-top:14px">' +
+        (mehrdeutig ? "Welche Adresse ist gemeint?" : "Ähnliche amtliche Adressen — nur analysieren, " +
+          "wenn eine davon wirklich gemeint ist:") + "</p>" +
+        '<div class="szwahl" style="flex-direction:column;align-items:stretch">' +
+        kandidaten.map(function (k, i) {
+          return '<button class="szbtn" data-adresswahl="' + i + '" style="text-align:left">' +
+            esc(k.label) + (ADRESS_PASSUNG_TEXT[k.passung]
+              ? ' <span class="wtyp nicht_bestimmbar">' + esc(ADRESS_PASSUNG_TEXT[k.passung]) + "</span>"
+              : "") + "</button>";
+        }).join("") + "</div>"
+      : "") +
+    '<p style="font-size:12.5px;color:var(--ink-3);margin-top:14px">Es wurde kein Grundstück ' +
+    "analysiert. Eine Adresse wird nie still durch eine andere ersetzt.</p></div>";
+  Array.prototype.forEach.call(inner.querySelectorAll("[data-adresswahl]"), function (b) {
+    b.onclick = function () {
+      var k = kandidaten[Number(b.dataset.adresswahl)];
+      if (!k) return;
+      adressWahlInfo = { eingabe: wahl.eingabe, label: k.label, passung: k.passung };
+      inputEl.value = k.label;
+      gewaehlteAdresse = k.label;
+      gewaehlteAuswahl = (k.feature_id && k.lv95_e != null)
+        ? { feature_id: String(k.feature_id), lv95_e: k.lv95_e, lv95_n: k.lv95_n } : null;
+      goBtn.disabled = false;
+      starteAnalyse(false);
+    };
+  });
 }
 
 /* ===================== Karte befuellen ===================== */
@@ -3008,13 +3175,18 @@ function zwischenspeicherHinweis(erg) {
    Reiter stand, sah das eine wie das andere aus. */
 var REITER = [
   ["uebersicht", "Übersicht", ["sec-uebersicht"]],
+  ["grundstueck", "Grundstück & Standort", ["sec-grundstueck", "sec-standort"]],
   ["baurecht", "Baurecht", ["sec-baurecht", "sec-restriktionen"]],
   ["karte", "Karte", ["sec-karte"]],
   ["potenzial", "Potenzial", ["sec-potenzial", "sec-szenarien", "sec-screening"]],
   ["entwurf", "3D-Entwurf", ["sec-entwurf"]],
   ["markt", "Markt", ["sec-markt"]],
   ["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"]],
-  ["quellen", "Daten & Quellen", ["sec-grundstueck", "sec-standort", "sec-quellen"]]
+  // Nur noch die Quellen. "Grundstück & Bestand" und "Standort & Umwelt"
+  // beantworten die Frage "was ist hier?" -- sie stehen jetzt im eigenen
+  // Reiter "grundstueck" direkt nach der Übersicht, nicht mehr hinter den
+  // Quellen. Die Herkunft jedes Werts bleibt dort als Unterzeile sichtbar.
+  ["quellen", "Quellen", ["sec-quellen"]]
 ];
 var reiterAktiv = "uebersicht";
 
@@ -3153,9 +3325,46 @@ function uZeilen(paare) {
   var echte = paare.filter(function (p) { return !leer(p[1]); });
   if (!echte.length) return "";
   return '<div class="azeilen">' + echte.map(function (p) {
+    // p[2] (optional): Wertetyp, siehe wtyp() -- woher der Wert kommt.
     return '<div class="azeile"><span class="k">' + esc(p[0]) + "</span>" +
-      '<span class="v">' + esc(p[1]) + "</span></div>";
+      '<span class="v">' + esc(p[1]) + (p[2] ? " " + wtyp(p[2]) : "") + "</span></div>";
   }).join("") + "</div>";
+}
+
+/* Ein Vokabular fuer die Herkunft eines Werts -- dasselbe im ganzen
+   Dossier, als kleine Marke statt als Erklaersatz. Die Unterscheidung,
+   um die es geht: eine rechtliche VORGABE (BZO) ist kein Zustand des
+   Grundstuecks, ein REGISTERWERT (GWR) ist keine Messung, und ein
+   abgeleiteter Wert ist keine amtliche Angabe. */
+var WTYP = {
+  amtlich: "Amtlich",
+  vorgabe: "Vorgabe BZO",
+  vorgabe_max: "BZO max.",
+  vorgabe_min: "BZO min.",
+  gwr: "laut GWR",
+  gemessen: "gemessen",
+  abgeleitet: "abgeleitet",
+  modell: "Modell",
+  systemannahme: "Systemannahme",
+  benutzerannahme: "meine Annahme",
+  nicht_bestimmbar: "nicht bestimmbar"
+};
+function wtyp(art, zusatz) {
+  var klasse = /^vorgabe/.test(art) ? "vorgabe" : art;
+  return '<span class="wtyp ' + esc(klasse) + '">' + esc(WTYP[art] || art) +
+    (zusatz ? " · " + esc(zusatz) : "") + "</span>";
+}
+// Geschosse des Bestands laut GWR: je Gebaeude ein Wert. Fehlt einer, ist
+// die Angabe unvollstaendig -- sie wird nicht ergaenzt.
+function bestandGeschosse(b) {
+  var gs = (b || {}).geschosse || {};
+  var werte = alsListe(gs.wert).filter(function (w) { return !leer(w); });
+  if (!werte.length) return "unbekannt";
+  return werte.join(" · ") + (gs.status === "gemessen" ? "" : " (unvollständig)");
+}
+function bestandGeschosseTyp(b) {
+  var werte = alsListe(((b || {}).geschosse || {}).wert).filter(function (w) { return !leer(w); });
+  return werte.length ? "gwr" : "nicht_bestimmbar";
 }
 function reiterLink(reiter, text) {
   return '<button class="reiterlink" data-reiter-link="' + esc(reiter) + '">' +
@@ -3211,7 +3420,7 @@ function secUebersicht(erg, m1, zz) {
   var bFuss = !b ? ""
     : (!b.gebaeude ? "kein Eintrag im Gebäuderegister"
       : [b.gebaeude + " Gebäude",
-         bGeschosse.length ? bGeschosse.join(" · ") + " Geschosse" : null]
+         bGeschosse.length ? bGeschosse.join(" · ") + " Geschosse" : null, "laut GWR"]
         .filter(Boolean).join(" · "));
 
   var potVal = null, potEinheit = "", potErsatz = "wird ermittelt", potFuss = "";
@@ -3264,12 +3473,25 @@ function secUebersicht(erg, m1, zz) {
   // gleich aus, wenn beide nur einen Text zeigen. Deshalb steht im
   // Wertfeld ein Gedankenstrich -- die Spalte bleibt ausgerichtet -- und
   // darunter der Grund. Das liest sich als Antwort, nicht als Luecke.
-  function fussfeld(lbl, val, grund) {
+  // typHtml (optional): woher der Wert kommt -- siehe wtyp(). Eine
+  // BZO-Vorgabe neben einer abgeleiteten Flaeche sah bisher genau gleich aus.
+  function fussfeld(lbl, val, grund, typHtml) {
     return "<div>" + '<div class="lbl">' + esc(lbl) + "</div>" +
       (leer(val)
         ? '<div class="val na">–</div><div class="nagrund">' + esc(grund) + "</div>"
-        : '<div class="val">' + esc(String(val)) + "</div>") + "</div>";
+        : '<div class="val">' + esc(String(val)) + "</div>" +
+          (typHtml ? '<div class="nagrund">' + typHtml + "</div>" : "")) + "</div>";
   }
+  // Grenzabstand: BEIDE Zahlen sind BZO-Mindestwerte (klein / gross) fuer
+  // einen Neubau -- keine Messung am bestehenden Gebaeude. "3.5 / 3.5 m"
+  // ohne diesen Satz las sich wie Soll und Ist; im 3D-Entwurf bedeutet
+  // dieselbe Schreibweise "gemessen / gefordert". Sind beide gleich, steht
+  // die Zahl einmal.
+  var abstandText = abstand;
+  if (!leer(gk) && !leer(gg) && gk === gg) abstandText = fmt(gk, 1) + " m";
+  var abstandTyp = wtyp("vorgabe_min",
+    (!leer(gk) && !leer(gg) && gk !== gg) ? "klein / gross" : null);
+  var vgTyp = leer(w(zone.vollgeschosse_max)) ? wtyp("abgeleitet") : wtyp("vorgabe_max");
 
   var karte = '<div class="uekarte">' +
     '<div class="uekopf"><b>' +
@@ -3283,9 +3505,9 @@ function secUebersicht(erg, m1, zz) {
       "</div>" +
     "</div>" +
     '<div class="uefuss">' +
-      fussfeld("Bebaubar", bau, "noch nicht bestimmt") +
-      fussfeld("Grenzabstand", abstand, "in der Zone nicht geführt") +
-      fussfeld("Geschosse", leer(vg) ? null : String(vg), "in der Zone nicht geregelt") +
+      fussfeld("Bebaubar", bau, "noch nicht bestimmt", wtyp("abgeleitet")) +
+      fussfeld("Mindestabstand", abstandText, "in der Zone nicht geführt", abstandTyp) +
+      fussfeld("Geschosse", leer(vg) ? null : String(vg), "in der Zone nicht geregelt", vgTyp) +
     "</div></div>";
 
   /* --- Was ist hier moeglich? ----------------------------------------
@@ -3323,10 +3545,18 @@ function secUebersicht(erg, m1, zz) {
         ? '<p class="atext">Im Gebäude- und Wohnungsregister ist auf dieser Parzelle kein ' +
           'Gebäude verzeichnet.</p>'
         : uZeilen([
-            ["Grundfläche", leer(bGf) ? null : fmt(bGf, 0) + " m²"],
-            ["Gebäude", b.gebaeude ? String(b.gebaeude) : null],
+            ["Grundfläche", leer(bGf) ? null : fmt(bGf, 0) + " m²", "gwr"],
+            ["Gebäude", b.gebaeude ? String(b.gebaeude) : null, "gwr"],
+            // Die Geschosszahl des BESTANDS aus dem Register -- getrennt von
+            // der Geschosszahl, die die BZO fuer einen Neubau zulaesst.
+            ["Geschosse", bestandGeschosse(b), bestandGeschosseTyp(b)],
             ["Geschossfläche", leer(ab.wert_m2) ? "nicht ableitbar"
-              : "ca. " + fmt(ab.wert_m2, 0) + " m² (Näherung)"]
+              : "ca. " + fmt(ab.wert_m2, 0) + " m² (Näherung)",
+              leer(ab.wert_m2) ? "nicht_bestimmbar" : "abgeleitet"],
+            // Der Abstand des bestehenden Gebaeudes zur Grenze wird nicht
+            // gemessen. Das steht hier, damit die BZO-Zahl oben nicht fuer
+            // ihn gehalten wird.
+            ["Grenzabstand Bestand", "–", "nicht_bestimmbar"]
           ]) +
           (leer(ab.wert_m2)
             ? '<p class="ahinweis">Das Register führt keine vollständige Geschosszahl — ' +
@@ -3489,6 +3719,35 @@ function statusBadge(zz, gerechnet) {
   if (zz.status === "gefunden") return '<span class="badge ok">Zone eindeutig zugeordnet</span>';
   return '<span class="badge warn">Zone nicht zugeordnet</span>';
 }
+/* Gesuchte und analysierte Adresse -- nur wenn sie sich unterscheiden.
+
+   Passt die Eingabe zur analysierten amtlichen Adresse, bleibt der Kopf
+   kompakt. Weicht sie ab (andere Strasse, Hausnummer oder PLZ), stehen
+   gesuchte Adresse, amtliche Adresse, Parzelle und EGRID getrennt da --
+   eine Adresse darf nie still ein anderes Grundstueck ergeben. Dasselbe,
+   wenn die gespeicherte Rechnung derselben Parzelle von einer anderen
+   Adresse stammt. */
+function adressAbweichung(erg, pz) {
+  var wahl = adressWahlInfo && adressWahlInfo.label === erg.adresse ? adressWahlInfo : null;
+  var abweichend = wahl && ADRESS_PASSUNG_TEXT[wahl.passung];
+  var gespeichert = erg.adresse_gespeichert && erg.adresse_gespeichert !== erg.adresse;
+  if (!abweichend && !gespeichert) return "";
+  return '<dl class="adresskopf">' +
+    (abweichend
+      ? '<div class="warnzeile">Die analysierte Adresse weicht von der Eingabe ab (' +
+        esc(ADRESS_PASSUNG_TEXT[wahl.passung]) + ").</div>" +
+        "<dt>Gesuchte Adresse</dt><dd>" + esc(wahl.eingabe) + "</dd>"
+      : "") +
+    "<dt>Amtliche Adresse</dt><dd>" + esc(erg.adresse) + "</dd>" +
+    "<dt>Parzelle</dt><dd>" + esc(leer(pz.parzellennummer) ? "–" : pz.parzellennummer) + "</dd>" +
+    "<dt>EGRID</dt><dd>" + esc(pz.egrid || "–") + "</dd>" +
+    (gespeichert
+      ? "<dt>Gespeicherte Rechnung</dt><dd>derselben Parzelle, damals unter " +
+        esc(erg.adresse_gespeichert) + "</dd>"
+      : "") +
+    "</dl>";
+}
+
 function headHtml(erg, m1, zz) {
   var pz = m1.kataster || {};
   var nk = m1.nutzungsklassifikation || {};
@@ -3511,6 +3770,7 @@ function headHtml(erg, m1, zz) {
       '<div class="eyebrow">Grundst\u00fccksdossier</div>' +
       "<h2>" + esc(erg.adresse) + "</h2>" +
       '<div class="dossmeta">' + esc(meta.join("  \u00b7  ")) + "</div>" +
+      adressAbweichung(erg, pz) +
     "</div>" +
     '<div class="dossbadge">' +
       statusBadge(zz, !(erg.zonen_zuordnung === null || erg.zonen_zuordnung === undefined)) +
@@ -3559,6 +3819,88 @@ var GWR_GKLAS = {
   1273: "Denkmäler",
   1274: "Sonstige Hochbauten"
 };
+/* Heizung und Warmwasser laut GWR -- uebersetzt nach dem amtlichen
+   Merkmalskatalog des BFS, Version 4.3 (housing-stat.ch/catalog,
+   abgerufen 30.09.2026). Die Tabellen sind aus dem Katalog erzeugt, nicht
+   abgetippt. Wie bei GKAT/GKLAS bleibt der Code daneben stehen; ein
+   unbekannter Code wird nicht geraten. */
+// GWAERZH1/2
+var GWR_WAERMEERZEUGER_HEIZUNG = {
+  7400: "Kein Wärmeerzeuger",
+  7410: "Wärmepumpe für ein Gebäude",
+  7411: "Wärmepumpe für mehrere Gebäude",
+  7420: "Thermische Solaranlage für ein Gebäude",
+  7421: "Thermische Solaranlage für mehrere Gebäude",
+  7430: "Heizkessel (generisch) für ein Gebäude",
+  7431: "Heizkessel (generisch) für mehrere Gebäude",
+  7432: "Heizkessel nicht kondensierend für ein Gebäude",
+  7433: "Heizkessel nicht kondensierend für mehrere Gebäude",
+  7434: "Heizkessel kondensierend für ein Gebäude",
+  7435: "Heizkessel kondensierend für mehrere Gebäude",
+  7436: "Ofen",
+  7440: "Wärmekraftkopplungsanlage für ein Gebäude",
+  7441: "Wärmekraftkopplungsanlage für mehrere Gebäude",
+  7450: "Elektrospeicher-Zentralheizung für ein Gebäude",
+  7451: "Elektrospeicher-Zentralheizung für mehrere Gebäude",
+  7452: "Elektro direkt",
+  7460: "Wärmetauscher (einschliesslich für Fernwärme) für ein Gebäude",
+  7461: "Wärmetauscher (einschliesslich für Fernwärme) für mehrere Gebäude",
+  7499: "Andere"
+};
+// GWAERZW1/2
+var GWR_WAERMEERZEUGER_WARMWASSER = {
+  7600: "Kein Wärmeerzeuger",
+  7610: "Wärmepumpe",
+  7620: "Thermische Solaranlage",
+  7630: "Heizkessel (generisch)",
+  7632: "Heizkessel nicht kondensierend",
+  7634: "Heizkessel kondensierend",
+  7640: "Wärmekraftkopplungsanlage",
+  7650: "Zentraler Elektroboiler",
+  7651: "Kleinboiler",
+  7660: "Wärmetauscher (einschliesslich für Fernwärme)",
+  7699: "Andere"
+};
+// GENH1/2, GENW1/2
+var GWR_ENERGIEQUELLE = {
+  7500: "Keine",
+  7501: "Luft",
+  7510: "Erdwärme (generisch)",
+  7511: "Erdwärmesonde",
+  7512: "Erdregister",
+  7513: "Wasser (Grundwasser, Oberflächenwasser, Abwasser)",
+  7520: "Gas",
+  7530: "Heizöl",
+  7540: "Holz (generisch)",
+  7541: "Holz (Stückholz)",
+  7542: "Holz (Pellets)",
+  7543: "Holz (Schnitzel)",
+  7550: "Abwärme (innerhalb des Gebäudes)",
+  7560: "Elektrizität",
+  7570: "Sonne (thermisch)",
+  7580: "Fernwärme (generisch)",
+  7581: "Fernwärme (Hochtemperatur)",
+  7582: "Fernwärme (Niedertemperatur)",
+  7598: "Unbestimmt",
+  7599: "Andere"
+};
+// GWAERSCEH/GWAERSCEW
+var GWR_INFORMATIONSQUELLE = {
+  851: "Gemäss amtlicher Vermessung",
+  852: "Gemäss amtliche Schätzung",
+  853: "Gemäss Gebäudeversicherung",
+  855: "Gemäss Kontrolle der Heizungseinrichtungen",
+  857: "Gemäss Eigentümer/in / Verwaltung",
+  858: "Gemäss Gebäudeenergieausweis der Kantone (GEAK)",
+  859: "Andere",
+  860: "Gemäss Volkszählung 2000",
+  864: "Gemäss Daten des Kantons",
+  865: "Gemäss Daten der Gemeinde",
+  869: "Gemäss Baubewilligung",
+  870: "Gemäss topografischem Landschaftsmodell (TLM)",
+  871: "Gemäss Minergie",
+  878: "Nicht bestimmbares Volumen (nicht geschlossenes Gebäude)"
+};
 function gwrCode(tabelle, code) {
   if (leer(code)) return null;
   var text = tabelle[code];
@@ -3572,6 +3914,52 @@ function kennung(lbl, val, sub) {
   return '<div class="kenn"><div class="lbl">' + esc(lbl) + "</div>" +
     '<div class="val' + (na ? " na" : "") + '">' + (na ? "nicht verfügbar" : esc(val)) + "</div>" +
     (sub ? '<div class="sub">' + esc(sub) + "</div>" : "") + "</div>";
+}
+
+/* Heizung & Energie, so wie das GWR sie fuehrt -- mit Datum und Quelle.
+
+   Beispiel Hogerwiesstrasse 1, Weiningen: Heizkessel, Heizoel, Angabe vom
+   29.11.2001, "Gemaess Volkszaehlung 2000". Ob dort heute noch Oel
+   brennt, sagt das Register nicht -- also steht das Alter der Angabe
+   dabei, statt die Zeile wie einen aktuellen Befund aussehen zu lassen.
+   Fehlt die Angabe, gibt es keine Zeile; geschaetzt wird nichts. */
+function waermeText(angabe, erzeugerTabelle) {
+  if (!angabe) return null;
+  var teile = [gwrCode(erzeugerTabelle, angabe.waermeerzeuger_code),
+               gwrCode(GWR_ENERGIEQUELLE, angabe.energiequelle_code)].filter(Boolean);
+  if (!teile.length) return null;
+  var herkunft = ["laut GWR"];
+  if (!leer(angabe.aktualisiert_am)) herkunft.push("Angabe vom " + angabe.aktualisiert_am);
+  if (!leer(angabe.informationsquelle_code)) {
+    var q = GWR_INFORMATIONSQUELLE[angabe.informationsquelle_code];
+    herkunft.push(q ? q.replace(/^Gemäss /, "Quelle: ") : "Quelle: Code " + angabe.informationsquelle_code);
+  }
+  return teile.join(" · ") + " — " + herkunft.join(", ");
+}
+function angabeAlterJahre(angabe) {
+  var m = /(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec((angabe || {}).aktualisiert_am || "");
+  if (!m) return null;
+  var datum = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return (Date.now() - datum.getTime()) / (365.25 * 24 * 3600 * 1000);
+}
+function heizungBlock(gw) {
+  var zeilen = [
+    ["Heizung", waermeText(gw.heizung, GWR_WAERMEERZEUGER_HEIZUNG)],
+    ["Heizung (zweite Anlage)", waermeText(gw.heizung_2, GWR_WAERMEERZEUGER_HEIZUNG)],
+    ["Warmwasser", waermeText(gw.warmwasser, GWR_WAERMEERZEUGER_WARMWASSER)]
+  ].filter(function (z) { return !leer(z[1]); });
+  if (!zeilen.length) {
+    return '<h4 class="subhead">Heizung &amp; Energie</h4>' +
+      '<div class="note">Das GWR führt für dieses Gebäude keine Heizungsangabe ' +
+      wtyp("nicht_bestimmbar") + "</div>";
+  }
+  var alter = angabeAlterJahre(gw.heizung);
+  return '<h4 class="subhead">Heizung &amp; Energie ' + wtyp("gwr") + "</h4>" +
+    kvRows(zeilen) +
+    (alter !== null && alter >= 10
+      ? '<div class="note warn">Die Heizungsangabe ist ' + Math.floor(alter) + " Jahre alt. " +
+        "Das Register sagt nicht, ob die Anlage heute noch so besteht.</div>"
+      : "");
 }
 
 function secGrundstueck(m1) {
@@ -3590,7 +3978,8 @@ function secGrundstueck(m1) {
           : fmt(gw.energiebezugsflaeche_m2) + " m²"]
       ]) +
       '<div class="note">Die Energiebezugsfläche stammt aus dem GWR und ist eine ' +
-      'SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>'
+      'SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>' +
+      heizungBlock(gw)
     : '<div class="eleit ruhig">kein Gebäude im Register</div>' +
       '<div class="eleitlab">an dieser Adresse ist im GWR kein Gebäude verzeichnet</div>' +
       '<div class="egrund">Das Grundstück ist entweder unbebaut, oder das Gebäude ist ' +
@@ -3704,7 +4093,7 @@ function secStandort(m1) {
     kennung("Höhenmodell", t.quelle, "Grundlage für Höhe, Neigung und Ausrichtung");
 
   return '<section class="sec" id="sec-standort">' +
-    '<div class="sechead"><h3>Standort</h3></div>' +
+    '<div class="sechead"><h3>Standort &amp; Umwelt</h3></div>' +
     '<div class="tiles">' +
       tile("Höhe", leer(t.hoehe_m) ? null : fmt(t.hoehe_m, 1), "m ü. M.") +
       tile("Hangneigung", leer(t.slope_deg) ? null : fmt(t.slope_deg, 1), "°") +
@@ -3712,6 +4101,12 @@ function secStandort(m1) {
       tile("Radon", leer(r.wahrscheinlichkeit_prozent) ? null
         : fmt(r.wahrscheinlichkeit_prozent, 1), "%") +
     "</div>" +
+    // Radon ist ein Modellwert (Wahrscheinlichkeit fuer das Gebiet), keine
+    // Messung am Gebaeude. Und was hier NICHT steht, ist nicht geprueft --
+    // es heisst nicht "nicht betroffen".
+    '<div class="note">Radon: ' + wtyp("modell") + " Wahrscheinlichkeit für das Gebiet laut " +
+    "BAG-Radonkarte, keine Messung am Gebäude. Nicht aufgeführte Umweltthemen wurden nicht " +
+    "abgefragt — das heisst nicht, dass das Grundstück davon nicht betroffen ist.</div>" +
     kvRows([
       ["ÖV-Haltestelle", dist(u.oev_naechste_haltestelle)],
       ["Schule", dist(u.schule_naechste)],
@@ -3743,15 +4138,25 @@ function kennzahlBlock(label, kz, einheit) {
   var conf = kz.confidence || "–";
   var badge = conf === "hoch" ? "ok" : (conf === "nicht_bestimmbar" ? "mute" : "warn");
   var bed = alsListe(kz.bedingungen);
+  // Zwei verschiedene Aussagen, die bisher in EINER Marke steckten: der
+  // Wert ist eine rechtliche VORGABE der BZO (fuer einen Neubau, kein
+  // Zustand des Grundstuecks) -- und "hoch/mittel" ist nur, wie sicher das
+  // Sprachmodell ihn aus dem Reglement gelesen hat. Das ist keine
+  // Rechtssicherheit und heisst deshalb "Auslesesicherheit".
+  var artikel = kz.artikel_referenz && String(kz.artikel_referenz).length <= 24
+    ? String(kz.artikel_referenz) : null;
   return '<div class="card' + (hatWert ? "" : " leer") + '"><div class="cardhead"><h4>' + esc(label) +
-    '</h4>' + (hatWert ? '<span class="badge ' + badge + '">' + begriff(conf) + "</span>" : "") + "</div>" +
+    '</h4>' + (hatWert ? '<span class="badge ' + badge + '" title="Wie sicher der Wert aus dem ' +
+      'Reglement gelesen wurde -- keine rechtliche Bewertung">Auslesesicherheit ' +
+      begriff(conf) + "</span>" : "") + "</div>" +
     // Kein Wert heisst hier nicht "Fehler", sondern "die Bau- und
     // Nutzungsordnung fuehrt diese Ziffer nicht". Wie in der Uebersicht:
     // Gedankenstrich in der Ziffernschrift, damit die Kacheln auf einer
     // Linie stehen, und der Grund darunter.
     (hatWert
       ? '<div class="bigval">' + esc(kz.wert) +
-        (einheit ? ' <span class="unit">' + esc(einheit) + "</span>" : "") + "</div>"
+        (einheit ? ' <span class="unit">' + esc(einheit) + "</span>" : "") + "</div>" +
+        '<div class="kzgrund">' + wtyp("vorgabe", artikel) + "</div>"
       : '<div class="bigval na">–</div><div class="kzgrund">' +
         (conf === "nicht_bestimmbar"
           ? "aus der Bau- und Nutzungsordnung nicht ableitbar"
@@ -4155,7 +4560,7 @@ function zonenHierarchie(m1, zz) {
     // Sagt der Status mehr als "betroffen", steht er dabei -- sonst nicht.
     var zusatz = /^betroffen$/i.test(status.trim()) ? "" : " (" + klartext(status) + ")";
     rTeile.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen" + zusatz +
-                 " — Einzelheiten im Reiter Daten & Quellen"]);
+                 " — Einzelheiten im Reiter Grundstück & Standort"]);
   });
   var d = rTeile.length
     ? kvRows(rTeile)
@@ -4169,6 +4574,26 @@ function zonenHierarchie(m1, zz) {
                "Überlagerungen ändern die Grundnutzung nicht, schränken sie aber ein.") +
     zonenEbene("D", "Restriktionen", d) +
   "</div>";
+}
+
+/* Kernzonenplan: im Reglement erwaehnt, als Plan NICHT geladen.
+
+   Weiningen: die BZO unterscheidet rot, grau und weiss bezeichnete
+   Gebaeude und kennt Baubegrenzungslinien, die an die Stelle von Grenz-
+   und Gebaeudeabstaenden treten koennen. All das steht im Kernzonenplan --
+   und der liegt hier nicht als Geodaten vor. Eine Einstufung einzelner
+   Gebaeude gibt es deshalb nicht, und sie wird auch nicht aus einer
+   Kartenfarbe abgeleitet. Das steht hier, statt stillschweigend zu fehlen. */
+function kernzonenplanHinweis(m2) {
+  var text = "";
+  try { text = JSON.stringify(m2 || {}); } catch (e) { text = ""; }
+  if (!/kernzonenplan/i.test(text)) return "";
+  return '<div class="note warn"><b>Kernzonenplan-Einstufung nicht verfügbar.</b> ' +
+    "Das Reglement verweist auf einen Kernzonenplan (etwa Gebäudekategorien oder " +
+    "Baubegrenzungslinien, die Grenz- und Gebäudeabstände ersetzen können). Dieser Plan " +
+    "ist hier nicht als Geodaten geladen — eine Einstufung einzelner Gebäude liegt nicht " +
+    "vor. Die grauen Gebäude der 3D-Ansicht sind reine Darstellung, keine rechtliche " +
+    "Einstufung.</div>";
 }
 
 function secBaurecht(erg, m1, zz) {
@@ -4236,6 +4661,7 @@ function secBaurecht(erg, m1, zz) {
     '<div class="note">Vier Ebenen, in der Reihenfolge, in der sie einander vorgehen. ' +
     'Massgebend ist immer die oberste, die tatsächlich greift.</div>' +
     zonenHierarchie(m1, zz) +
+    kernzonenplanHinweis(m2) +
     '<details class="more"><summary>Herleitung und Nachweise</summary><div>' +
     kvRows([
       ["Grundnutzung (amtlich)", zoneKlarname(basis.typ_kommunal_bezeichnung)],
@@ -4502,10 +4928,13 @@ function ebeneBestand(b) {
       ebeneLeit(leer(gf.wert_m2) ? null : fmt(gf.wert_m2, 0), "m²",
         leer(gf.wert_m2) ? "Grundfläche nicht verfügbar" : "Bestandsgrundfläche") +
       '<div class="ezeilen">' +
+        // Die Engine nennt einen vollstaendigen Registereintrag "gemessen".
+        // Gemessen ist daran nichts -- es ist ein amtlicher Registerwert.
+        // Angezeigt wird deshalb "laut GWR"; die Kennung der Engine bleibt.
         ebeneZeile("Quelle", "GWR",
-          gf.status === "gemessen" ? ["gemessen", "ok"] : ["unvollständig", "warn"]) +
+          gf.status === "gemessen" ? ["laut GWR", "ok"] : ["unvollständig", "warn"]) +
         ebeneZeile("Geschosse", geschosse.length ? geschosse.join(" · ") : null,
-          gs.status === "gemessen" ? ["gemessen", "ok"] : ["unvollständig", "warn"]) +
+          gs.status === "gemessen" ? ["laut GWR", "ok"] : ["unvollständig", "warn"]) +
         ebeneZeile("Abgeleitete GF", abgeleitet, ["Näherung", "warn"], lesbar(ab.rechnung)) +
       "</div>" +
       (leer(ab.wert_m2)
@@ -8796,7 +9225,10 @@ function secEntwurf(erg) {
     var gemessen = "engste Stelle " + s.ist.toFixed(2) + " m an Kante " + s.nr +
                    ", gefordert " + s.soll.toFixed(2) + " m";
     if (!verletzte.length) {
-      return { art: "ok", kurz: s.ist.toFixed(1) + " / " + s.soll.toFixed(1) + " m",
+      // "6.2 / 6.0 m" hiess hier "gemessen / gefordert" -- in der Uebersicht
+      // bedeutet dieselbe Schreibweise "klein / gross" der BZO. Deshalb
+      // ausgeschrieben, damit Ist und Soll nie verwechselt werden.
+      return { art: "ok", kurz: s.ist.toFixed(1) + " m, gefordert " + s.soll.toFixed(1) + " m",
                text: gemessen + " — eingehalten über alle " + mit.length + " Kanten." + woher,
                kritisch: kritisch, verletzte: [] };
     }
@@ -9877,9 +10309,15 @@ function secEntwurf(erg) {
       }
       if (u) {
         var st = u.statistik || {};
+        // Eigenes Gebaeude und Nachbarn je mit eigener Farbmarke -- und der
+        // Satz, dass Grau hier nur Darstellung ist. In einer Kernzone gibt es
+        // "grau bezeichnete Gebaeude" als RECHTLICHE Kategorie; die ist hier
+        // nicht geladen und darf nicht aus dieser Farbe gelesen werden.
+        teile.push('<span class="l3d"><i style="background:' + FARBE.gebaeudeEigen + '"></i>' +
+          st.gebaeude_eigen + " Gebäude auf der Parzelle</span>");
         teile.push('<span class="l3d"><i style="background:' + FARBE.gebaeudeNeu + '"></i>' +
-          st.gebaeude_eigen + " eigenes + " + ((st.gebaeude || 0) - (st.gebaeude_eigen || 0)) +
-          " Nachbargebäude</span>");
+          ((st.gebaeude || 0) - (st.gebaeude_eigen || 0)) + " Nachbargebäude</span>");
+        teile.push('<span class="l3d">Grautöne = Darstellung, keine rechtliche Einstufung</span>');
         if (st.gebaeude_ohne_hoehe) {
           teile.push('<span class="l3d"><i style="background:' + FARBE.ohneHoehe + '"></i>' +
             st.gebaeude_ohne_hoehe + " ohne bekannte Höhe — flach dargestellt</span>");

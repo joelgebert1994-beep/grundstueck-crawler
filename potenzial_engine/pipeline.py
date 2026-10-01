@@ -1057,8 +1057,12 @@ def analysiere_grundstueck(
     *,
     fortschritt=None,
     modul2_lader=None,
+    geo=None,
 ) -> Analyse:
     """Vollstaendige baurechtliche Potenzialanalyse fuer eine Adresse.
+
+    `geo` ist eine bereits aufgeloeste Adresse (geocode_auswahl oder
+    geocode_address). Ist sie gesetzt, wird die Adresse nicht erneut gesucht.
 
     Ablauf: Geodaten (Modul 1) -> Nutzungsklassifikation (Modul 1b) ->
     Auswertung des kommunalen Reglements (Modul 2, LLM) -> Zonenzuordnung ->
@@ -1088,7 +1092,7 @@ def analysiere_grundstueck(
                 pass
 
     melde("grundstueck", STAND_LAEUFT)
-    modul1_result = run_modul1(adresse)
+    modul1_result = run_modul1(adresse, geo=geo)
     oereb = modul1_result.get("oereb", {})
     if not oereb.get("found"):
         melde("grundstueck", STAND_FEHLER)
