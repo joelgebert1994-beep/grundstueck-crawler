@@ -1,0 +1,135 @@
+{
+ "_abgerufen": "2026-09-30",
+ "_anfrage": "Hogerwiesstrasse 1 8104 Weiningen ZH",
+ "_limit": 10,
+ "results": [
+  {
+   "attrs": {
+    "detail": "hogerwiesstrasse 1 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "123952_0",
+    "geom_quadindex": "030003002002210023022",
+    "geom_st_box2d": "BOX(2675063.688000001 1252760.8539999984,2675063.688000001 1252760.8539999984)",
+    "label": "Hogerwiesstrasse 1 <b>8104 Weiningen ZH</b>",
+    "lat": 47.4213752746582,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100121031",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/123952_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.43341064453125,
+    "num": 1,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252760.875,
+    "y": 2675063.75,
+    "zoomlevel": 10
+   },
+   "id": 1837058,
+   "weight": 100
+  },
+  {
+   "attrs": {
+    "detail": "hogerwiesstrasse 11 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "123939_0",
+    "geom_quadindex": "030003002002012220002",
+    "geom_st_box2d": "BOX(2675059.6689999998 1252838.7710000016,2675059.6689999998 1252838.7710000016)",
+    "label": "Hogerwiesstrasse 11 <b>8104 Weiningen ZH</b>",
+    "lat": 47.42207717895508,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100121018",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/123939_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.433370590209961,
+    "num": 11,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252838.75,
+    "y": 2675059.75,
+    "zoomlevel": 10
+   },
+   "id": 1899348,
+   "weight": 4
+  },
+  {
+   "attrs": {
+    "detail": "hogerwiesstrasse 13 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "123932_0",
+    "geom_quadindex": "030003002002001132211",
+    "geom_st_box2d": "BOX(2675054.098000001 1252877.6559999995,2675054.098000001 1252877.6559999995)",
+    "label": "Hogerwiesstrasse 13 <b>8104 Weiningen ZH</b>",
+    "lat": 47.422428131103516,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100121011",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/123932_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.433302879333496,
+    "num": 13,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252877.625,
+    "y": 2675054.0,
+    "zoomlevel": 10
+   },
+   "id": 2699697,
+   "weight": 4
+  },
+  {
+   "attrs": {
+    "detail": "hogerwiesstrasse 3.1 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "210208753_0",
+    "geom_quadindex": "030003002002032030212",
+    "geom_st_box2d": "BOX(2675068.283 1252792.7600000016,2675068.283 1252792.7600000016)",
+    "label": "Hogerwiesstrasse 3.1 <b>8104 Weiningen ZH</b>",
+    "lat": 47.421661376953125,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/102108135",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/210208753_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.433476448059082,
+    "num": 31,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252792.75,
+    "y": 2675068.25,
+    "zoomlevel": 10
+   },
+   "id": 2075397,
+   "weight": 4
+  }
+ ]
+}

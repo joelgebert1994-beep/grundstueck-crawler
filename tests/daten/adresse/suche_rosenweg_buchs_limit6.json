@@ -1,0 +1,103 @@
+{
+ "_abgerufen": "2026-09-30",
+ "_anfrage": "Rosenweg 4, 5033 Buchs",
+ "_limit": 6,
+ "results": [
+  {
+   "attrs": {
+    "detail": "rosenweg 4 5033 buchs ag 4003 buchs _ag_ ch ag",
+    "featureId": "524242_0",
+    "geom_quadindex": "021113023031230132213",
+    "geom_st_box2d": "BOX(2647660.969999999 1248717.265999999,2647660.969999999 1248717.265999999)",
+    "label": "Rosenweg 4 <b>5033 Buchs AG</b>",
+    "lat": 47.3875617980957,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100428859",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/524242_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.069843292236328,
+    "num": 4,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1248717.25,
+    "y": 2647661.0,
+    "zoomlevel": 10
+   },
+   "id": 2523475,
+   "weight": 1
+  },
+  {
+   "attrs": {
+    "detail": "rosenweg 4.1 5033 buchs ag 4003 buchs _ag_ ch ag",
+    "featureId": "263024777_0",
+    "geom_quadindex": "021113023031230322133",
+    "geom_st_box2d": "BOX(2647655.4290000014 1248703.4899999984,2647655.4290000014 1248703.4899999984)",
+    "label": "Rosenweg 4.1 <b>5033 Buchs AG</b>",
+    "lat": 47.3874397277832,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/102405651",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/263024777_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.069768905639648,
+    "num": 41,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1248703.5,
+    "y": 2647655.5,
+    "zoomlevel": 10
+   },
+   "id": 2518562,
+   "weight": 7
+  },
+  {
+   "attrs": {
+    "detail": "rosenweg 4.2 5033 buchs ag 4003 buchs _ag_ ch ag",
+    "featureId": "263070701_0",
+    "geom_quadindex": "021113023031230120230",
+    "geom_st_box2d": "BOX(2647653.204999998 1248720.3170000017,2647653.204999998 1248720.3170000017)",
+    "label": "Rosenweg 4.2 <b>5033 Buchs AG</b>",
+    "lat": 47.38758850097656,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/102686476",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/263070701_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.069741249084473,
+    "num": 42,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1248720.375,
+    "y": 2647653.25,
+    "zoomlevel": 10
+   },
+   "id": 2086645,
+   "weight": 7
+  }
+ ]
+}

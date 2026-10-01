@@ -1,0 +1,328 @@
+{
+ "_abgerufen": "2026-09-30",
+ "_anfrage": "Horgenwiesstrasse 1, 8104",
+ "_limit": 10,
+ "fuzzy": "true",
+ "results": [
+  {
+   "attrs": {
+    "detail": "puentenstrasse 2b 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "210182741_0",
+    "geom_quadindex": "030003002032020233200",
+    "geom_st_box2d": "BOX(2675481.0249999985 1252335.4140000008,2675481.0249999985 1252335.4140000008)",
+    "label": "Püntenstrasse 2b <b>8104 Weiningen ZH</b>",
+    "lat": 47.417503356933594,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/101793420",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/210182741_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.438868522644043,
+    "num": 2,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252335.375,
+    "y": 2675481.0,
+    "zoomlevel": 10
+   },
+   "id": 2056186,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "rainstrasse 3 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "191983593_0",
+    "geom_quadindex": "030003002002220202300",
+    "geom_st_box2d": "BOX(2675002.9679999985 1252694.3819999993,2675002.9679999985 1252694.3819999993)",
+    "label": "Rainstrasse 3 <b>8104 Weiningen ZH</b>",
+    "lat": 47.42078399658203,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/103286837",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/191983593_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.432595252990723,
+    "num": 3,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252694.375,
+    "y": 2675003.0,
+    "zoomlevel": 10
+   },
+   "id": 2233945,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "schlueechtistrasse 3 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "123818_0",
+    "geom_quadindex": "030003002020303320322",
+    "geom_st_box2d": "BOX(2675164.0359999985 1252484.1730000004,2675164.0359999985 1252484.1730000004)",
+    "label": "Schlüechtistrasse 3 <b>8104 Weiningen ZH</b>",
+    "lat": 47.41887664794922,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100119043",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/123818_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.434693336486816,
+    "num": 3,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252484.125,
+    "y": 2675164.0,
+    "zoomlevel": 10
+   },
+   "id": 2737070,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "badenerstrasse 3 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "124009_0",
+    "geom_quadindex": "030003002020033322223",
+    "geom_st_box2d": "BOX(2675104.223000001 1252539.1889999993,2675104.223000001 1252539.1889999993)",
+    "label": "Badenerstrasse 3 <b>8104 Weiningen ZH</b>",
+    "lat": 47.419376373291016,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100118812",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/124009_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.433910369873047,
+    "num": 3,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252539.25,
+    "y": 2675104.25,
+    "zoomlevel": 10
+   },
+   "id": 2838010,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "grossaecherweg 4 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "9003372_0",
+    "geom_quadindex": "030003002023333300202",
+    "geom_st_box2d": "BOX(2675455.1510000005 1252199.7679999992,2675455.1510000005 1252199.7679999992)",
+    "label": "Grossächerweg 4 <b>8104 Weiningen ZH</b>",
+    "lat": 47.41628646850586,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/101205140",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/9003372_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.43850326538086,
+    "num": 4,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252199.75,
+    "y": 2675455.25,
+    "zoomlevel": 10
+   },
+   "id": 1993785,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "rainstrasse 4 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "123978_0",
+    "geom_quadindex": "030003002002223203223",
+    "geom_st_box2d": "BOX(2675034.6000000015 1252663.6220000014,2675034.6000000015 1252663.6220000014)",
+    "label": "Rainstrasse 4 <b>8104 Weiningen ZH</b>",
+    "lat": 47.42050552368164,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100118781",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/123978_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.433009147644043,
+    "num": 4,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252663.625,
+    "y": 2675034.5,
+    "zoomlevel": 10
+   },
+   "id": 1994093,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "regensdorferstrasse 5 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "9036652_0",
+    "geom_quadindex": "030003002002332230022",
+    "geom_st_box2d": "BOX(2675184.215 1252661.9510000013,2675184.215 1252661.9510000013)",
+    "label": "Regensdorferstrasse 5 <b>8104 Weiningen ZH</b>",
+    "lat": 47.42047119140625,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/101200237",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/9036652_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.434990882873535,
+    "num": 5,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252662.0,
+    "y": 2675184.25,
+    "zoomlevel": 10
+   },
+   "id": 2718477,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "friedhofstrasse 6a 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "123892_0",
+    "geom_quadindex": "030003002003003322223",
+    "geom_st_box2d": "BOX(2675280.0890000015 1252832.1039999984,2675280.0890000015 1252832.1039999984)",
+    "label": "Friedhofstrasse 6a <b>8104 Weiningen ZH</b>",
+    "lat": 47.421993255615234,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100120115",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/123892_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.43628978729248,
+    "num": 6,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252832.125,
+    "y": 2675280.0,
+    "zoomlevel": 10
+   },
+   "id": 2001682,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "usserdorfstrasse 6b 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "3028290_0",
+    "geom_quadindex": "030003002030220023203",
+    "geom_st_box2d": "BOX(2675474.096999999 1252467.0749999993,2675474.096999999 1252467.0749999993)",
+    "label": "Usserdorfstrasse 6b <b>8104 Weiningen ZH</b>",
+    "lat": 47.41868591308594,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/101115953",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/3028290_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.438798904418945,
+    "num": 6,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252467.125,
+    "y": 2675474.0,
+    "zoomlevel": 10
+   },
+   "id": 2643080,
+   "weight": 1513
+  },
+  {
+   "attrs": {
+    "detail": "im boden 6 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "123744_0",
+    "geom_quadindex": "030003002030022330222",
+    "geom_st_box2d": "BOX(2675491.8619999997 1252542.7069999985,2675491.8619999997 1252542.7069999985)",
+    "label": "Im Boden 6 <b>8104 Weiningen ZH</b>",
+    "lat": 47.41936492919922,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/100115251",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/123744_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.439047813415527,
+    "num": 6,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252542.75,
+    "y": 2675491.75,
+    "zoomlevel": 10
+   },
+   "id": 2824386,
+   "weight": 1513
+  }
+ ]
+}

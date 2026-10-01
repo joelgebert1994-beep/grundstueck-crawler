@@ -1,0 +1,39 @@
+{
+ "_abgerufen": "2026-09-30",
+ "_anfrage": "Püntenstrasse 2b 8104 Weiningen ZH",
+ "_limit": 6,
+ "results": [
+  {
+   "attrs": {
+    "detail": "puentenstrasse 2b 8104 weiningen zh 251 weiningen _zh_ ch zh",
+    "featureId": "210182741_0",
+    "geom_quadindex": "030003002032020233200",
+    "geom_st_box2d": "BOX(2675481.0249999985 1252335.4140000008,2675481.0249999985 1252335.4140000008)",
+    "label": "Püntenstrasse 2b <b>8104 Weiningen ZH</b>",
+    "lat": 47.417503356933594,
+    "links": [
+     {
+      "href": "/rest/services/ech/MapServer/ch.swisstopo.amtliches-gebaeudeadressverzeichnis/101793420",
+      "rel": "related",
+      "title": "ch.swisstopo.amtliches-gebaeudeadressverzeichnis"
+     },
+     {
+      "href": "/rest/services/ech/MapServer/ch.bfs.gebaeude_wohnungs_register/210182741_0",
+      "rel": "related",
+      "title": "ch.bfs.gebaeude_wohnungs_register"
+     }
+    ],
+    "lon": 8.438868522644043,
+    "num": 2,
+    "objectclass": "",
+    "origin": "address",
+    "rank": 7,
+    "x": 1252335.375,
+    "y": 2675481.0,
+    "zoomlevel": 10
+   },
+   "id": 2056186,
+   "weight": 100
+  }
+ ]
+}

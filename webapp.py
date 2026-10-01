@@ -57,7 +57,8 @@ from urllib.parse import parse_qs, urlparse
 from potenzial_engine import Analyse, analysiere_grundstueck, berechne_wirtschaftlichkeit
 from potenzial_engine import sonnenstand
 from potenzial_engine.modul1_geodata import (
-    Modul1Error, geocode_address, get_gwr_data, get_parcel_data)
+    AdresseNichtEindeutig, Modul1Error, geocode_address, geocode_auswahl, get_gwr_data,
+    get_parcel_data)
 from potenzial_engine.modul2_bzo_analysis import (
     FEHLERART_DOKUMENTE_FEHLEN, FEHLERART_UNBEKANNT, REGLEMENT_COMPLETED, REGLEMENT_FAILED,
     REGLEMENT_PENDING, REGLEMENT_RUNNING, Modul2Error, reglementstatus,
@@ -973,7 +974,11 @@ class Handler(BaseHTTPRequestHandler):
         if job["status"] == "running":
             self._send_json({"ok": True, "status": "running", **stand})
         elif job["status"] == "error":
-            self._send_json({"ok": True, "status": "error", "fehler": job["fehler"], **stand})
+            # Bei einer nicht eindeutigen Adresse gehen die aehnlichen Treffer
+            # mit -- zur bewussten Auswahl, nicht zur stillen Uebernahme.
+            extra = {"adresswahl": job["adresswahl"]} if job.get("adresswahl") else {}
+            self._send_json({"ok": True, "status": "error", "fehler": job["fehler"],
+                             **extra, **stand})
         elif job["status"] == "teilweise":
             # Amtliche Daten vollstaendig, Reglementsauswertung fehlgeschlagen.
             # Ob ein neuer Versuch lohnt, sagt die Fehlerart -- nicht pauschal.
@@ -1959,6 +1964,20 @@ class Handler(BaseHTTPRequestHandler):
         if not gueltig:
             return
 
+        # Die bewusst angeklickte Adresse: stabile Kennung des Suchtreffers
+        # (featureId) plus seine Koordinate. Fehlt sie, bleibt es beim freien
+        # Text -- der dann nur bei genau einem passenden Treffer angenommen wird.
+        auswahl = None
+        roh = daten.get("auswahl")
+        if isinstance(roh, dict) and roh.get("feature_id"):
+            try:
+                auswahl = {"feature_id": str(roh["feature_id"]),
+                           "lv95_e": float(roh["lv95_e"]), "lv95_n": float(roh["lv95_n"])}
+            except (KeyError, TypeError, ValueError):
+                self._send_json({"ok": False, "fehler": "Die Adressauswahl ist unvollständig."},
+                                status=400)
+                return
+
         _cleanup_alte_jobs()
         job_id = uuid.uuid4().hex
         with _JOBS_LOCK:
@@ -1977,14 +1996,15 @@ class Handler(BaseHTTPRequestHandler):
         thread = threading.Thread(
             target=self._job_ausfuehren,
             args=(job_id, adresse, verkaufspreis, verkaufspreis_total,
-                  bool(daten.get("neu_rechnen"))),
+                  bool(daten.get("neu_rechnen")), auswahl),
             daemon=True,
         )
         thread.start()
 
         self._send_json({"ok": True, "job_id": job_id})
 
-    def _zwischenspeicher_suchen(self, adresse: str) -> tuple[Optional[dict], Optional[str]]:
+    def _zwischenspeicher_suchen(self, adresse: str,
+                                 geo: Optional[dict] = None) -> tuple[Optional[dict], Optional[str]]:
         """Sucht eine bereits gerechnete, noch gueltige Analyse.
 
         Der Schluessel ist der EGRID, nicht die Adresse: "Rosenweg 4, Buchs"
@@ -2001,7 +2021,8 @@ class Handler(BaseHTTPRequestHandler):
         if kern_db is None:
             return None, None
         try:
-            geo = geocode_address(adresse)
+            if geo is None:
+                geo = geocode_address(adresse)
             if not geo or geo.get("lv95_e") is None:
                 return None, None
             parzelle = get_parcel_data(geo["lv95_e"], geo["lv95_n"])
@@ -2019,6 +2040,14 @@ class Handler(BaseHTTPRequestHandler):
                 return None, egrid
 
             ergebnis = json.loads(zeile["ergebnis_json"])
+            # Der Schluessel ist die PARZELLE. Die gespeicherte Rechnung kann
+            # von einer anderen Adresse derselben Parzelle stammen -- als
+            # Titel gilt die Adresse DIESER Anfrage, nicht die von damals.
+            if geo.get("matched_label") and ergebnis.get("adresse") != geo["matched_label"]:
+                ergebnis["adresse_gespeichert"] = ergebnis.get("adresse")
+                ergebnis["adresse"] = geo["matched_label"]
+            ergebnis["adresswahl"] = {k: geo.get(k) for k in
+                                      ("query", "matched_label", "feature_id", "auswahlmethode")}
             # Der Benutzer muss SEHEN, dass dies eine gespeicherte Rechnung
             # ist und von wann. Ein Ergebnis ohne Datum waere eine Behauptung
             # ueber den heutigen Stand der amtlichen Grundlagen.
@@ -2065,12 +2094,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def _job_ausfuehren(
         self, job_id: str, adresse: str, verkaufspreis: Optional[float],
-        verkaufspreis_total: Optional[float] = None, neu_rechnen: bool = False
+        verkaufspreis_total: Optional[float] = None, neu_rechnen: bool = False,
+        auswahl: Optional[dict] = None,
     ) -> None:
         egrid = None
         try:
+            # Die Adresse wird genau EINMAL aufgeloest und dann durchgereicht:
+            # an den Zwischenspeicher und an die Analyse. Vorher suchten beide
+            # den Text je fuer sich -- zwei Gelegenheiten fuer zwei Treffer.
+            try:
+                if auswahl:
+                    geo = geocode_auswahl(adresse, auswahl["feature_id"],
+                                          auswahl["lv95_e"], auswahl["lv95_n"])
+                else:
+                    geo = geocode_address(adresse)
+            except AdresseNichtEindeutig as exc:
+                with _JOBS_LOCK:
+                    _JOBS[job_id].update(status="error", fehler=str(exc), adresswahl={
+                        "art": exc.art, "eingabe": exc.eingabe, "kandidaten": exc.kandidaten})
+                return
+
             if not neu_rechnen:
-                gespeichert, egrid = self._zwischenspeicher_suchen(adresse)
+                gespeichert, egrid = self._zwischenspeicher_suchen(adresse, geo)
                 if gespeichert is not None:
                     # Der Kontext wird aus dem Ergebnis zurueckgebaut statt
                     # mitgespeichert. Das ist geprueft gleichwertig, nicht
@@ -2106,8 +2151,25 @@ class Handler(BaseHTTPRequestHandler):
                 with _JOBS_LOCK:
                     _JOBS[job_id]["wartet_auf_platz"] = False
                 melde = _fortschritt_melder(job_id)
+                # Derselbe Lader wie bisher -- er merkt sich nur zusaetzlich im
+                # Fortschritt, ob das Reglement aus dem Zwischenspeicher kam.
+                # Die Oberflaeche zeigt das dann ("aus Zwischenspeicher").
+                lader = _bzo_zwischenspeicher()
+
+                def lader_mit_herkunft(*args, **kwargs):
+                    r = lader(*args, **kwargs)
+                    if ((r or {}).get("_zwischenspeicher") or {}).get("aus_zwischenspeicher"):
+                        with _JOBS_LOCK:
+                            for eintrag in (_JOBS.get(job_id) or {}).get("schritte") or []:
+                                if eintrag.get("schluessel") == "reglement":
+                                    eintrag["aus_zwischenspeicher"] = True
+                    return r
+
                 analyse = analysiere_grundstueck(
-                    adresse, fortschritt=melde, modul2_lader=_bzo_zwischenspeicher())
+                    adresse, fortschritt=melde, modul2_lader=lader_mit_herkunft, geo=geo)
+                analyse.ergebnis["adresswahl"] = {k: geo.get(k) for k in
+                                                  ("query", "matched_label", "feature_id",
+                                                   "auswahlmethode")}
                 analyse.ergebnis["zwischenspeicher"] = {
                     "aus_zwischenspeicher": False,
                     "gerechnet_am": _jetzt_iso(),

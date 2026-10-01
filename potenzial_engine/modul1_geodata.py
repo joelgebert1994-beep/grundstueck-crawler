@@ -54,6 +54,7 @@ import time
 from typing import Any, Optional
 
 import math
+import re
 import urllib.parse
 import xml.etree.ElementTree as ElementTree
 
@@ -218,6 +219,30 @@ class Modul1Error(Exception):
     """Fehler innerhalb der Geo-Data-Ingestion-Pipeline."""
 
 
+class AdresseNichtEindeutig(Modul1Error):
+    """Die Eingabe fuehrt nicht zu genau EINER passenden amtlichen Adresse.
+
+    Zwei Faelle, beide ein fachlicher Befund und keine Stoerung:
+      art="nicht_gefunden"  keine Adresse mit dieser Strasse und Hausnummer
+      art="mehrdeutig"      mehrere passende Adressen, keine ist eindeutig
+    `kandidaten` nennt die aehnlichen Treffer -- zur Auswahl, nicht zur
+    stillen Uebernahme.
+    """
+
+    def __init__(self, art: str, eingabe: str, kandidaten: list[dict[str, Any]]):
+        self.art = art
+        self.eingabe = eingabe
+        self.kandidaten = kandidaten
+        namen = ", ".join(k["label"] for k in kandidaten[:5]) or "keine"
+        if art == "mehrdeutig":
+            text = (f"Die Adresse {eingabe!r} ist nicht eindeutig -- mehrere amtliche Adressen "
+                    f"passen: {namen}. Bitte eine davon auswählen.")
+        else:
+            text = (f"Keine passende Adresse gefunden für {eingabe!r}. Ähnliche Adressen: "
+                    f"{namen}. Bitte die Schreibweise prüfen oder eine davon auswählen.")
+        super().__init__(text)
+
+
 def _get(url: str, params: dict[str, Any], timeout: int = DEFAULT_TIMEOUT) -> Any:
     """Zentrale GET-Abfrage aller Bundes-Geodienste.
 
@@ -244,34 +269,212 @@ def _first_key(attrs: dict[str, Any], candidates: list[str]) -> Optional[Any]:
 # 1. Geocoding
 # ---------------------------------------------------------------------------
 
+# Warum hier nicht mehr results[0] steht
+# --------------------------------------
+# Live beobachtet 30.09.2026: "Horgenwiesstrasse 1, 8104 Weiningen ZH" --
+# die Strasse heisst "Hogerwiesstrasse". Der Suchdienst liefert dafuer
+# unscharf ANDERE Strassen derselben PLZ, fuer die Teileingabe
+# "Horgenwiesstrasse 1, 8104" steht "Puentenstrasse 2b" oben. Wer davon den
+# ersten Treffer nimmt, analysiert ein 600 m entferntes Grundstueck (Parzelle
+# 3285 statt 1784, Kernzone statt W2) -- ohne dass irgendwo etwas auffaellt.
+#
+# Deshalb gilt: angenommen wird nur ein Treffer, dessen Strasse und
+# Hausnummer der Eingabe entsprechen (und dessen PLZ, falls angegeben). Kein
+# solcher Treffer -> "keine passende Adresse". Mehrere -> "mehrdeutig". In
+# beiden Faellen wird NICHTS gewaehlt.
+
+SUCHE_LIMIT = 10
+# Wie weit die Koordinate einer bewusst gewaehlten Adresse von der
+# nachgeschlagenen abweichen darf. Dieselbe Adresse hat dieselbe Koordinate;
+# 5 m decken Rundung ab und sonst nichts.
+AUSWAHL_TOLERANZ_M = 5.0
+
+_UMLAUTE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "é": "e", "è": "e", "ê": "e",
+                          "à": "a", "â": "a", "ô": "o", "î": "i", "ç": "c", "ß": "ss"})
+
+
+def _norm_strasse(text: str) -> str:
+    """Strassenname vergleichbar machen: klein, ohne Umlaute, ohne Zeichen.
+
+    "Hogerwies-Strasse", "hogerwiesstr." und "Hogerwiesstrasse" werden
+    gleich; "Horgenwiesstrasse" bleibt verschieden -- genau darum geht es.
+    """
+    t = (text or "").lower().translate(_UMLAUTE)
+    t = re.sub(r"str\.?$", "strasse", t.strip())
+    return re.sub(r"[^a-z0-9]", "", t)
+
+
+def _norm_nummer(text: str) -> str:
+    """Hausnummer vergleichbar machen. "2B" == "2b", aber "4" != "4.1"."""
+    return re.sub(r"\s+", "", (text or "").lower())
+
+
+_ADRESSE_MUSTER = re.compile(
+    r"^(?P<strasse>.*?\D)\s*(?P<nummer>\d+[a-zA-Z]?(?:\.\d+)?)\s*,?\s*"
+    r"(?:(?P<plz>\d{4})\b)?\s*(?P<ort>.*)$"
+)
+
+
+def adressteile(text: str) -> dict[str, Optional[str]]:
+    """Zerlegt "Hogerwiesstrasse 1, 8104 Weiningen ZH" in Strasse/Nummer/PLZ/Ort.
+
+    Liefert fuer alles, was sich nicht sicher erkennen laesst, None -- es
+    wird nichts ergaenzt.
+    """
+    t = re.sub(r"<[^>]+>", "", text or "").replace(",", " ")
+    t = re.sub(r"\s+", " ", t).strip()
+    m = _ADRESSE_MUSTER.match(t)
+    if not m:
+        return {"strasse": None, "nummer": None, "plz": None, "ort": None}
+    return {
+        "strasse": _norm_strasse(m.group("strasse")) or None,
+        "nummer": _norm_nummer(m.group("nummer")) or None,
+        "plz": m.group("plz"),
+        "ort": (m.group("ort") or "").strip() or None,
+    }
+
+
+def vergleiche_adresse(eingabe: str, label: str) -> str:
+    """Wie gut passt ein amtliches Label zur Eingabe?
+
+      "exakt"            Strasse und Hausnummer gleich (PLZ gleich, falls angegeben)
+      "andere_nummer"    gleiche Strasse, andere Hausnummer
+      "andere_strasse"   andere Strasse -- das darf nie still gewaehlt werden
+      "andere_plz"       Strasse und Nummer gleich, aber andere PLZ
+      "unbestimmt"       die Eingabe hat keine erkennbare Strasse/Nummer
+    """
+    e, l = adressteile(eingabe), adressteile(label)
+    if not e["strasse"] or not e["nummer"] or not l["strasse"]:
+        return "unbestimmt"
+    if e["strasse"] != l["strasse"]:
+        return "andere_strasse"
+    if e["nummer"] != l["nummer"]:
+        return "andere_nummer"
+    if e["plz"] and l["plz"] and e["plz"] != l["plz"]:
+        return "andere_plz"
+    return "exakt"
+
+
+def _label(attrs: dict[str, Any]) -> str:
+    return re.sub(r"<[^>]+>", "", attrs.get("label") or "").strip()
+
+
+def _treffer_als_geo(attrs: dict[str, Any], query: str, methode: str) -> dict[str, Any]:
+    return {
+        "query": query,
+        "matched_label": _label(attrs),
+        "lv95_e": attrs.get("y"),  # geo.admin liefert E in "y", N in "x"
+        "lv95_n": attrs.get("x"),
+        "wgs84_lat": attrs.get("lat"),
+        "wgs84_lon": attrs.get("lon"),
+        "canton_hint": attrs.get("detail", "").split()[-1] if attrs.get("detail") else None,
+        "feature_id": attrs.get("featureId"),
+        "auswahlmethode": methode,
+        "raw": attrs,
+    }
+
+
+def _suche(text: str) -> list[dict[str, Any]]:
+    params = {"searchText": text, "type": "locations", "origins": "address",
+              "limit": SUCHE_LIMIT, "sr": 2056}
+    data = _get(f"{GEOADMIN_BASE}/SearchServer", params)
+    return [r.get("attrs") or {} for r in data.get("results", [])]
+
+
 def geocode_address(address: str) -> dict[str, Any]:
     """Wandelt eine Schweizer Adresse in LV95-Koordinaten (E, N) um.
 
-    Nutzt den SearchServer von geo.admin.ch mit sr=2056 (LV95).
-    """
-    params = {
-        "searchText": address,
-        "type": "locations",
-        "origins": "address",
-        "limit": 5,
-        "sr": 2056,
-    }
-    data = _get(f"{GEOADMIN_BASE}/SearchServer", params)
-    results = data.get("results", [])
-    if not results:
-        raise Modul1Error(f"Adresse nicht gefunden: {address!r}")
+    Nutzt den SearchServer von geo.admin.ch mit sr=2056 (LV95) -- nimmt aber
+    nur einen Treffer, dessen Strasse und Hausnummer der Eingabe entsprechen.
+    Siehe den Kommentar oben: kein blindes results[0].
 
-    best = results[0]["attrs"]
+    Raises AdresseNichtEindeutig, wenn kein oder mehr als ein Treffer passt.
+    """
+    treffer = _suche(address)
+    bewertet = [(vergleiche_adresse(address, _label(a)), a) for a in treffer]
+    passend = [a for art, a in bewertet if art == "exakt"]
+
+    # Dieselbe Adresse kann mehrfach erscheinen (gleiche Kennung) -- das ist
+    # keine Mehrdeutigkeit.
+    eindeutig: dict[str, dict[str, Any]] = {}
+    for a in passend:
+        eindeutig.setdefault(str(a.get("featureId") or _label(a)), a)
+
+    if len(eindeutig) == 1:
+        return _treffer_als_geo(next(iter(eindeutig.values())), address, "text_exakt")
+
+    kandidaten = [{"label": _label(a), "passung": art, "feature_id": a.get("featureId"),
+                   "lv95_e": a.get("y"), "lv95_n": a.get("x")}
+                  for art, a in bewertet]
+    if len(eindeutig) > 1:
+        raise AdresseNichtEindeutig("mehrdeutig", address,
+                                    [k for k in kandidaten if k["passung"] == "exakt"])
+    raise AdresseNichtEindeutig("nicht_gefunden", address, kandidaten)
+
+
+def geocode_auswahl(label: str, feature_id: str, lv95_e: float, lv95_n: float) -> dict[str, Any]:
+    """Die Adresse, die der Benutzer in der Vorschlagsliste ANGEKLICKT hat.
+
+    Frueher ging nur der Text weiter und wurde erneut gesucht. Jetzt kommt
+    die stabile Kennung des Treffers mit (featureId = EGID_EDID des GWR) und
+    seine Koordinate. Angenommen wird ausschliesslich der Treffer mit genau
+    dieser Kennung, und nur, wenn seine Koordinate mit der gelieferten
+    uebereinstimmt -- nie ein anderer, auch nicht der erste.
+
+    Findet die Suche die Kennung nicht (Suchindex und GWR laufen nicht
+    immer synchron), wird die Kennung direkt im GWR nachgeschlagen.
+    """
+    for a in _suche(label):
+        if str(a.get("featureId")) != str(feature_id):
+            continue
+        abstand = math.hypot((a.get("y") or 0) - lv95_e, (a.get("x") or 0) - lv95_n)
+        if abstand > AUSWAHL_TOLERANZ_M:
+            raise Modul1Error(
+                f"Die gewählte Adresse {label!r} liegt laut Suchdienst {abstand:.0f} m von der "
+                "gewählten Stelle entfernt -- die Zuordnung ist nicht eindeutig, es wird nichts "
+                "analysiert. Bitte die Adresse erneut auswählen.")
+        return _treffer_als_geo(a, label, "auswahl_kennung")
+
+    try:
+        daten = _get(f"https://api3.geo.admin.ch/rest/services/ech/MapServer/"
+                     f"ch.bfs.gebaeude_wohnungs_register/{urllib.parse.quote(str(feature_id))}",
+                     {"sr": 2056, "returnGeometry": "true", "geometryFormat": "geojson"})
+    except Exception as exc:  # noqa: BLE001
+        raise Modul1Error(f"Die gewählte Adresse {label!r} ließ sich nicht nachschlagen: {exc}") from exc
+    merkmal = daten.get("feature") or {}
+    punkt = (merkmal.get("geometry") or {}).get("coordinates") or [None, None]
+    if punkt[0] is None:
+        raise Modul1Error(f"Die gewählte Adresse {label!r} hat im GWR keine Koordinate.")
+    abstand = math.hypot(punkt[0] - lv95_e, punkt[1] - lv95_n)
+    if abstand > AUSWAHL_TOLERANZ_M:
+        raise Modul1Error(
+            f"Die gewählte Adresse {label!r} liegt laut GWR {abstand:.0f} m von der gewählten "
+            "Stelle entfernt -- es wird nichts analysiert. Bitte die Adresse erneut auswählen.")
+    attr = merkmal.get("properties") or merkmal.get("attributes") or {}
+    lat, lon = _lv95_zu_wgs84(punkt[0], punkt[1])
     return {
-        "query": address,
-        "matched_label": best.get("label", "").replace("<b>", "").replace("</b>", ""),
-        "lv95_e": best.get("y"),  # geo.admin liefert E in "y", N in "x"
-        "lv95_n": best.get("x"),
-        "wgs84_lat": best.get("lat"),
-        "wgs84_lon": best.get("lon"),
-        "canton_hint": best.get("detail", "").split()[-1] if best.get("detail") else None,
-        "raw": best,
+        "query": label,
+        "matched_label": label,
+        "lv95_e": punkt[0],
+        "lv95_n": punkt[1],
+        "wgs84_lat": lat,
+        "wgs84_lon": lon,
+        "canton_hint": (attr.get("gdekt") or "").lower() or None,
+        "feature_id": str(feature_id),
+        "auswahlmethode": "auswahl_kennung_gwr",
+        "raw": attr,
     }
+
+
+def _lv95_zu_wgs84(e: float, n: float) -> tuple[float, float]:
+    """Naeherungsformel von swisstopo (Genauigkeit rund 1 m) -- nur fuer den
+    Rueckfall in geocode_auswahl, wo der Suchdienst keine WGS84-Werte liefert."""
+    y = (e - 2600000) / 1000000
+    x = (n - 1200000) / 1000000
+    lam = 2.6779094 + 4.728982 * y + 0.791484 * y * x + 0.1306 * y * x * x - 0.0436 * y ** 3
+    phi = (16.9023892 + 3.238272 * x - 0.270978 * y * y - 0.002528 * x * x
+           - 0.0447 * y * y * x - 0.0140 * x ** 3)
+    return phi * 100 / 36, lam * 100 / 36
 
 
 # ---------------------------------------------------------------------------
@@ -543,8 +746,33 @@ def get_gwr_data(e: float, n: float) -> dict[str, Any]:
         "grundflaeche_m2": _first_key(attrs, ["garea", "gebaeudeflaeche", "flaeche"]),
         "energiebezugsflaeche_m2": _first_key(attrs, ["gebf"]),
         "gebaeudevolumen_m3": _first_key(attrs, ["gvol"]),
+        # Heizung und Warmwasser, wie das GWR sie fuehrt: Codes nach dem
+        # Merkmalskatalog des BFS (GWAERZH/GENH/GWAERSCEH/GWAERDATH, analog
+        # fuer Warmwasser). Uebersetzt wird in der Oberflaeche, mit dem Code
+        # daneben. Das DATUM gehoert zwingend dazu: eine Heizungsangabe aus
+        # der Volkszaehlung 2000 beschreibt nicht zwingend die heutige Anlage.
+        "heizung": _waermeangabe(attrs, "gwaerzh1", "genh1", "gwaersceh1", "gwaerdath1"),
+        "heizung_2": _waermeangabe(attrs, "gwaerzh2", "genh2", "gwaersceh2", "gwaerdath2"),
+        "warmwasser": _waermeangabe(attrs, "gwaerzw1", "genw1", "gwaerscew1", "gwaerdatw1"),
         "raw_attributes": attrs,
     }
+
+
+def _waermeangabe(attrs: dict[str, Any], erzeuger: str, quelle: str, info: str,
+                  datum: str) -> Optional[dict[str, Any]]:
+    """Eine Heizungs- bzw. Warmwasserangabe aus dem GWR -- oder None.
+
+    None heisst: das Register fuehrt hier nichts. Es wird nichts ergaenzt.
+    """
+    werte = {
+        "waermeerzeuger_code": attrs.get(erzeuger),
+        "energiequelle_code": attrs.get(quelle),
+        "informationsquelle_code": attrs.get(info),
+        "aktualisiert_am": attrs.get(datum),
+    }
+    if werte["waermeerzeuger_code"] is None and werte["energiequelle_code"] is None:
+        return None
+    return werte
 
 
 # ---------------------------------------------------------------------------
@@ -1255,7 +1483,7 @@ def _abholen(future, standard=None, weiterwerfen: bool = True):
         return standard
 
 
-def run_modul1(address: str) -> dict[str, Any]:
+def run_modul1(address: str, geo: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """Alle amtlichen Quellen fuer eine Adresse.
 
     Die Abfragen laufen NEBENLAEUFIG, soweit sie voneinander unabhaengig
@@ -1288,7 +1516,12 @@ def run_modul1(address: str) -> dict[str, Any]:
     started = time.time()
     result: dict[str, Any] = {"input_address": address}
 
-    geo = geocode_address(address)
+    # Ist die Adresse schon aufgeloest (bewusste Auswahl oder vorheriger
+    # Nachschlag im Zwischenspeicher), wird sie NICHT noch einmal gesucht:
+    # zwei Suchen derselben Eingabe sind zwei Gelegenheiten, verschiedene
+    # Treffer zu bekommen.
+    if geo is None:
+        geo = geocode_address(address)
     result["geocoding"] = geo
 
     e, n = geo["lv95_e"], geo["lv95_n"]
