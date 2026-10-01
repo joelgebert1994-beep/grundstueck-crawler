@@ -74,6 +74,11 @@ LAYER_PARCEL = "ch.swisstopo-vd.amtliche-vermessung"
 LAYER_MUNICIPALITY = "ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill"
 LAYER_GWR = "ch.bfs.gebaeude_wohnungs_register"
 LAYER_CADASTRE_GEOM = "ch.kantone.cadastralwebmap-farbe"
+# Bundesdatensaetze auf opendata.swiss unter "Freie Nutzung. Quellenangabe
+# ist Pflicht" (terms_by), geprueft 01.10.2026.
+LAYER_OEV_GUETEKLASSEN = "ch.are.gueteklassen_oev"
+LAYER_SOLAR_DACH = "ch.bfe.solarenergie-eignung-daecher"
+LAYER_PRODUKTIONSANLAGEN = "ch.bfe.elektrizitaetsproduktionsanlagen"
 
 # ---------------------------------------------------------------------------
 # OEREB-Kataster: es gibt KEINEN einheitlichen Bundes-Proxy. Jeder Kanton
@@ -1251,6 +1256,11 @@ def get_oereb_data(egrid: str, kanton: Optional[str]) -> dict[str, Any]:
         "rechtsvorschriften": legal_provisions,
         "umweltrisiken": umweltrisiken,
         "legenden_und_themen_pdfs": pdf_links,
+        # Stand des Katasters (UpdateDateCS) und Erstellung des Auszugs. Ohne
+        # sie steht unter "nicht betroffen" keine Zeitangabe -- und raw_extract
+        # wird fuer die Anzeige weggeschnitten.
+        "stand_kataster": _ci_get(extract, "UpdateDateCS"),
+        "auszug_erstellt": _ci_get(extract, "CreationDate"),
         "raw_extract": data,
     }
 
@@ -1292,11 +1302,24 @@ class Topographie(BaseModel):
     quelle: str = "swissALTI3D (geo.admin.ch height-REST-Service)"
 
 
+class OevGueteklasse(BaseModel):
+    """ARE-OeV-Gueteklasse am Adresspunkt. `klasse` None bei gelungener
+    Abfrage heisst: der Punkt liegt in keiner der Klassen A-D -- das ist
+    die Aussage des ARE, nicht eine fehlende Angabe."""
+    klasse: Optional[str] = None
+    bezeichnung: Optional[str] = None
+
+
 class Umgebung(BaseModel):
     oev_naechste_haltestelle: Optional[ProximityEntry] = None
+    oev_gueteklasse: Optional[OevGueteklasse] = None
+    bahnhof_naechster: Optional[ProximityEntry] = None
     schule_naechste: Optional[ProximityEntry] = None
+    kindergarten_naechster: Optional[ProximityEntry] = None
     spital_naechstes: Optional[ProximityEntry] = None
     supermarkt_naechster: Optional[ProximityEntry] = None
+    # Suchradius je Kategorie (Luftlinie) -- "kein Treffer" gilt nur darin.
+    radien_m: dict[str, int] = {}
     # WICHTIG: ein None-Feld oben bedeutet "kein Treffer im Suchradius" NUR,
     # wenn hier KEIN Fehler fuer diese Kategorie steht. Overpass ist ein
     # oeffentlicher Shared-Service und antwortet unter Last mit 502/504 --
@@ -1386,15 +1409,20 @@ def get_oev_proximity(lat: float, lon: float) -> Optional[ProximityEntry]:
     return None, None  # echte Null-Treffer -- keine Haltestelle gefunden, kein Fehler
 
 
-_OVERPASS_POI_TAGS: dict[str, tuple[str, str]] = {
-    "schule_naechste": ("amenity", "school"),
-    "spital_naechstes": ("amenity", "hospital"),
-    "supermarkt_naechster": ("shop", "supermarket"),
+# (Schluessel, Wert, Suchradius in m). Ein Bahnhof ist seltener als eine
+# Schule -- im selben 3-km-Kreis waere "kein Bahnhof" oft schlicht zu eng
+# gesucht.
+_OVERPASS_POI_TAGS: dict[str, tuple[str, str, int]] = {
+    "schule_naechste": ("amenity", "school", 3000),
+    "kindergarten_naechster": ("amenity", "kindergarten", 3000),
+    "spital_naechstes": ("amenity", "hospital", 3000),
+    "supermarkt_naechster": ("shop", "supermarket", 3000),
+    "bahnhof_naechster": ("railway", "station", 6000),
 }
 
 
 def _query_overpass_nearest_multi(
-    lat: float, lon: float, tags: dict[str, tuple[str, str]], radius_m: int = 3000
+    lat: float, lon: float, tags: dict[str, tuple[str, str, int]]
 ) -> tuple[dict[str, Optional[ProximityEntry]], Optional[str]]:
     """Sucht den naechsten OSM-Node fuer MEHRERE tag=value-Filter gleichzeitig
     in EINER Overpass-Anfrage (statt einer Anfrage pro Kategorie) -- schont
@@ -1408,8 +1436,14 @@ def _query_overpass_nearest_multi(
     "keine Treffer im Radius" pro Kategorie unterschieden werden, sonst
     taeuscht ein Timeout einen verifizierten Negativbefund vor.
     """
-    filters = "".join(f"node(around:{radius_m},{lat},{lon})[{k}={v}];" for k, v in tags.values())
-    query = f"[out:json][timeout:25];({filters});out body 150;"
+    # nwr statt node: Schulen und Kindergaerten sind in OSM meist als
+    # FLAECHE erfasst. Mit "node" fand die Engine fuer Hogerwiesstrasse 1,
+    # Weiningen eine Tagesvorschule in 1255 m -- die Primarschule Weiningen
+    # (Flaeche, 378 m) fehlte. "out center" gibt fuer Flaechen den
+    # Mittelpunkt. Ohne Obergrenze: ein abgeschnittenes Ergebnis koennte
+    # gerade den naechsten Treffer verlieren.
+    filters = "".join(f"nwr(around:{r},{lat},{lon})[{k}={v}];" for k, v, r in tags.values())
+    query = f"[out:json][timeout:25];({filters});out center;"
 
     try:
         resp = session.post(OVERPASS_URL, data={"data": query}, timeout=30)
@@ -1419,40 +1453,150 @@ def _query_overpass_nearest_multi(
         error = f"Overpass-Sammelabfrage fehlgeschlagen: {exc}"
         return {name: None for name in tags}, error
 
+    def punkt(el: dict) -> Optional[tuple[float, float]]:
+        if el.get("lat") is not None:
+            return el["lat"], el["lon"]
+        c = el.get("center") or {}
+        return (c["lat"], c["lon"]) if c.get("lat") is not None else None
+
     results: dict[str, Optional[ProximityEntry]] = {}
-    for name, (key, value) in tags.items():
-        candidates = [el for el in elements if el.get("tags", {}).get(key) == value]
+    for name, (key, value, _radius) in tags.items():
+        candidates = [(el, punkt(el)) for el in elements if el.get("tags", {}).get(key) == value]
+        candidates = [(el, p) for el, p in candidates if p]
         if not candidates:
             results[name] = None
             continue
-        nearest = min(candidates, key=lambda el: _haversine_m(lat, lon, el["lat"], el["lon"]))
-        distanz = _haversine_m(lat, lon, nearest["lat"], nearest["lon"])
+        nearest, pos = min(candidates, key=lambda c: _haversine_m(lat, lon, *c[1]))
+        distanz = _haversine_m(lat, lon, *pos)
         results[name] = ProximityEntry(
             name=nearest.get("tags", {}).get("name"), distanz_m=round(distanz, 0), typ=value
         )
     return results, None
 
 
-def get_umgebung(lat: float, lon: float) -> Umgebung:
-    """Distanz zu OeV-Haltestelle, Schule, Spital, Supermarkt. Jede Quelle
-    wird unabhaengig abgefragt -- schlaegt eine fehl (Netzwerk, Timeout),
+def get_oev_gueteklasse(e: float, n: float) -> tuple[Optional[OevGueteklasse], Optional[str]]:
+    """OeV-Gueteklasse des ARE am Punkt (A sehr gute ... D geringe
+    Erschliessung). Kein Treffer bei gelungener Abfrage = keine Klasse."""
+    try:
+        treffer = _identify(e, n, LAYER_OEV_GUETEKLASSEN, tolerance=0)
+    except Exception as exc:  # noqa: BLE001 -- darf die Umgebung nicht stoppen
+        return None, f"ARE-OeV-Gueteklassen nicht erreichbar: {exc}"
+    if not treffer:
+        return OevGueteklasse(), None
+    text = str((treffer[0].get("attributes") or {}).get("klasse_de") or "")
+    klasse, _, bezeichnung = text.partition(" - ")
+    return OevGueteklasse(klasse=klasse.strip() or None, bezeichnung=bezeichnung.strip() or None), None
+
+
+def get_umgebung(lat: float, lon: float, e: Optional[float] = None,
+                 n: Optional[float] = None) -> Umgebung:
+    """Distanz zu OeV-Haltestelle, Bahnhof, Schule, Kindergarten, Spital,
+    Supermarkt (Luftlinie) und die OeV-Gueteklasse. Jede Quelle wird
+    unabhaengig abgefragt -- schlaegt eine fehl (Netzwerk, Timeout),
     bleibt nur DIESES Feld None UND wird unter 'fehler' vermerkt, statt
     stillschweigend wie ein verifizierter Negativbefund auszusehen.
     """
     oev, oev_err = get_oev_proximity(lat, lon)
     poi_results, poi_err = _query_overpass_nearest_multi(lat, lon, _OVERPASS_POI_TAGS)
+    guete, guete_err = (get_oev_gueteklasse(e, n) if e is not None and n is not None
+                        else (None, "keine LV95-Koordinate"))
 
-    fehler = {k: v for k, v in {"oev_naechste_haltestelle": oev_err}.items() if v}
+    fehler = {k: v for k, v in {"oev_naechste_haltestelle": oev_err,
+                                "oev_gueteklasse": guete_err}.items() if v}
     if poi_err:
         fehler.update({name: poi_err for name in _OVERPASS_POI_TAGS})
 
     return Umgebung(
         oev_naechste_haltestelle=oev,
-        schule_naechste=poi_results.get("schule_naechste"),
-        spital_naechstes=poi_results.get("spital_naechstes"),
-        supermarkt_naechster=poi_results.get("supermarkt_naechster"),
+        oev_gueteklasse=guete,
+        radien_m={name: r for name, (_k, _v, r) in _OVERPASS_POI_TAGS.items()},
         fehler=fehler,
+        **{name: poi_results.get(name) for name in _OVERPASS_POI_TAGS},
     )
+
+
+# ---------------------------------------------------------------------------
+# Energie: Solareignung des Daches (Modell) und im Register erfasste
+# Produktionsanlagen. Zwei verschiedene Aussagen, die nie vermischt werden:
+# "das Dach waere geeignet" ist kein Hinweis auf eine Anlage, und eine
+# fehlende Anlage im Register heisst nicht, dass auf dem Dach keine steht.
+# ---------------------------------------------------------------------------
+
+SOLAR_KLASSE = {1: "gering", 2: "mittel", 3: "gut", 4: "sehr gut", 5: "hervorragend"}
+
+
+def _find(layer: str, feld: str, wert: Any) -> list[dict[str, Any]]:
+    """Exakte Attributsuche im geo.admin MapServer (find, contains=false)."""
+    daten = _get(f"{GEOADMIN_BASE}/MapServer/find", {
+        "layer": layer, "searchField": feld, "searchText": str(wert),
+        "contains": "false", "returnGeometry": "false"})
+    return daten.get("results", [])
+
+
+def _ganzzahl_oder_none(v: Any) -> Optional[int]:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_energie(gwr: dict[str, Any]) -> dict[str, Any]:
+    """Fuer das Gebaeude an der Adresse (GWR-EGID und -Gebaeudekoordinate).
+
+    Dach: am GWR-Gebaeudepunkt (Toleranz 0) die Dachflaeche suchen, dann
+    ueber deren Gebaeudekennung ALLE Dachflaechen dieses Gebaeudes -- nicht
+    die Flaechen im Umkreis, die zum Nachbarhaus gehoeren koennen.
+    Anlagen: exakt ueber die EGID, nie ueber die Naehe.
+    """
+    egid = gwr.get("egid") if (gwr or {}).get("found") else None
+    if not egid:
+        return {"abgefragt": False, "grund": "Kein Gebäude im GWR an dieser Adresse."}
+    roh = gwr.get("raw_attributes") or {}
+    e, n = roh.get("gkode"), roh.get("gkodn")
+    ergebnis: dict[str, Any] = {"abgefragt": True, "solar_dach": None, "anlagen": None, "fehler": {}}
+
+    try:
+        if e is None or n is None:
+            raise ValueError("keine Gebäudekoordinate im GWR")
+        treffer = _identify(float(e), float(n), LAYER_SOLAR_DACH, tolerance=0)
+        gebaeude_id = ((treffer[0].get("attributes") or {}).get("building_id")
+                       if treffer else None)
+        if gebaeude_id is None:
+            ergebnis["solar_dach"] = {"gefunden": False, "flaechen": []}
+        else:
+            flaechen = []
+            for f in _find(LAYER_SOLAR_DACH, "building_id", gebaeude_id):
+                a = f.get("attributes") or {}
+                klasse = _ganzzahl_oder_none(a.get("klasse"))
+                flaechen.append({
+                    "klasse": klasse,
+                    "klasse_text": SOLAR_KLASSE.get(klasse) if klasse is not None else None,
+                    "flaeche_m2": a.get("flaeche"),
+                    "stromertrag_kwh_jahr": a.get("stromertrag"),
+                    "neigung_grad": a.get("neigung"),
+                    "ausrichtung_grad": a.get("ausrichtung"),
+                    "stand": a.get("datum_aenderung"),
+                })
+            ergebnis["solar_dach"] = {"gefunden": bool(flaechen), "flaechen": flaechen}
+    except Exception as exc:  # noqa: BLE001 -- darf die Analyse nicht stoppen
+        ergebnis["fehler"]["solar_dach"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        anlagen = []
+        for f in _find(LAYER_PRODUKTIONSANLAGEN, "egid", egid):
+            a = f.get("attributes") or {}
+            if str(a.get("egid")) != str(egid):
+                continue
+            anlagen.append({
+                "kategorie": a.get("sub_category_de"),
+                "bauart": a.get("plant_type_de"),
+                "leistung": a.get("total_power"),
+                "in_betrieb_seit": a.get("beginning_of_operation"),
+            })
+        ergebnis["anlagen"] = anlagen
+    except Exception as exc:  # noqa: BLE001
+        ergebnis["fehler"]["anlagen"] = f"{type(exc).__name__}: {exc}"
+    return ergebnis
 
 
 # ---------------------------------------------------------------------------
@@ -1540,7 +1684,7 @@ def run_modul1(address: str, geo: Optional[dict[str, Any]] = None) -> dict[str, 
         f_topo = _nebenlaeufig(pool, lambda: get_topography(e, n).model_dump())
         f_umgebung = _nebenlaeufig(
             pool,
-            (lambda: get_umgebung(lat, lon).model_dump()) if (lat and lon)
+            (lambda: get_umgebung(lat, lon, e, n).model_dump()) if (lat and lon)
             else (lambda: Umgebung().model_dump()))
 
         # Nur auf die beiden warten, von denen die zweite Welle abhaengt.
@@ -1554,6 +1698,8 @@ def run_modul1(address: str, geo: Optional[dict[str, Any]] = None) -> dict[str, 
 
         # --- Welle 2: alles, was EGRID, Kanton oder Kontur braucht --------
         f_oereb = _nebenlaeufig(pool, lambda: get_oereb_data(egrid, kanton))
+        # Wartet in seinem eigenen Faden auf das GWR (EGID, Gebaeudepunkt).
+        f_energie = _nebenlaeufig(pool, lambda: get_energie(f_gwr.result()))
         f_nutzung = _nebenlaeufig(pool, lambda: klassifiziere_nutzung(e, n, kanton))
 
         f_restrikt = f_kanten = f_bestand = None
@@ -1601,6 +1747,8 @@ def run_modul1(address: str, geo: Optional[dict[str, Any]] = None) -> dict[str, 
         result["radon"] = _abholen(f_radon)
         result["topographie"] = _abholen(f_topo)
         result["umgebung"] = _abholen(f_umgebung)
+        result["energie"] = _abholen(f_energie, weiterwerfen=False, standard={
+            "abgefragt": False, "grund": "Energieabfrage fehlgeschlagen."})
         result["oereb"] = _abholen(f_oereb)
         result["nutzungsklassifikation"] = _abholen(f_nutzung)
 

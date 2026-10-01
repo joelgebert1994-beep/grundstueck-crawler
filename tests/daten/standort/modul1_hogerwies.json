@@ -1,0 +1,366 @@
+{
+ "umgebung": {
+  "oev_naechste_haltestelle": {
+   "name": "Weiningen ZH, Lindenplatz",
+   "distanz_m": 206.0,
+   "typ": "bus"
+  },
+  "oev_gueteklasse": {
+   "klasse": "C",
+   "bezeichnung": "mittelmässige Erschliessung"
+  },
+  "bahnhof_naechster": {
+   "name": "Schlieren",
+   "distanz_m": 2688.0,
+   "typ": "station"
+  },
+  "schule_naechste": {
+   "name": "Primarschule Weiningen",
+   "distanz_m": 378.0,
+   "typ": "school"
+  },
+  "kindergarten_naechster": {
+   "name": "Kindergarten Schlüechti",
+   "distanz_m": 360.0,
+   "typ": "kindergarten"
+  },
+  "spital_naechstes": {
+   "name": "Spital Limmattal",
+   "distanz_m": 3100.0,
+   "typ": "hospital"
+  },
+  "supermarkt_naechster": {
+   "name": "VOI",
+   "distanz_m": 1645.0,
+   "typ": "supermarket"
+  },
+  "radien_m": {
+   "schule_naechste": 3000,
+   "kindergarten_naechster": 3000,
+   "spital_naechstes": 3000,
+   "supermarkt_naechster": 3000,
+   "bahnhof_naechster": 6000
+  },
+  "fehler": {}
+ },
+ "energie": {
+  "abgefragt": true,
+  "solar_dach": {
+   "gefunden": true,
+   "flaechen": [
+    {
+     "klasse": 4,
+     "klasse_text": "sehr gut",
+     "flaeche_m2": 87.5477294437,
+     "stromertrag_kwh_jahr": 16991,
+     "neigung_grad": 18,
+     "ausrichtung_grad": -82,
+     "stand": "08.12.2021"
+    },
+    {
+     "klasse": 2,
+     "klasse_text": "mittel",
+     "flaeche_m2": 10.710673411,
+     "stromertrag_kwh_jahr": 1477,
+     "neigung_grad": 32,
+     "ausrichtung_grad": 98,
+     "stand": "08.12.2021"
+    },
+    {
+     "klasse": 4,
+     "klasse_text": "sehr gut",
+     "flaeche_m2": 64.5339616554,
+     "stromertrag_kwh_jahr": 12432,
+     "neigung_grad": 19,
+     "ausrichtung_grad": -82,
+     "stand": "08.12.2021"
+    },
+    {
+     "klasse": 2,
+     "klasse_text": "mittel",
+     "flaeche_m2": 39.1142440632,
+     "stromertrag_kwh_jahr": 5639,
+     "neigung_grad": 43,
+     "ausrichtung_grad": 98,
+     "stand": "08.12.2021"
+    }
+   ]
+  },
+  "anlagen": [],
+  "fehler": {}
+ },
+ "oereb": {
+  "found": true,
+  "kanton": "ZH",
+  "source_url": "https://maps.zh.ch/oereb/v2/extract/json?EGRID=CH894177869943",
+  "amtliche_zonenbezeichnungen": [
+   {
+    "zonenbezeichnung": "Wohnzone 2 30",
+    "theme_code": "ch.Nutzungsplanung",
+    "flaechenanteil_prozent": 100,
+    "ist_wahrscheinlich_basiszone": true
+   },
+   {
+    "zonenbezeichnung": "Quartierplan",
+    "theme_code": "ch.Nutzungsplanung",
+    "flaechenanteil_prozent": 100,
+    "ist_wahrscheinlich_basiszone": false
+   }
+  ],
+  "rechtsvorschriften": [
+   {
+    "titel": "Genehmigung vom 9. Mai 2023 (Teilrevision Nutzungsplanung) ",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=13071",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "0160/23",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30"
+    ]
+   },
+   {
+    "titel": "Bauordnung Gemeinde Weiningen (Stand 9. Mai 2023)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=5050",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "9.5.2023",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30",
+     "Empfindlichkeitsstufe II, aufgestuft (nein)"
+    ]
+   },
+   {
+    "titel": "Raumplanungsgesetz (RPG)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2293",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "SR 700",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30",
+     "Quartierplan"
+    ]
+   },
+   {
+    "titel": "Planungs- und Baugesetz (PBG)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2283",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 700.1",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30",
+     "Quartierplan",
+     "Baulinie.Verkehr, kommunal",
+     "Empfindlichkeitsstufe II, aufgestuft (nein)"
+    ]
+   },
+   {
+    "titel": "Allgemeine Bauverordnung",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2284",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 700.2",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30"
+    ]
+   },
+   {
+    "titel": "Bauverfahrensverordnung (BVV)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2287",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 700.6",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30",
+     "Empfindlichkeitsstufe II, aufgestuft (nein)"
+    ]
+   },
+   {
+    "titel": "Besondere Bauverordnung I (BBVI)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2285",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 700.21",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30",
+     "Empfindlichkeitsstufe II, aufgestuft (nein)"
+    ]
+   },
+   {
+    "titel": "Besondere Bauverordnung II (BBVII)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2286",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 700.22",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30"
+    ]
+   },
+   {
+    "titel": "Verordnung über die Darstellung von Nutzungsplänen",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2288",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 701.12",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Wohnzone 2 30",
+     "Quartierplan"
+    ]
+   },
+   {
+    "titel": "Quartierplanverordnung",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2289",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 701.13",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": true,
+    "zonen_bezuege": [
+     "Quartierplan"
+    ]
+   },
+   {
+    "titel": "BLG Hogerwies-Hettlerstrasse 1963",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=4624",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "463",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": false,
+    "zonen_bezuege": [
+     "Baulinie.Verkehr, kommunal"
+    ]
+   },
+   {
+    "titel": "BLG Schützenmurstrasse 1957 (Teilaufhebung 2023)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=4625",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "1344",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": false,
+    "zonen_bezuege": [
+     "Baulinie.Verkehr, kommunal"
+    ]
+   },
+   {
+    "titel": "0251/U.N003-001",
+    "url": "https://geo.zh.ch/maps?initialMapId&locate=kbs&locations=0251/U.N003-001",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "0251/U.N003-001",
+    "zustaendige_stelle": "Amt für Abfall, Wasser, Energie und Luft",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": false,
+    "zonen_bezuege": [
+     "Belastet, keine schädlichen oder lästigen Einwirkungen zu erwarten"
+    ]
+   },
+   {
+    "titel": "Umweltschutzgesetz (USG)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2295",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "SR 814.01",
+    "zustaendige_stelle": "Amt für Abfall, Wasser, Energie und Luft",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": false,
+    "zonen_bezuege": [
+     "Belastet, keine schädlichen oder lästigen Einwirkungen zu erwarten"
+    ]
+   },
+   {
+    "titel": "Altlasten-Verordnung (AltlV)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2299",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "SR 814.680",
+    "zustaendige_stelle": "Amt für Abfall, Wasser, Energie und Luft",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": false,
+    "zonen_bezuege": [
+     "Belastet, keine schädlichen oder lästigen Einwirkungen zu erwarten"
+    ]
+   },
+   {
+    "titel": "Abfallgesetz (AbfG)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2292",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "LS 712.1",
+    "zustaendige_stelle": "Amt für Abfall, Wasser, Energie und Luft",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": false,
+    "zonen_bezuege": [
+     "Belastet, keine schädlichen oder lästigen Einwirkungen zu erwarten"
+    ]
+   },
+   {
+    "titel": "Lärmschutz-Verordnung (LSV)",
+    "url": "https://oerebdocs.zh.ch/getDoc?docid=2298",
+    "rechtsstatus": "inKraft",
+    "amtliche_nummer": "SR 814.41",
+    "zustaendige_stelle": "Gemeinde Weiningen",
+    "rechtsebene": "kommunal_oder_parzellenspezifisch",
+    "ist_wahrscheinlich_bzo_reglement": false,
+    "zonen_bezuege": [
+     "Empfindlichkeitsstufe II, aufgestuft (nein)"
+    ]
+   }
+  ],
+  "umweltrisiken": {
+   "belastete_standorte": {
+    "status": "betroffen",
+    "details": [
+     {
+      "bezeichnung": "Belastet, keine schädlichen oder lästigen Einwirkungen zu erwarten",
+      "flaechenanteil_prozent": 11
+     }
+    ]
+   },
+   "grundwasserschutz": {
+    "status": "nicht_betroffen",
+    "details": []
+   },
+   "gewaesserraum": {
+    "status": "nicht_betroffen",
+    "details": []
+   },
+   "laermempfindlichkeitsstufen": {
+    "status": "betroffen",
+    "details": [
+     {
+      "bezeichnung": "Empfindlichkeitsstufe II, aufgestuft (nein)",
+      "flaechenanteil_prozent": 100
+     }
+    ]
+   }
+  },
+  "legenden_und_themen_pdfs": [
+   "https://maps.zh.ch/images/custom/oerebkatasterzh/legenden/np_251.pdf",
+   "https://maps.zh.ch/images/custom/oerebkatasterzh/legenden/baulinie.pdf",
+   "https://maps.zh.ch/images/custom/oerebkatasterzh/legenden/kbs.pdf",
+   "https://maps.zh.ch/images/custom/oerebkatasterzh/legenden/laerm.pdf"
+  ],
+  "stand_kataster": "2026-10-01T07:43:02",
+  "auszug_erstellt": "2026-10-01T07:43:02"
+ },
+ "radon": {
+  "found": true,
+  "wahrscheinlichkeit_prozent": 4,
+  "konfidenz": 1250.52
+ }
+}

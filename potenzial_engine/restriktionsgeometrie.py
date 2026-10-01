@@ -214,6 +214,10 @@ def hole_restriktionen_fuer_parzelle(
     plus Rohdaten und transparente Hinweise zu jeder Annahme/Einschraenkung.
     """
     hinweise: list[str] = []
+    # Je Teilabfrage, ob sie FEHLGESCHLAGEN ist. Ohne dieses Feld sah eine
+    # gescheiterte Abfrage in der Uebersicht aus wie "geprueft, nicht
+    # betroffen" -- der Grund stand nur im Freitext der Hinweise.
+    fehler: dict[str, str] = {}
     bbox = _parzelle_bbox_mit_marge(parzelle_ring)
     parzelle_poly = _als_valides_polygon(parzelle_ring)
 
@@ -222,6 +226,7 @@ def hole_restriktionen_fuer_parzelle(
     except requests.exceptions.RequestException as exc:
         gewaesserraum_roh = []
         hinweise.append(f"Gewaesserraum-Abfrage fehlgeschlagen: {exc}")
+        fehler["gewaesserraum"] = str(exc)
 
     gewaesserraum_flaechen = []
     for gr in gewaesserraum_roh:
@@ -234,6 +239,7 @@ def hole_restriktionen_fuer_parzelle(
     except requests.exceptions.RequestException as exc:
         waldgrenzen_roh = []
         hinweise.append(f"Waldgrenzen-Abfrage fehlgeschlagen: {exc}")
+        fehler["wald"] = str(exc)
 
     waldgrenze_min_abstand_m = None
     for wg in waldgrenzen_roh:
@@ -269,6 +275,7 @@ def hole_restriktionen_fuer_parzelle(
     except NutzungsklassifikationError as exc:
         alle_festlegungen = []
         hinweise.append(f"Baulinien-Abfrage (ueber Nutzungsklassifikation) fehlgeschlagen: {exc}")
+        fehler["baulinien"] = str(exc)
 
     baulinien = baulinien_aus_festlegungen(alle_festlegungen)
     baulinien_restriktionen = []
@@ -300,4 +307,8 @@ def hole_restriktionen_fuer_parzelle(
         "baulinien_gefunden": baulinien,
         "restriktionsflaechen_fuer_g1": restriktionsflaechen_fuer_g1,
         "hinweise": hinweise,
+        "fehler": fehler,
+        # Wie weit gesucht wurde: "nichts gefunden" gilt nur in diesem Umkreis.
+        "suchumkreis_m": {"gewaesserraum": _BBOX_MARGE_M, "wald": _BBOX_MARGE_M,
+                          "baulinien": baulinien_radius_m},
     }
