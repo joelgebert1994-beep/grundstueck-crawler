@@ -519,6 +519,21 @@ section.sec.flash { animation: flash 1.1s ease-out; }
 .chip.warn { border-color: var(--warn); background: var(--warn-soft); color: var(--warn); }
 .chip.warn i { background: var(--warn); }
 
+/* Was ist zu beachten? -- eine Zeile je Befund, Quelle klein darunter. */
+.hinweise { display: flex; flex-direction: column; gap: 6px; }
+.hw { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start;
+  padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--panel-2); }
+.hwsym { font-size: 13px; line-height: 1.35; text-align: center; font-weight: 700; color: var(--ink-3); }
+.hwtext { font-size: 12.5px; line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+.hwtext b { font-weight: 650; }
+.hwstatus { color: var(--ink-2); }
+.hwquelle { font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+.hw.warn { border-color: var(--warn); background: var(--warn-soft); }
+.hw.warn .hwsym { color: var(--warn); }
+.hw.info .hwsym { color: var(--accent); }
+.hw.ok { background: transparent; }
+.hw.ok .hwsym { color: var(--ok); }
+.hw.offen { background: transparent; border-style: dashed; }
 .lagegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
 .lage { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 9px 11px; }
 .lage .lbl { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
@@ -825,6 +840,10 @@ ul.plain li { margin-bottom: 4px; }
    Hintergrunds daneben: weisse Schrift auf weissem Reiter. Dieselben
    Farben wie .navbar button.active, die es hier immer haben sollte. */
 #navbar button.aktiv { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.navgruppe { display: inline-flex; align-items: center; gap: 4px; flex: none;
+  border: 1px dashed var(--line-2); border-radius: 8px; padding: 0 3px 0 8px; }
+.navgruppe-name { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); margin-right: 2px; }
 .ueberkopf { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
   margin: 10px 0 4px; }
 .ueberzeile { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--bg); }
@@ -1489,7 +1508,7 @@ map.on("click", function (ev) {
       if (pz.found) {
         zeilen.push('<span class="m">Parzelle ' + esc(pz.parzellennummer) + " · " +
           (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m²" : "Fläche unbekannt") + "</span>");
-        if (pz.egrid) zeilen.push('<span class="m">' + esc(pz.egrid) + "</span>");
+        if (pz.egrid) zeilen.push('<span class="m">EGRID ' + esc(pz.egrid) + "</span>");
       } else {
         zeilen.push('<span class="m">Keine Parzelle gefunden.</span>');
       }
@@ -1498,11 +1517,11 @@ map.on("click", function (ev) {
         if (gw.baujahr) g.push("Baujahr " + gw.baujahr);
         if (gw.anzahl_geschosse) g.push(gw.anzahl_geschosse + " Gesch.");
         if (gw.gebaeudevolumen_m3) g.push(fmt(gw.gebaeudevolumen_m3) + " m³");
-        zeilen.push('<span class="m">Gebäude: ' + (g.length ? esc(g.join(" · ")) : "GWR ohne Kennwerte") + "</span>");
+        zeilen.push('<span class="m">Gebäude laut GWR: ' + (g.length ? esc(g.join(" · ")) : "ohne Kennwerte im Register") + "</span>");
       }
       // <br> zwischen Titel und erster Zeile -- dieselbe Luecke wie bei
       // "Bebaubare Fläche" oben, hier vor der Uebernahme ins Panel behoben.
-      zeigeKarteninfo("<b>Direktabfrage</b><br>" + zeilen.join("<br>"));
+      zeigeKarteninfo("<b>An dieser Stelle</b><br>" + zeilen.join("<br>"));
     })
     .catch(function () {
       zeigeKarteninfo("<b>Abfrage fehlgeschlagen.</b>");
@@ -2842,7 +2861,7 @@ function zeichneErgebnisAufKarte(erg) {
   if (pz.parzellengeometrie) {
     var popupP = "<b>Parzelle " + esc(pz.parzellennummer) + "</b><span class=\"m\">" +
       (pz.flaeche_m2 ? fmt(pz.flaeche_m2, 1) + " m² (amtlich)" : "Fläche unbekannt") +
-      (pz.egrid ? "<br>" + esc(pz.egrid) : "") + "</span>";
+      (pz.egrid ? "<br>EGRID " + esc(pz.egrid) : "") + "</span>";
     var ls = zeichnePolygone(gruppen.parzelle, pz.parzellengeometrie, STIL.parzelle, popupP,
       "sec-grundstueck", "Parzelle " + esc(pz.parzellennummer || ""), true);
     anzP = ls.length;
@@ -3000,7 +3019,7 @@ function zeichneErgebnisAufKarte(erg) {
       (leer(g.baujahr) ? "Baujahr unbekannt" : "Baujahr " + esc(g.baujahr)) + ", " +
       (leer(g.geschosse) ? "Geschosszahl unbekannt" : esc(g.geschosse) + " Geschoss(e)") + "<br>" +
       "Grundriss " + fmt(g.grundriss_flaeche_m2, 1) + " m²" +
-      (leer(g.grundflaeche_gwr_m2) ? "" : ", GWR " + fmt(g.grundflaeche_gwr_m2, 1) + " m²") + "</span>";
+      (leer(g.grundflaeche_gwr_m2) ? "" : ", laut GWR " + fmt(g.grundflaeche_gwr_m2, 1) + " m²") + "</span>";
     anzBest += zeichnePolygone(gruppen.bestand, [g.grundriss], STIL.bestand, popup,
       "sec-szenarien", "Bestand").length;
   });
@@ -3173,21 +3192,43 @@ function zwischenspeicherHinweis(erg) {
    Genauso wichtig ist die Trennung: Potenzial ist amtliches Baurecht und
    Geometrie, Wirtschaftlichkeit sind Annahmen. Solange beides im selben
    Reiter stand, sah das eine wie das andere aus. */
+/* Seit 01.10.2026 in den Bereichen, nach denen jemand ein Grundstueck
+   befragt -- nicht nach der Datenquelle: Grundstueck & Bestand, Baurecht &
+   Planung, Standort & Umwelt, Markt, Entwicklung, Karte, Quellen &
+   Herleitung. "Entwicklung" ist eine GRUPPE (vierter Eintrag), kein
+   zusammengelegter Reiter: Potenzial, 3D-Entwurf und Wirtschaftlichkeit
+   bleiben je ein eigener Reiter -- sie sind der Kern des Werkzeugs und
+   werden nicht zu einer Seite verdichtet. Markt steht weiterhin vor der
+   Wirtschaftlichkeit (siehe oben). */
 var REITER = [
   ["uebersicht", "Übersicht", ["sec-uebersicht"]],
-  ["grundstueck", "Grundstück & Standort", ["sec-grundstueck", "sec-standort"]],
-  ["baurecht", "Baurecht", ["sec-baurecht", "sec-restriktionen"]],
-  ["karte", "Karte", ["sec-karte"]],
-  ["potenzial", "Potenzial", ["sec-potenzial", "sec-szenarien", "sec-screening"]],
-  ["entwurf", "3D-Entwurf", ["sec-entwurf"]],
+  ["grundstueck", "Grundstück & Bestand", ["sec-grundstueck"]],
+  ["baurecht", "Baurecht & Planung", ["sec-baurecht", "sec-restriktionen"]],
+  ["standort", "Standort & Umwelt", ["sec-standort"]],
   ["markt", "Markt", ["sec-markt"]],
-  ["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"]],
-  // Nur noch die Quellen. "Grundstück & Bestand" und "Standort & Umwelt"
-  // beantworten die Frage "was ist hier?" -- sie stehen jetzt im eigenen
-  // Reiter "grundstueck" direkt nach der Übersicht, nicht mehr hinter den
-  // Quellen. Die Herkunft jedes Werts bleibt dort als Unterzeile sichtbar.
-  ["quellen", "Quellen", ["sec-quellen"]]
+  ["potenzial", "Potenzial", ["sec-potenzial", "sec-szenarien", "sec-screening"], "Entwicklung"],
+  ["entwurf", "3D-Entwurf", ["sec-entwurf"], "Entwicklung"],
+  ["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"], "Entwicklung"],
+  ["karte", "Karte", ["sec-karte"]],
+  // Nur Herkunft, Methodik, Stand und Belege. Was ein Wert BEDEUTET, steht
+  // in den Bereichen davor; seine Herkunft dort als kleine Unterzeile.
+  ["quellen", "Quellen & Herleitung", ["sec-quellen"]]
 ];
+/* Die Reiterleiste: aufeinanderfolgende Reiter derselben Gruppe stehen in
+   einem Rahmen mit dem Gruppennamen davor. */
+function reiterLeiste() {
+  var html = "", gruppe = null;
+  REITER.forEach(function (r) {
+    var g = r[3] || null;
+    if (g !== gruppe) {
+      if (gruppe) html += "</span>";
+      if (g) html += '<span class="navgruppe"><span class="navgruppe-name">' + esc(g) + "</span>";
+      gruppe = g;
+    }
+    html += '<button data-reiter="' + r[0] + '">' + r[1] + "</button>";
+  });
+  return html + (gruppe ? "</span>" : "");
+}
 var reiterAktiv = "uebersicht";
 
 /* Der Parkplatz der Karte.
@@ -3369,6 +3410,163 @@ function bestandGeschosseTyp(b) {
 function reiterLink(reiter, text) {
   return '<button class="reiterlink" data-reiter-link="' + esc(reiter) + '">' +
     esc(text) + " \u2192</button>";
+}
+
+/* --- Was ist zu beachten? ---------------------------------------------
+   Kritische Befunde sichtbar, jeder mit Aussage, Status und Quelle (samt
+   Stand, wo der Dienst ihn liefert). Bewusst KEINE Gesamtnote und kein
+   Eignungsscore: eine Parzelle ist nicht "zu 72 % bebaubar".
+
+   Vier Arten, und sie werden nie vermischt:
+     warn   betroffen, betrifft die Planung
+     info   gilt fuer die Parzelle, ist aber keine Einschraenkung im engeren
+            Sinn (z. B. Laermempfindlichkeitsstufe, Ueberlagerung)
+     ok     geprueft UND nicht betroffen -- nur, wenn die Abfrage gelang
+     offen  nicht abgefragt oder fehlgeschlagen. Unbekannt heisst NICHT
+            "nicht betroffen".
+   Vorher stand ein gescheiterter Abruf grau neben "nicht betroffen" und
+   las sich genauso. */
+var HINWEIS_NICHT_ABGEFRAGT = ["Naturgefahren (Gefahrenkarte)", "Denkmalschutz und Inventare",
+  "Lärmbelastung"];
+function isoDatum(s) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ""));
+  return m ? m[3] + "." + m[2] + "." + m[1] : (s ? String(s) : "");
+}
+function beachtenHinweise(m1, zz) {
+  m1 = m1 || {}; zz = zz || {};
+  var r = m1.restriktionsgeometrie || {}, rf = r.fehler || {}, umkreis = r.suchumkreis_m || {};
+  var nk = m1.nutzungsklassifikation || {};
+  var oe = m1.oereb || {}, ur = oe.umweltrisiken || {};
+  var GEO = "Kantonale Geodaten (geodienste.ch)";
+  var OEREB = "ÖREB-Kataster" + (oe.kanton ? " " + oe.kanton : "") +
+    (oe.stand_kataster ? " · Stand " + isoDatum(oe.stand_kataster) : "");
+  var befunde = [], ok = {}, okFolge = [], offen = [];
+  function okDazu(quelle, name) {
+    if (!ok[quelle]) { ok[quelle] = []; okFolge.push(quelle); }
+    ok[quelle].push(name);
+  }
+  var restriktionGelaufen = r.gefunden === true;
+
+  if (zz.status === "sondernutzungsplan_massgebend" ||
+      alsListe(nk.sondernutzungsplaene_massgebend).length) {
+    befunde.push({ art: "warn", titel: "Sondernutzungsplan massgebend",
+      status: "die Regelbauweise der Zone gilt hier nicht", quelle: "Nutzungsplanung · " + GEO });
+  }
+
+  var gesehen = {};
+  ueberlagerungenVon(nk).forEach(function (u) {
+    var voll = zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "Überlagerung";
+    var name = chipKlarname(voll);
+    if (gesehen[name]) return;
+    gesehen[name] = true;
+    befunde.push({ art: "info", titel: name, voll: voll,
+      status: "überlagert die Parzelle · rechtskräftig", quelle: "Nutzungsplanung · " + GEO });
+  });
+
+  var anzGw = (r.gewaesserraum_flaechen || []).length;
+  var gwOereb = (ur.gewaesserraum || {}).status;
+  if (anzGw || gwOereb === "betroffen") {
+    befunde.push({ art: "warn", titel: "Gewässerraum betroffen",
+      status: anzGw ? anzGw + (anzGw === 1 ? " Fläche" : " Flächen") + " auf oder an der Parzelle"
+                    : "laut ÖREB-Kataster", quelle: anzGw ? GEO : OEREB });
+  } else if (restriktionGelaufen && !rf.gewaesserraum) okDazu(GEO, "Gewässerraum");
+  else if (gwOereb === "nicht_betroffen") okDazu(OEREB, "Gewässerraum");
+  else offen.push("Gewässerraum");
+
+  if (!leer(r.waldgrenze_min_abstand_m)) {
+    befunde.push({ art: "warn", titel: "Wald in der Nähe",
+      status: "Waldgrenze " + fmt(r.waldgrenze_min_abstand_m, 1) + " m von der Parzelle — Waldabstand prüfen",
+      quelle: GEO });
+  } else if (restriktionGelaufen && !rf.wald) {
+    okDazu(GEO, "Wald" + (leer(umkreis.wald) ? "" : " im Umkreis von " + fmt(umkreis.wald, 0) + " m"));
+  } else offen.push("Waldabstand");
+
+  var anzBl = (r.baulinien_gefunden || []).length;
+  if (anzBl) {
+    befunde.push({ art: "warn", titel: anzBl === 1 ? "Baulinie" : anzBl + " Baulinien",
+      status: "rechtskräftig, an oder nahe der Parzelle", quelle: "Nutzungsplanung · " + GEO });
+  } else if (restriktionGelaufen && !rf.baulinien) okDazu(GEO, "Baulinien");
+  else offen.push("Baulinien");
+
+  if (oe.found) {
+    [["belastete_standorte", "Belasteter Standort", "warn"],
+     ["grundwasserschutz", "Grundwasserschutz", "warn"],
+     ["laermempfindlichkeitsstufen", "Lärmempfindlichkeitsstufe", "info"]].forEach(function (t) {
+      var v = ur[t[0]] || {};
+      var details = alsListe(v.details).filter(function (d) { return d && d.bezeichnung; });
+      if (v.status === "betroffen") {
+        var d0 = details[0] || {};
+        var titel = t[1];
+        var es = /Empfindlichkeitsstufe\s+(I{1,3}V?|IV)\b/.exec(d0.bezeichnung || "");
+        if (t[0] === "laermempfindlichkeitsstufen" && es) titel = "Lärmempfindlichkeitsstufe " + es[1];
+        var status = details.map(function (d) {
+          return d.bezeichnung + (leer(d.flaechenanteil_prozent) ? "" : " (" + d.flaechenanteil_prozent + " % der Fläche)");
+        }).join(" · ") || "betroffen";
+        befunde.push({ art: t[2], titel: titel, status: status, quelle: OEREB });
+      } else if (v.status === "nicht_betroffen") {
+        if (t[0] !== "laermempfindlichkeitsstufen") okDazu(OEREB, t[1]);
+      } else if (v.status === "keine_daten") {
+        offen.push(t[1] + " (im Kataster keine Daten)");
+      } else {
+        offen.push(t[1]);
+      }
+    });
+  } else {
+    offen.push("ÖREB-Themen (Kataster nicht abrufbar)");
+  }
+
+  // warn vor info -- was die Planung betrifft, steht oben.
+  befunde.sort(function (a, b) { return (a.art === "warn" ? 0 : 1) - (b.art === "warn" ? 0 : 1); });
+  return { befunde: befunde,
+           ok: okFolge.map(function (q) { return { quelle: q, namen: ok[q] }; }),
+           offen: offen, nichtAbgefragt: HINWEIS_NICHT_ABGEFRAGT.slice() };
+}
+var HINWEIS_SYMBOL = { warn: "⚠", info: "ℹ", ok: "✓", offen: "?" };
+function hinweisZeile(art, titel, status, quelle, voll) {
+  return '<div class="hw ' + art + '"><span class="hwsym" aria-hidden="true">' + HINWEIS_SYMBOL[art] +
+    '</span><div class="hwtext"><b' + (voll && voll !== titel ? ' title="' + esc(voll) + '"' : "") + ">" +
+    esc(titel) + "</b>" + (status ? ' <span class="hwstatus">' + esc(status) + "</span>" : "") +
+    (quelle ? '<div class="hwquelle">' + esc(quelle) + "</div>" : "") + "</div></div>";
+}
+function hinweisBlock(h) {
+  return '<div class="hinweise">' +
+    h.befunde.map(function (b) { return hinweisZeile(b.art, b.titel, b.status, b.quelle, b.voll); }).join("") +
+    h.ok.map(function (g) { return hinweisZeile("ok", "Nicht betroffen", g.namen.join(" · "), g.quelle); }).join("") +
+    (h.offen.length
+      ? hinweisZeile("offen", "Nicht bestimmbar", h.offen.join(" · "),
+          "Abfrage nicht möglich oder fehlgeschlagen — unbekannt heisst nicht „nicht betroffen“")
+      : "") +
+    hinweisZeile("offen", "Nicht abgefragt", h.nichtAbgefragt.join(" · "),
+      "nicht Teil dieser Analyse — kantonale Karten prüfen") +
+  "</div>";
+}
+
+/* Naehe: EINE Lesart fuer Uebersicht und Standort. Drei Faelle, die nicht
+   gleich aussehen duerfen: gefunden (Distanz, Luftlinie), gesucht und
+   nichts im Umkreis, Abfrage fehlgeschlagen. Aeltere Analysen ohne
+   Suchradius zeigen "nicht verfügbar" -- nicht "keine in der Nähe". */
+function naheAngabe(u, feld) {
+  u = u || {};
+  var e = u[feld], fehler = (u.fehler || {})[feld], radius = (u.radien_m || {})[feld];
+  var osm = feld !== "oev_naechste_haltestelle";
+  if (e && !leer(e.distanz_m)) {
+    return { val: fmt(e.distanz_m) + " m", sub: [e.name, "Luftlinie"].filter(Boolean).join(" · "),
+             quelle: osm ? "OpenStreetMap" : "transport.opendata.ch" };
+  }
+  if (fehler) return { val: "nicht bestimmbar", sub: "Abfrage fehlgeschlagen", na: true };
+  if (!leer(radius)) {
+    return { val: "keine im Umkreis", sub: "von " + fmt(radius / 1000, 0) + " km (Luftlinie)",
+             quelle: "OpenStreetMap", na: true };
+  }
+  return null;
+}
+function gueteAngabe(u) {
+  u = u || {};
+  if ((u.fehler || {}).oev_gueteklasse) return { val: "nicht bestimmbar", sub: "Abfrage fehlgeschlagen", na: true };
+  var g = u.oev_gueteklasse;
+  if (!g) return null;
+  if (!g.klasse) return { val: "keine Klasse", sub: "ausserhalb der Klassen A–D", quelle: "ARE" };
+  return { val: "Klasse " + g.klasse, sub: g.bezeichnung || "", quelle: "ARE" };
 }
 
 function secUebersicht(erg, m1, zz) {
@@ -3564,56 +3762,14 @@ function secUebersicht(erg, m1, zz) {
             : '<p class="ahinweis">Angenähert, nicht gemessen (' + esc(lesbar(ab.rechnung)) + ').</p>'))) +
   "</div>";
 
-  /* --- Was schraenkt ein? --------------------------------------------
-     Als Chips statt als Tabelle: was betroffen ist, hat Farbe; was
-     geprueft und nicht betroffen ist, bleibt grau. Ein Blick genuegt --
-     und dass etwas GEPRUEFT wurde, ist selbst eine Auskunft. */
-  var r = m1.restriktionsgeometrie || {};
-  var betroffen = [], frei = [];
-  function chip(text, ist, voll) {
-    (ist ? betroffen : frei).push('<span class="chip' + (ist ? " warn" : "") + '"' +
-      (voll && voll !== text ? ' title="' + esc(voll) + '"' : "") + "><i></i>" +
-      esc(text) + "</span>");
-  }
-  var anzGw = (r.gewaesserraum_flaechen || []).length;
-  chip(anzGw ? "Gewässerraum · " + anzGw + (anzGw === 1 ? " Fläche" : " Flächen")
-             : "Gewässerraum", !!anzGw);
-  chip(leer(r.waldgrenze_min_abstand_m) ? "Waldabstand"
-       : "Waldabstand · " + fmt(r.waldgrenze_min_abstand_m, 1) + " m", !leer(r.waldgrenze_min_abstand_m));
-  var anzBl = (r.baulinien_gefunden || []).length;
-  chip(anzBl ? "Baulinien · " + anzBl : "Baulinien", !!anzBl);
-  if (snp) chip("Sondernutzungsplan massgebend", true);
-
-  var ueberl = ueberlagerungenVon(nk);
-  var oereb = betroffeneOerebThemen(m1);
-  var gesehen = {};
-  ueberl.forEach(function (u) {
-    var voll = zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung)
-      || "Überlagerung";
-    var name = chipKlarname(voll);
-    if (gesehen[name]) return;
-    gesehen[name] = true;
-    chip(name, true, voll);
-  });
-  oereb.forEach(function (k) {
-    var voll = oerebThemaName(k);
-    var name = chipKlarname(voll);
-    if (gesehen[name]) return;
-    gesehen[name] = true;
-    chip(name, true, voll);
-  });
-
-  // Nicht endlos: die vollstaendige Liste steht im Reiter Baurecht.
-  var MAX = 8;
-  var alle = betroffen.concat(frei);
-  var zuviel = alle.length - MAX;
+  /* --- Was ist zu beachten? ------------------------------------------
+     Frueher Chips ohne Quelle: ein gescheiterter Abruf stand grau neben
+     "nicht betroffen" und las sich genauso. Jetzt eine Zeile je Befund mit
+     Status und Quelle -- siehe beachtenHinweise(). */
   var einschraenkungen = '<div class="antwort">' +
-    '<div class="uwarum">Was schränkt ein?</div>' +
-    '<div class="chips">' + alle.slice(0, MAX).join("") +
-      (zuviel > 0 ? '<span class="chip"><i></i>+' + zuviel + " weitere</span>" : "") + "</div>" +
-    (betroffen.length ? "" :
-      '<p class="ahinweis">Geprüft, nichts davon betrifft diese Parzelle.</p>') +
-    '<div class="afuss">' + reiterLink("baurecht", "Details im Reiter Baurecht") + "</div>" +
+    '<div class="uwarum">Was ist zu beachten?</div>' +
+    hinweisBlock(beachtenHinweise(m1, zz)) +
+    '<div class="afuss">' + reiterLink("baurecht", "Details im Reiter Baurecht & Planung") + "</div>" +
   "</div>";
 
   /* --- Lage ------------------------------------------------------------
@@ -3621,20 +3777,19 @@ function secUebersicht(erg, m1, zz) {
      "Coop 108 m" ist Maklerwissen, keine technische Kennung. Die
      Herkunftsangaben (Radon-Rohwert, swissALTI3D) bleiben dort. */
   var t = m1.topographie || {}, u = m1.umgebung || {};
-  function nahe(e) {
-    if (!e || leer(e.distanz_m)) return null;
-    return { val: fmt(e.distanz_m) + " m", sub: e.name || "" };
-  }
+  // Ein Fakt je Kachel: Wert gross, Herkunft klein darunter.
   var lageFelder = [
-    ["ÖV-Haltestelle", nahe(u.oev_naechste_haltestelle)],
-    ["Einkauf", nahe(u.supermarkt_naechster)],
-    ["Schule", nahe(u.schule_naechste)],
+    ["ÖV-Güteklasse", gueteAngabe(u)],
+    ["ÖV-Haltestelle", naheAngabe(u, "oev_naechste_haltestelle")],
+    ["Bahnhof", naheAngabe(u, "bahnhof_naechster")],
+    ["Schule", naheAngabe(u, "schule_naechste")],
+    ["Einkauf", naheAngabe(u, "supermarkt_naechster")],
     ["Ausrichtung", t.aspect ? { val: String(t.aspect), sub: "" } : null],
     ["Hangneigung", leer(t.slope_deg) ? null : { val: fmt(t.slope_deg, 1) + "°", sub: "" }]
   ];
   var lage = '<div class="lagegrid">' + lageFelder.map(function (p) {
     return '<div class="lage"><div class="lbl">' + esc(p[0]) + "</div>" +
-      (p[1] ? '<div class="val">' + esc(p[1].val) + "</div>" +
+      (p[1] ? '<div class="val' + (p[1].na ? " na" : "") + '">' + esc(p[1].val) + "</div>" +
               (p[1].sub ? '<div class="sub">' + esc(p[1].sub) + "</div>" : "")
             : '<div class="val na">nicht verfügbar</div>') + "</div>";
   }).join("") + "</div>";
@@ -3683,16 +3838,19 @@ function renderDossier(erg) {
   inner.innerHTML =
     zwischenspeicherHinweis(erg) +
     headHtml(erg, m1, zz) +
-    '<nav class="navbar" id="navbar">' + REITER.map(function (r) {
-      return '<button data-reiter="' + r[0] + '">' + r[1] + "</button>";
-    }).join("") + "</nav>" +
+    '<nav class="navbar" id="navbar">' + reiterLeiste() + "</nav>" +
+    // In der Reihenfolge der Reiter -- dann springt "zum naechsten
+    // Abschnitt" nie rueckwaerts.
     secUebersicht(erg, m1, zz) +
+    secGrundstueck(m1) +
     secBaurecht(erg, m1, zz) + secRestriktionen(m1) +
-    secKarte() +
+    secStandort(m1) +
+    secMarkt(erg) +
     secPotenzial(erg) + secSzenarien(erg) + scrBlock() +
     secEntwurf(erg) +
-    secMarkt(erg) + secWirtschaft(erg) +
-    secGrundstueck(m1) + secStandort(m1) + secQuellen(erg);
+    secWirtschaft(erg) +
+    secKarte() +
+    secQuellen(erg);
   var zsNeu = document.getElementById("zs-neu");
   if (zsNeu) zsNeu.onclick = function () { starteAnalyse(true); };
   dossierAnsicht(true);
@@ -3949,17 +4107,76 @@ function heizungBlock(gw) {
     ["Warmwasser", waermeText(gw.warmwasser, GWR_WAERMEERZEUGER_WARMWASSER)]
   ].filter(function (z) { return !leer(z[1]); });
   if (!zeilen.length) {
-    return '<h4 class="subhead">Heizung &amp; Energie</h4>' +
+    return '<h4 class="subhead">Heizung &amp; Warmwasser</h4>' +
       '<div class="note">Das GWR führt für dieses Gebäude keine Heizungsangabe ' +
       wtyp("nicht_bestimmbar") + "</div>";
   }
   var alter = angabeAlterJahre(gw.heizung);
-  return '<h4 class="subhead">Heizung &amp; Energie ' + wtyp("gwr") + "</h4>" +
+  return '<h4 class="subhead">Heizung &amp; Warmwasser ' + wtyp("gwr") + "</h4>" +
     kvRows(zeilen) +
     (alter !== null && alter >= 10
       ? '<div class="note warn">Die Heizungsangabe ist ' + Math.floor(alter) + " Jahre alt. " +
         "Das Register sagt nicht, ob die Anlage heute noch so besteht.</div>"
       : "");
+}
+
+/* Solar: zwei verschiedene Aussagen, nie vermischt.
+     Eignung des Daches  -- Modell des Bundes (BFE), je Dachflaeche
+     installierte Anlage -- Registereintrag (BFE), exakt ueber die EGID
+   "Das Dach waere sehr gut geeignet" heisst nicht, dass dort eine Anlage
+   steht; "keine im Register" heisst nicht, dass keine steht. Ohne
+   GWR-Gebaeude wird nichts abgefragt -- und nichts angezeigt. */
+function solarBlock(en) {
+  en = en || {};
+  if (!en.abgefragt) return "";
+  var fe = en.fehler || {}, sd = en.solar_dach;
+  var DACH = "Solareignung des Daches";
+  var dach;
+  if (fe.solar_dach) {
+    dach = hinweisZeile("offen", DACH, "nicht bestimmbar — Abfrage fehlgeschlagen",
+      "BFE, Solarenergie: Eignung Dächer");
+  } else if (!sd || !sd.gefunden) {
+    dach = hinweisZeile("offen", DACH, "nicht bestimmbar — am Gebäudepunkt liegt keine bewertete " +
+      "Dachfläche (z. B. Gebäude jünger als das Modell)", "BFE, Solarenergie: Eignung Dächer");
+  } else {
+    var gruppen = {}, ertrag = 0, ertragVoll = true, stand = "";
+    alsListe(sd.flaechen).forEach(function (f) {
+      var k = f.klasse_text || "ohne Klasse";
+      gruppen[k] = gruppen[k] || { n: 0, m2: 0, klasse: f.klasse || 0 };
+      gruppen[k].n++;
+      gruppen[k].m2 += Number(f.flaeche_m2) || 0;
+      if (leer(f.stromertrag_kwh_jahr)) ertragVoll = false; else ertrag += Number(f.stromertrag_kwh_jahr);
+      // "08.12.2021" -- fuer den Vergleich als 20211208 lesen.
+      if (f.stand && String(f.stand).split(".").reverse().join("") >
+          String(stand).split(".").reverse().join("")) stand = f.stand;
+    });
+    var text = Object.keys(gruppen).sort(function (a, b) { return gruppen[b].klasse - gruppen[a].klasse; })
+      .map(function (k) { return gruppen[k].n + " × " + k + " (" + fmt(gruppen[k].m2, 0) + " m²)"; })
+      .join(" · ");
+    dach = hinweisZeile("info", DACH + ": " + text,
+      ertragVoll ? "möglicher Stromertrag aller Dachflächen ca. " + fmt(ertrag, 0) + " kWh/Jahr" : "",
+      "BFE, Solarenergie: Eignung Dächer · Modell" + (stand ? ", Stand " + stand : ""));
+  }
+  var ANLAGE = "Installierte Anlage";
+  var anlagen;
+  if (fe.anlagen) {
+    anlagen = hinweisZeile("offen", ANLAGE, "nicht bestimmbar — Abfrage fehlgeschlagen",
+      "BFE, Elektrizitätsproduktionsanlagen");
+  } else if (!alsListe(en.anlagen).length) {
+    anlagen = hinweisZeile("info", ANLAGE, "für dieses Gebäude im Register keine erfasst — " +
+      "das heisst nicht, dass keine besteht", "BFE, Elektrizitätsproduktionsanlagen · Register");
+  } else {
+    anlagen = alsListe(en.anlagen).map(function (a) {
+      return hinweisZeile("info", ANLAGE + ": " + [a.kategorie, a.leistung].filter(Boolean).join(" "),
+        [a.in_betrieb_seit ? "in Betrieb seit " + a.in_betrieb_seit : null, a.bauart]
+          .filter(Boolean).join(" · "),
+        "BFE, Elektrizitätsproduktionsanlagen · Register");
+    }).join("");
+  }
+  return '<h4 class="subhead">Solar</h4><div class="hinweise">' + dach + anlagen + "</div>" +
+    '<div class="note">Die Eignung ' + wtyp("modell") + " ist ein Modellwert des Bundes für die " +
+    "Dachflächen — sie sagt nichts darüber, ob eine Anlage besteht. Ob eine besteht, zeigt nur " +
+    "das Register.</div>";
 }
 
 function secGrundstueck(m1) {
@@ -3979,7 +4196,7 @@ function secGrundstueck(m1) {
       ]) +
       '<div class="note">Die Energiebezugsfläche stammt aus dem GWR und ist eine ' +
       'SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>' +
-      heizungBlock(gw)
+      heizungBlock(gw) + solarBlock(m1.energie)
     : '<div class="eleit ruhig">kein Gebäude im Register</div>' +
       '<div class="eleitlab">an dieser Adresse ist im GWR kein Gebäude verzeichnet</div>' +
       '<div class="egrund">Das Grundstück ist entweder unbebaut, oder das Gebäude ist ' +
@@ -4000,7 +4217,10 @@ function secGrundstueck(m1) {
         'stammen deshalb aus dem ersten Treffer und sind zu prüfen — der EGRID steuert ' +
         'die gesamte ÖREB-Abfrage.</div>'
       : "") +
-    '<h4 class="subhead">Technische Kennungen</h4>' +
+    // Zuerst, was hier steht; die Kennungen danach -- sichtbar, aber nicht
+    // vor dem Gebaeude.
+    '<h4 class="subhead">Gebäude ' + wtyp("gwr") + "</h4>" + bestand +
+    '<h4 class="subhead">Amtliche Kennungen</h4>' +
     '<div class="kennungen">' +
       kennung("EGRID", pz.egrid, "eidgenössischer Grundstücksidentifikator") +
       kennung("EGID", gw.found ? gw.egid : null, "eidgenössischer Gebäudeidentifikator") +
@@ -4016,7 +4236,6 @@ function secGrundstueck(m1) {
         ? "Adresspunkt liegt geprüft in dieser Parzelle"
         : begriffOderNull(pz.parzellenauswahl)]
     ]) +
-    '<h4 class="subhead">Gebäudebestand (GWR)</h4>' + bestand +
   "</section>";
 }
 
@@ -4048,36 +4267,69 @@ function fehlerHinweis(titel, fehler) {
   return '<div class="note warn">' + esc(titel) + ": " + esc(lesbar(teile.join(" \u00b7 "))) + "</div>";
 }
 
-/* --- 02 Standort --- */
-/* --- 02 Standort --- */
-function secStandort(m1) {
-  var t = m1.topographie || {}, u = m1.umgebung || {}, r = m1.radon || {}, oereb = m1.oereb || {};
-  function dist(e) {
-    if (!e || leer(e.distanz_m)) return null;
-    return fmt(e.distanz_m) + " m" + (e.name ? " · " + e.name : "");
+/* --- Standort & Umwelt --- */
+/* Umweltthemen aus dem OEREB-Kataster. Das Backend liefert je Thema
+   `status` (betroffen / nicht_betroffen / keine_daten / nicht_publiziert)
+   und `details`. Bis 01.10.2026 las diese Stelle Felder, die es nicht gibt
+   (`betroffen`, `eintraege`, `hinweis`) -- und schrieb deshalb bei JEDEM
+   Thema "vorhanden", auch bei amtlich "nicht betroffen". */
+var UMWELT_THEMA = {
+  belastete_standorte: "Belastete Standorte",
+  grundwasserschutz: "Grundwasserschutz",
+  gewaesserraum: "Gewässerraum",
+  laermempfindlichkeitsstufen: "Lärmempfindlichkeitsstufe"
+};
+function umweltZeilenHtml(m1) {
+  var oe = m1.oereb || {};
+  if (!oe.found) {
+    return hinweisZeile("offen", "ÖREB-Kataster", "für dieses Grundstück nicht abrufbar — " +
+      "Umweltthemen nicht bestimmbar", "unbekannt heisst nicht „nicht betroffen“");
   }
-  var UMWELT = {
-    laermempfindlichkeitsstufen: "Lärmempfindlichkeitsstufe",
-    belastete_standorte: "Belastete Standorte",
-    grundwasserschutz: "Grundwasserschutz",
-    naturgefahren: "Naturgefahren"
-  };
-  var umweltZeilen = [];
-  Object.keys(oereb.umweltrisiken || {}).forEach(function (k) {
-    var v = oereb.umweltrisiken[k];
-    if (!v || typeof v !== "object") return;
-    var txt;
-    if (v.betroffen === false) txt = "keine Festlegung an diesem Standort";
-    else if (alsListe(v.eintraege).length) {
-      txt = alsListe(v.eintraege).map(function (x) {
-        if (!x) return "";
-        if (typeof x !== "object") return x;
-        return x.bezeichnung || x.typ ||
-          Object.keys(x).map(function (f) { return klartext(f) + ": " + x[f]; }).join(", ");
-      }).join(" · ");
-    } else txt = v.hinweis || "vorhanden";
-    umweltZeilen.push([UMWELT[k] || klartext(k), txt]);
-  });
+  var quelle = "ÖREB-Kataster" + (oe.kanton ? " " + oe.kanton : "") +
+    (oe.stand_kataster ? " · Stand " + isoDatum(oe.stand_kataster) : "");
+  var ur = oe.umweltrisiken || {};
+  return Object.keys(UMWELT_THEMA).map(function (k) {
+    var v = ur[k] || {};
+    var name = UMWELT_THEMA[k];
+    var details = alsListe(v.details).filter(function (d) { return d && d.bezeichnung; });
+    if (v.status === "betroffen") {
+      return hinweisZeile(k === "laermempfindlichkeitsstufen" ? "info" : "warn", name,
+        details.map(function (d) {
+          return d.bezeichnung + (leer(d.flaechenanteil_prozent) ? "" : " (" + d.flaechenanteil_prozent + " % der Fläche)");
+        }).join(" · ") || "betroffen", quelle);
+    }
+    if (v.status === "nicht_betroffen") return hinweisZeile("ok", name, "nicht betroffen", quelle);
+    if (v.status === "keine_daten") return hinweisZeile("offen", name, "im Kataster keine Daten", quelle);
+    return hinweisZeile("offen", name, "vom Kanton nicht publiziert", quelle);
+  }).join("");
+}
+
+function secStandort(m1) {
+  var t = m1.topographie || {}, u = m1.umgebung || {}, r = m1.radon || {};
+
+  // Ein Fakt je Kachel -- dieselbe Lesart wie in der Uebersicht.
+  var naehe = [
+    ["ÖV-Güteklasse", gueteAngabe(u)],
+    ["ÖV-Haltestelle", naheAngabe(u, "oev_naechste_haltestelle")],
+    ["Bahnhof", naheAngabe(u, "bahnhof_naechster")],
+    ["Schule", naheAngabe(u, "schule_naechste")],
+    ["Kindergarten", naheAngabe(u, "kindergarten_naechster")],
+    ["Einkauf", naheAngabe(u, "supermarkt_naechster")],
+    ["Spital", naheAngabe(u, "spital_naechstes")]
+  ];
+  var naeheHtml = '<div class="lagegrid">' + naehe.map(function (p) {
+    return '<div class="lage"><div class="lbl">' + esc(p[0]) + "</div>" +
+      (p[1] ? '<div class="val' + (p[1].na ? " na" : "") + '">' + esc(p[1].val) + "</div>" +
+              (p[1].sub ? '<div class="sub">' + esc(p[1].sub) + "</div>" : "")
+            : '<div class="val na">nicht verfügbar</div>') + "</div>";
+  }).join("") + "</div>";
+
+  // Radon ist ein Modellwert (Wahrscheinlichkeit fuer das Gebiet), keine
+  // Messung am Gebaeude.
+  var radon = leer(r.wahrscheinlichkeit_prozent)
+    ? hinweisZeile("offen", "Radon", "nicht bestimmbar", "BAG-Radonkarte")
+    : hinweisZeile("info", "Radon: " + fmt(r.wahrscheinlichkeit_prozent, 1) + " % Wahrscheinlichkeit",
+        "Modellwert für das Gebiet, keine Messung am Gebäude", "BAG-Radonkarte · Modell");
 
   // Die Rohwerte der Karten -- Radon-"confidence", Hangneigung in Prozent,
   // Ausrichtung in Grad, der Name des Hoehenmodells -- sind Belege, keine
@@ -4094,27 +4346,21 @@ function secStandort(m1) {
 
   return '<section class="sec" id="sec-standort">' +
     '<div class="sechead"><h3>Standort &amp; Umwelt</h3></div>' +
+    '<h4 class="subhead">Erreichbarkeit</h4>' + naeheHtml +
+    '<div class="note">Distanzen in Luftlinie, nicht Fussweg. ÖV-Güteklasse: Bundesamt für ' +
+    "Raumentwicklung ARE · Haltestelle: transport.opendata.ch · Bahnhof, Schule, Kindergarten, " +
+    "Einkauf, Spital: © OpenStreetMap-Mitwirkende (ODbL).</div>" +
+    '<h4 class="subhead">Umwelt &amp; Schutz</h4>' +
+    '<div class="hinweise">' + umweltZeilenHtml(m1) + radon +
+      hinweisZeile("offen", "Nicht abgefragt", HINWEIS_NICHT_ABGEFRAGT.join(" · "),
+        "nicht Teil dieser Analyse — kantonale Karten prüfen") +
+    "</div>" +
+    '<h4 class="subhead">Gelände</h4>' +
     '<div class="tiles">' +
       tile("Höhe", leer(t.hoehe_m) ? null : fmt(t.hoehe_m, 1), "m ü. M.") +
       tile("Hangneigung", leer(t.slope_deg) ? null : fmt(t.slope_deg, 1), "°") +
       tile("Ausrichtung", t.aspect) +
-      tile("Radon", leer(r.wahrscheinlichkeit_prozent) ? null
-        : fmt(r.wahrscheinlichkeit_prozent, 1), "%") +
     "</div>" +
-    // Radon ist ein Modellwert (Wahrscheinlichkeit fuer das Gebiet), keine
-    // Messung am Gebaeude. Und was hier NICHT steht, ist nicht geprueft --
-    // es heisst nicht "nicht betroffen".
-    '<div class="note">Radon: ' + wtyp("modell") + " Wahrscheinlichkeit für das Gebiet laut " +
-    "BAG-Radonkarte, keine Messung am Gebäude. Nicht aufgeführte Umweltthemen wurden nicht " +
-    "abgefragt — das heisst nicht, dass das Grundstück davon nicht betroffen ist.</div>" +
-    kvRows([
-      ["ÖV-Haltestelle", dist(u.oev_naechste_haltestelle)],
-      ["Schule", dist(u.schule_naechste)],
-      ["Spital", dist(u.spital_naechstes)],
-      ["Einkauf", dist(u.supermarkt_naechster)]
-    ]) +
-    fehlerHinweis("Umgebungsabfrage teilweise fehlgeschlagen", u.fehler) +
-    (umweltZeilen.length ? '<h4 class="subhead">Umweltthemen (ÖREB)</h4>' + kvRows(umweltZeilen) : "") +
     '<h4 class="subhead">Rohwerte der Karten</h4>' +
     '<div class="kennungen">' + rohwerte + "</div>" +
   "</section>";
@@ -4560,7 +4806,7 @@ function zonenHierarchie(m1, zz) {
     // Sagt der Status mehr als "betroffen", steht er dabei -- sonst nicht.
     var zusatz = /^betroffen$/i.test(status.trim()) ? "" : " (" + klartext(status) + ")";
     rTeile.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen" + zusatz +
-                 " — Einzelheiten im Reiter Grundstück & Standort"]);
+                 " — Einzelheiten im Reiter Standort & Umwelt"]);
   });
   var d = rTeile.length
     ? kvRows(rTeile)
@@ -9222,20 +9468,21 @@ function secEntwurf(erg) {
           ? " — die Engine führt " + entwurfRaum.anordnungen + " zulässige Anordnungen, " +
             "eine andere ergäbe andere Abstände." : ".")
       : "";
-    var gemessen = "engste Stelle " + s.ist.toFixed(2) + " m an Kante " + s.nr +
-                   ", gefordert " + s.soll.toFixed(2) + " m";
+    // Drei Angaben, die nie in eine Zahl zusammenfallen: GEFORDERT (Vorgabe
+    // BZO je Kante), GEMESSEN (engste Stelle am gezeichneten Koerper) und
+    // das ERGEBNIS. "6.2 / 6.0 m" hiess hier gemessen/gefordert -- in der
+    // Uebersicht bedeutet dieselbe Schreibweise "klein / gross" der BZO.
+    var masse = "Gefordert " + s.soll.toFixed(2) + " m (Vorgabe BZO), gemessen " +
+                s.ist.toFixed(2) + " m an der engsten Stelle (Kante " + s.nr + ").";
     if (!verletzte.length) {
-      // "6.2 / 6.0 m" hiess hier "gemessen / gefordert" -- in der Uebersicht
-      // bedeutet dieselbe Schreibweise "klein / gross" der BZO. Deshalb
-      // ausgeschrieben, damit Ist und Soll nie verwechselt werden.
       return { art: "ok", kurz: s.ist.toFixed(1) + " m, gefordert " + s.soll.toFixed(1) + " m",
-               text: gemessen + " — eingehalten über alle " + mit.length + " Kanten." + woher,
+               text: "Ergebnis: eingehalten an allen " + mit.length + " Kanten. " + masse + woher,
                kritisch: kritisch, verletzte: [] };
     }
-    return { art: "verletzt", kurz: s.ist.toFixed(1) + " statt " + s.soll.toFixed(1) + " m",
-             text: gemessen + " — unterschritten um " + Math.abs(s.luft).toFixed(2) + " m an " +
+    return { art: "verletzt", kurz: s.ist.toFixed(1) + " m statt " + s.soll.toFixed(1) + " m",
+             text: "Ergebnis: unterschritten um " + Math.abs(s.luft).toFixed(2) + " m an " +
                    (verletzte.length === 1 ? "einer Kante" : verletzte.length + " Kanten") +
-                   "." + woher,
+                   ". " + masse + woher,
              kritisch: kritisch, verletzte: verletzte };
   }
 
@@ -9341,10 +9588,11 @@ function secEntwurf(erg) {
     var zusatz = " Gemessen wird hier Geschosse × Geschosshöhe ab Terrain — nicht " +
                  "nach kantonaler Messweise.";
     if (h <= max + 1e-9) {
-      return { art: "ok", kurz: h.toFixed(2) + " / " + max.toFixed(1) + " m",
+      // Ausgeschrieben statt "12.30 / 13.0 m" -- siehe Grenzabstand.
+      return { art: "ok", kurz: h.toFixed(2) + " m, zulässig " + max.toFixed(1) + " m",
                text: "Die Zone lässt " + max.toFixed(1) + " m zu." + zusatz };
     }
-    return { art: "verletzt", kurz: h.toFixed(2) + " statt " + max.toFixed(1) + " m",
+    return { art: "verletzt", kurz: h.toFixed(2) + " m statt " + max.toFixed(1) + " m",
              text: "Die Zone lässt " + max.toFixed(1) + " m zu, überschritten um " +
                    (h - max).toFixed(2) + " m." + zusatz };
   }
@@ -9524,7 +9772,7 @@ function secEntwurf(erg) {
           anker: new THREE.Vector3((v.von[0] + v.nach[0]) / 2, y0 + 0.9,
                                    (v.von[1] + v.nach[1]) / 2),
           text: schlecht
-            ? v.ist.toFixed(2) + " m / erforderlich " + v.soll.toFixed(2) + " m"
+            ? "gemessen " + v.ist.toFixed(2) + " m · gefordert " + v.soll.toFixed(2) + " m"
             : v.ist.toFixed(2) + " m",
           farbe: fb, klein: !schlecht
         });

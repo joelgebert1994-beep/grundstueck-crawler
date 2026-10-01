@@ -44,6 +44,7 @@ SUITEN: list[tuple[str, bool]] = [
     ("tests.test_projektstudie_flaechen", False),
     ("tests.test_variante_entwurf", False),
     ("tests.test_adresswahl", False),
+    ("tests.test_standort_energie", False),
     ("tests.test_oberflaeche", False),
     ("tests.test_klassifikation", True),
 ]

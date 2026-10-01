@@ -48,25 +48,37 @@ def lies() -> str:
 
 
 def test_reiter(s: str) -> None:
-    """Neun Reiter, in dieser Reihenfolge -- die Navigation des Dossiers.
+    """Zehn Reiter, in dieser Reihenfolge -- die Navigation des Dossiers.
+
+    Seit 01.10.2026 in den Bereichen, nach denen jemand ein Grundstueck
+    befragt, nicht nach der Datenquelle: Übersicht, Grundstück & Bestand,
+    Baurecht & Planung, Standort & Umwelt, Markt, Entwicklung (Potenzial,
+    3D-Entwurf, Wirtschaftlichkeit -- eine GRUPPE, keine zusammengelegte
+    Seite), Karte, Quellen & Herleitung.
 
     "3D-Entwurf" steht nach "Potenzial": erst verstehen, was zulaessig
     ist, dann ausprobieren, was daraus entstehen koennte.
-
-    Seit 30.09.2026 steht "Grundstück & Standort" direkt nach der
-    Übersicht: Bestand, GWR und Standort beantworten "was ist hier?" und
-    lagen vorher hinter den Quellen. "Quellen" traegt nur noch die Herkunft.
     """
     block = s[s.index("var REITER = ["):]
     block = block[: block.index("];")]
     namen = re.findall(r'\["([a-z]+)", "', block)
-    erwartet = ["uebersicht", "grundstueck", "baurecht", "karte", "potenzial", "entwurf",
-                "markt", "wirtschaft", "quellen"]
-    pruefe('["quellen", "Quellen", ["sec-quellen"]]' in block,
+    erwartet = ["uebersicht", "grundstueck", "baurecht", "standort", "markt", "potenzial",
+                "entwurf", "wirtschaft", "karte", "quellen"]
+    pruefe('["quellen", "Quellen & Herleitung", ["sec-quellen"]]' in block,
            "der Quellen-Reiter traegt nur noch die Quellen")
-    pruefe('["grundstueck", "Grundstück & Standort", ["sec-grundstueck", "sec-standort"]]' in block,
-           "Grundstück & Bestand und Standort liegen im eigenen Reiter nach der Übersicht")
+    pruefe('["grundstueck", "Grundstück & Bestand", ["sec-grundstueck"]]' in block,
+           "Grundstück & Bestand ist ein eigener Reiter nach der Übersicht")
+    pruefe('["standort", "Standort & Umwelt", ["sec-standort"]]' in block,
+           "Standort & Umwelt ist ein eigener Reiter")
     pruefe(namen == erwartet, f"Reiterfolge {erwartet} (gefunden: {namen})")
+    # Die drei Entwicklungsreiter bleiben einzeln -- nur gruppiert.
+    for name in ("potenzial", "entwurf", "wirtschaft"):
+        zeile = block[block.index('["' + name + '"'):]
+        zeile = zeile[: zeile.index("\n")]
+        pruefe(zeile.rstrip(",").endswith(', "Entwicklung"]'),
+               f"{name} ist ein eigener Reiter in der Gruppe Entwicklung")
+    pruefe("function reiterLeiste()" in s and "reiterLeiste()" in s[s.index("function renderDossier("):],
+           "die Reiterleiste zeichnet die Gruppe")
 
     # Jede in REITER genannte Sektion muss auch gebaut werden, sonst
     # zeigt der Reiter auf nichts.
@@ -232,10 +244,10 @@ def test_markt_und_wirtschaft_getrennt(s: str) -> None:
     block = s[s.index("var REITER = ["):]
     block = block[: block.index("];")]
     potenzial = block[block.index('["potenzial"'):]
-    potenzial = potenzial[: potenzial.index("]]") + 2]
+    potenzial = potenzial[: potenzial.index("\n")]
     pruefe("sec-wirtschaft" not in potenzial,
            "sec-wirtschaft haengt nicht mehr im Potenzialreiter")
-    pruefe('["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"]]' in block,
+    pruefe('["wirtschaft", "Wirtschaftlichkeit", ["sec-wirtschaft"]' in block,
            "Wirtschaftlichkeit ist ein eigener Reiter")
     pruefe(block.index('["markt"') < block.index('["wirtschaft"'),
            "der Reiter Wirtschaftlichkeit steht NACH dem Reiter Markt")
@@ -292,7 +304,8 @@ def test_uebersicht(s: str) -> None:
     erwartet = ["Grundstück", "Ausnützungsziffer", "Bestand", "Potenzial Neubau"]
     pruefe(namen == erwartet,
            f"vier Kernzahlen in der Reihenfolge {erwartet} (gefunden: {namen})")
-    pruefe(block.count(", true)") >= 1 and "haupt" in s,
+    pruefe(re.search(r'kz\("Potenzial Neubau",[^\n]*, true, potErsatz\)', block) is not None
+           and "haupt" in s,
            "die Potenzialkachel ist als Hauptkachel ausgezeichnet")
 
     # 2. Der Potenzialwert kommt aus der GEMEINSAMEN Auskunft, nicht aus
@@ -332,8 +345,12 @@ def test_uebersicht(s: str) -> None:
            "die Herkunftsangaben (Radon-Rohwert, Topografie-Quelle) bleiben "
            "in Daten & Quellen")
 
-    # 6. Einschraenkungen als Chips, nicht als Tabelle.
-    pruefe('class="chips"' in block, "die Einschraenkungen stehen als Chips")
+    # 6. Was zu beachten ist: eine Zeile je Befund mit Status und Quelle
+    #    (seit 01.10.2026; vorher Chips ohne Quelle, in denen ein
+    #    gescheiterter Abruf wie "nicht betroffen" aussah).
+    pruefe("hinweisBlock(beachtenHinweise(m1, zz))" in block,
+           "die Uebersicht zeigt die Hinweise mit Status und Quelle")
+    pruefe('class="chips"' not in block, "keine Chips ohne Quelle mehr")
 
 
 def test_markt_drei_ebenen(s: str) -> None:
@@ -543,7 +560,7 @@ def test_daten_und_quellen(s: str) -> None:
     # den Angaben, die jemand beim Lesen braucht.
     g = s[s.index("function secGrundstueck("):]
     g = g[: g.index("\nfunction ", 10)]
-    pruefe('class="kennungen"' in g and "Technische Kennungen" in g,
+    pruefe('class="kennungen"' in g and "Amtliche Kennungen" in g,
            "EGRID, EGID, BFS und LV95 stehen in einem eigenen Kennungsblock")
     for k in ("EGRID", "EGID", "BFS-Nummer", "Koordinaten LV95"):
         pruefe(f'kennung("{k}"' in g, f"{k} steht im Kennungsblock")
@@ -1406,7 +1423,7 @@ def test_baurechtsgrenzen_raeumlich(s: str) -> None:
            "ein Koerper ausserhalb der Parzelle wird VOR der Kantenmessung erkannt")
     pruefe('kurz: "über die Parzellengrenze"' in gab,
            "und zeigt dafuer keinen erfundenen Abstandswert, sondern einen eigenen Befund")
-    pruefe('" m / erforderlich "' in s,
+    pruefe('"gemessen " + v.ist.toFixed(2) + " m · gefordert "' in s,
            "bei einer Verletzung steht Ist UND Soll an der Geometrie")
     pruefe("zeigen.indexOf(ga.kritisch) < 0" in s,
            "gezeigt werden die verletzten Kanten und immer die engste Stelle")

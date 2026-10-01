@@ -107,6 +107,9 @@ entwurfRaum = raum();
   pruefe(/^\d+\.\d m, gefordert 4\.0 m$/.test(ga.kurz),
     "A: kurz nennt Ist- und Sollmass ausgeschrieben (\"" + ga.kurz + "\")");
   pruefe(ga.verletzte.length === 0, "A: keine verletzten Kanten");
+  // Seit 01.10.2026: Ergebnis, gefordert und gemessen getrennt benannt.
+  pruefe(/^Ergebnis: eingehalten an allen 4 Kanten\. Gefordert 4\.00 m \(Vorgabe BZO\), gemessen \d+\.\d\d m an der engsten Stelle/.test(ga.text),
+    "A: Text trennt Ergebnis, gefordert (Vorgabe BZO) und gemessen (\"" + ga.text + "\")");
 }
 
 // --- D: innerhalb, aber Grenzabstand unterschritten (bestehendes Verhalten,
@@ -119,6 +122,8 @@ entwurfRaum = raum();
   pruefe(/statt 4\.0 m/.test(ga.kurz),
     "D: kurz nennt weiterhin das tatsaechliche Mass (\"" + ga.kurz + "\")");
   pruefe(ga.verletzte.length === 1, "D: genau eine verletzte Kante gemeldet");
+  pruefe(/^Ergebnis: unterschritten um 3\.00 m an einer Kante\. Gefordert 4\.00 m \(Vorgabe BZO\), gemessen 1\.00 m/.test(ga.text),
+    "D: Text trennt Ergebnis, gefordert und gemessen (\"" + ga.text + "\")");
   pruefe(ga.kritisch !== null, "D: kritische Kante fuer die Massdarstellung in der Szene gesetzt");
 }
 

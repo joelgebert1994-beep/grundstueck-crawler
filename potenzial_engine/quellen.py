@@ -39,7 +39,10 @@ from .modul1_geodata import (
     LAYER_CADASTRE_GEOM,
     LAYER_GWR,
     LAYER_MUNICIPALITY,
+    LAYER_OEV_GUETEKLASSEN,
     LAYER_PARCEL,
+    LAYER_PRODUKTIONSANLAGEN,
+    LAYER_SOLAR_DACH,
     OEREB_CANTON_SERVICES,
     OVERPASS_URL,
     TRANSPORT_OPENDATA_URL,
@@ -50,6 +53,7 @@ from .modul1_geodata import (
 # Konstante, kein eigener Endpunkt-Wert.
 MAPSERVER_IDENTIFY_URL = f"{GEOADMIN_BASE}/MapServer/identify"
 SEARCHSERVER_URL = f"{GEOADMIN_BASE}/SearchServer"
+MAPSERVER_FIND_URL = f"{GEOADMIN_BASE}/MapServer/find"
 
 # Radonkarte-Layer-ID: in modul1_geodata.get_radon_data() nur als Literal
 # verwendet (keine eigene benannte Konstante dort) -- hier bewusst nicht
@@ -86,6 +90,9 @@ QUELLE_BEZEICHNUNG_GEOCODING = "Adressgeocoding (geo.admin.ch SearchServer)"
 QUELLE_BEZEICHNUNG_HOEHENMODELL = "swissALTI3D Hoehenmodell (geo.admin.ch height-REST-Service)"
 QUELLE_BEZEICHNUNG_OEV = "Oeffentlicher Verkehr (transport.opendata.ch)"
 QUELLE_BEZEICHNUNG_UMGEBUNG = "Umgebungsinfrastruktur (OpenStreetMap Overpass API)"
+QUELLE_BEZEICHNUNG_OEV_GUETEKLASSE = f"ARE OeV-Gueteklassen (Layer {LAYER_OEV_GUETEKLASSEN}, via geo.admin.ch MapServer identify)"
+QUELLE_BEZEICHNUNG_SOLAR_DACH = f"BFE Solarenergie: Eignung Daecher, Modell (Layer {LAYER_SOLAR_DACH}, via geo.admin.ch MapServer identify/find)"
+QUELLE_BEZEICHNUNG_PRODUKTIONSANLAGEN = f"BFE Elektrizitaetsproduktionsanlagen (Layer {LAYER_PRODUKTIONSANLAGEN}, via geo.admin.ch MapServer find nach EGID)"
 
 _BEKANNTE_AMTLICHE_ENDPUNKTE: Dict[str, str] = {
     QUELLE_BEZEICHNUNG_KATASTER: MAPSERVER_IDENTIFY_URL,
@@ -97,6 +104,9 @@ _BEKANNTE_AMTLICHE_ENDPUNKTE: Dict[str, str] = {
     QUELLE_BEZEICHNUNG_HOEHENMODELL: HEIGHT_URL,
     QUELLE_BEZEICHNUNG_OEV: TRANSPORT_OPENDATA_URL,
     QUELLE_BEZEICHNUNG_UMGEBUNG: OVERPASS_URL,
+    QUELLE_BEZEICHNUNG_OEV_GUETEKLASSE: MAPSERVER_IDENTIFY_URL,
+    QUELLE_BEZEICHNUNG_SOLAR_DACH: MAPSERVER_FIND_URL,
+    QUELLE_BEZEICHNUNG_PRODUKTIONSANLAGEN: MAPSERVER_FIND_URL,
 }
 
 
@@ -347,12 +357,37 @@ def quellen_aus_modul1_ergebnis(result: Dict[str, Any]) -> List[Quellenobjekt]:
             "umgebung.oev_naechste_haltestelle", umgebung["oev_naechste_haltestelle"],
             quelle_bezeichnung=QUELLE_BEZEICHNUNG_OEV, quelle_url=TRANSPORT_OPENDATA_URL, abgerufen_am=abgerufen_am,
         ))
-    for feld in ("schule_naechste", "spital_naechstes", "supermarkt_naechster"):
+    for feld in ("schule_naechste", "kindergarten_naechster", "spital_naechstes",
+                 "supermarkt_naechster", "bahnhof_naechster"):
         if umgebung.get(feld) and feld not in fehler:
             quellen.append(aus_amtlichem_wert(
                 f"umgebung.{feld}", umgebung[feld],
                 quelle_bezeichnung=QUELLE_BEZEICHNUNG_UMGEBUNG, quelle_url=OVERPASS_URL, abgerufen_am=abgerufen_am,
             ))
+
+    guete = umgebung.get("oev_gueteklasse")
+    if guete is not None and "oev_gueteklasse" not in fehler:
+        quellen.append(aus_amtlichem_wert(
+            "umgebung.oev_gueteklasse", guete.get("klasse") or "keine Klasse (ausserhalb A-D)",
+            quelle_bezeichnung=QUELLE_BEZEICHNUNG_OEV_GUETEKLASSE, quelle_url=MAPSERVER_IDENTIFY_URL,
+            abgerufen_am=abgerufen_am,
+        ))
+
+    energie = result.get("energie") or {}
+    energie_fehler = energie.get("fehler") or {}
+    solar = energie.get("solar_dach") or {}
+    if solar.get("gefunden") and "solar_dach" not in energie_fehler:
+        quellen.append(aus_amtlichem_wert(
+            "energie.solar_dach", f"{len(solar.get('flaechen') or [])} Dachflaeche(n), Modellwerte",
+            quelle_bezeichnung=QUELLE_BEZEICHNUNG_SOLAR_DACH, quelle_url=MAPSERVER_FIND_URL,
+            abgerufen_am=abgerufen_am,
+        ))
+    if energie.get("abgefragt") and energie.get("anlagen") is not None and "anlagen" not in energie_fehler:
+        quellen.append(aus_amtlichem_wert(
+            "energie.anlagen", f"{len(energie['anlagen'])} Anlage(n) zur EGID erfasst",
+            quelle_bezeichnung=QUELLE_BEZEICHNUNG_PRODUKTIONSANLAGEN, quelle_url=MAPSERVER_FIND_URL,
+            abgerufen_am=abgerufen_am,
+        ))
 
     oereb = result.get("oereb") or {}
     if oereb.get("found"):
