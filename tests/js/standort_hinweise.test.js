@@ -153,6 +153,16 @@ console.log("\n=== Umweltthemen zeigen den echten Status ===");
   pruefe(/Stand 01\.10\.2026/.test(t), "Stand des Katasters steht dabei");
 }
 
+console.log("\n=== Baurecht & Planung, Ebene D: die Lärmstufe gilt, sie 'betrifft' nicht ===");
+{
+  const zh = extrahiere("zonenHierarchie");
+  const es = zh.slice(zh.indexOf('if (k === "laermempfindlichkeitsstufen")'));
+  pruefe(es.length > 0 && es.indexOf('" gilt"') > 0 && es.indexOf("return;") < es.indexOf("laut ÖREB-Kataster betroffen"),
+    "die Lärmempfindlichkeitsstufe steht als 'Stufe … gilt', nicht als 'betroffen'");
+  pruefe(/Empfindlichkeitsstufe\\s\+\(I\{1,3\}V\?\|IV\)\\b/.test(es),
+    "die Stufe wird mit Wortgrenze gelesen (kein Steuerzeichen im Muster)");
+}
+
 console.log("\n=== Nähe ===");
 {
   const u = echt.umgebung;

@@ -4174,8 +4174,8 @@ function solarBlock(en) {
     }).join("");
   }
   return '<h4 class="subhead">Solar</h4><div class="hinweise">' + dach + anlagen + "</div>" +
-    '<div class="note">Die Eignung ' + wtyp("modell") + " ist ein Modellwert des Bundes für die " +
-    "Dachflächen — sie sagt nichts darüber, ob eine Anlage besteht. Ob eine besteht, zeigt nur " +
+    '<div class="note">Die Dacheignung ist ein Modellwert des Bundes ' + wtyp("modell") + " — sie sagt " +
+    "nichts darüber, ob eine Anlage besteht. Ob eine besteht, zeigt nur " +
     "das Register.</div>";
 }
 
@@ -4805,6 +4805,15 @@ function zonenHierarchie(m1, zz) {
     var status = String((wert && typeof wert === "object") ? wert.status : wert || "");
     // Sagt der Status mehr als "betroffen", steht er dabei -- sonst nicht.
     var zusatz = /^betroffen$/i.test(status.trim()) ? "" : " (" + klartext(status) + ")";
+    // Eine Laermempfindlichkeitsstufe hat jede Parzelle in der Bauzone --
+    // sie GILT, sie ist keine Betroffenheit wie ein belasteter Standort.
+    if (k === "laermempfindlichkeitsstufen") {
+      var es = /Empfindlichkeitsstufe\s+(I{1,3}V?|IV)\b/.exec(
+        ((alsListe((wert || {}).details)[0]) || {}).bezeichnung || "");
+      rTeile.push([oerebThemaName(k), (es ? "Stufe " + es[1] + " gilt" : "gilt") +
+                   " laut ÖREB-Kataster — Einzelheiten im Reiter Standort & Umwelt"]);
+      return;
+    }
     rTeile.push([oerebThemaName(k), "laut ÖREB-Kataster betroffen" + zusatz +
                  " — Einzelheiten im Reiter Standort & Umwelt"]);
   });
@@ -4903,7 +4912,7 @@ function secBaurecht(erg, m1, zz) {
   var pruefhinweise = alsListe(m2.unklarheiten_und_pruefhinweise);
 
   return '<section class="sec" id="sec-baurecht">' +
-    '<div class="sechead"><h3>Baurecht</h3><span class="right">' + mapBtn("zonen", "Zonen auf Karte") + "</span></div>" +
+    '<div class="sechead"><h3>Baurecht &amp; Planung</h3><span class="right">' + mapBtn("zonen", "Zonen auf Karte") + "</span></div>" +
     '<div class="note">Vier Ebenen, in der Reihenfolge, in der sie einander vorgehen. ' +
     'Massgebend ist immer die oberste, die tatsächlich greift.</div>' +
     zonenHierarchie(m1, zz) +
