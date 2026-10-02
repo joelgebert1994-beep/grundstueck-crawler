@@ -3717,8 +3717,7 @@ function secUebersicht(erg, m1, zz) {
   } else if (kurz.art === "zusatz") {
     moeglichText = lesbar(kurz.rechnung || "Gegenüber dem heutigen Bestand.");
   } else if (kurz.art === "eindeutig") {
-    moeglichText = "Alle " + kurz.anzahl + " baurechtlich zulässigen Abstandsvarianten ergeben " +
-      "dasselbe Ergebnis. Begrenzend ist " + bindendText(kurz.bindend) + ".";
+    moeglichText = eindeutigSatz(kurz);
   } else if (kurz.art === "spanne") {
     moeglichText = "Welche Seite den grossen Grenzabstand trägt, entscheidet der Gebäudeentwurf. " +
       "Gerechnet wurden alle " + kurz.anzahl + " zulässigen Anordnungen.";
@@ -5528,6 +5527,20 @@ function bindendText(schluessel) {
   return BINDEND_TEXT[schluessel] || klartext(schluessel);
 }
 
+/* Warum der Wert eindeutig ist -- EIN Satz fuer Uebersicht und Potenzial.
+   Mit zulaessigen Anordnungen: "Alle N ... ergeben dasselbe". Ohne (die
+   Kanten sind nicht zugeordnet, gerechnet wurden die beiden Raender):
+   die Begruendung der Engine. Vorher stand dort "Alle 0 ...". */
+function eindeutigSatz(kurz) {
+  var begrenzend = " Begrenzend ist " + bindendText(kurz.bindend) + ".";
+  if (kurz.anzahl) {
+    return "Alle " + kurz.anzahl + " baurechtlich zulässigen Abstandsvarianten ergeben " +
+      "dasselbe Ergebnis." + begrenzend;
+  }
+  return lesbar(kurz.erklaerung || "Alle gerechneten Abstandsvarianten ergeben dasselbe Ergebnis.") +
+    begrenzend;
+}
+
 /* Die EINE Auskunft darueber, was das Potenzial hergibt.
 
    Uebersicht und Potenzialreiter lesen beide hier -- sonst driften sie
@@ -5550,7 +5563,7 @@ function potenzialKurz(erg) {
   }
   if (ein && ein.geschossflaeche_eindeutig) {
     return { art: "eindeutig", wert: ein.geschossflaeche_m2,
-             bindend: ein.bindend, anzahl: anzahl, zp: zp };
+             bindend: ein.bindend, anzahl: anzahl, zp: zp, erklaerung: ein.erklaerung };
   }
   var spanne = bb.geschossflaeche_m2 || [];
   if (spanne.length === 2 && !leer(spanne[0]) && spanne[0] !== spanne[1]) {
@@ -5619,8 +5632,7 @@ function potenzialUrteil(erg) {
       ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
       '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 ' +
       '<b>eindeutig bestimmbar</b></div>' +
-      '<p class="atext">Alle ' + anzahl + ' baurechtlich zul\u00e4ssigen Abstandsvarianten ' +
-      'ergeben dasselbe Ergebnis. Begrenzend ist ' + esc(bindendText(ein.bindend)) + '.</p>' +
+      '<p class="atext">' + esc(eindeutigSatz(kurz)) + "</p>" +
       grundBlock + "</div>";
   }
 
