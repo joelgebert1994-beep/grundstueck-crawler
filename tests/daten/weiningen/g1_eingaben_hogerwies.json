@@ -1,0 +1,530 @@
+{
+ "_herkunft": "Live-Ergebnis Hogerwiesstrasse 1, 8104 Weiningen ZH, 01.10.2026 (Job b9a2e4fa), unveraendert ausgeschnitten",
+ "modul1": {
+  "kataster": {
+   "found": true,
+   "egrid": "CH894177869943",
+   "parzellennummer": "1784",
+   "flaeche_m2": 1168.1,
+   "flaeche_quelle": "geometrie_berechnet",
+   "parzellengeometrie": [
+    [
+     2675017.3,
+     1252772.0
+    ],
+    [
+     2675021.9,
+     1252780.2
+    ],
+    [
+     2675027.0,
+     1252789.3
+    ],
+    [
+     2675051.0,
+     1252777.3
+    ],
+    [
+     2675071.1,
+     1252773.9
+    ],
+    [
+     2675067.7,
+     1252746.8
+    ],
+    [
+     2675063.6,
+     1252744.1
+    ],
+    [
+     2675061.4,
+     1252744.4
+    ],
+    [
+     2675050.3,
+     1252753.5
+    ],
+    [
+     2675043.2,
+     1252759.3
+    ],
+    [
+     2675032.9,
+     1252764.4
+    ],
+    [
+     2675024.1,
+     1252768.6
+    ],
+    [
+     2675017.3,
+     1252772.0
+    ]
+   ],
+   "identdn": null,
+   "parzellenauswahl": "punkt_in_parzelle"
+  },
+  "restriktionsgeometrie": {
+   "gefunden": true,
+   "gewaesserraum_flaechen": [],
+   "waldgrenzen_gefunden": true,
+   "waldgrenze_min_abstand_m": 66.7,
+   "waldabstand_m_verwendet": null,
+   "baulinien_gefunden": [],
+   "restriktionsflaechen_fuer_g1": [],
+   "hinweise": [
+    "Waldgrenze gefunden (naechster Punkt 66.7 m von der Parzelle entfernt), aber kein waldabstand_m uebergeben -- Restriktion NICHT automatisch angewendet. Der gesetzliche Waldabstand ist kantonal/kommunal unterschiedlich geregelt und liegt aktuell nicht als strukturierte, maschinenlesbare Quelle vor (nur die Grenzliniengeometrie selbst)."
+   ],
+   "fehler": {},
+   "suchumkreis_m": {
+    "gewaesserraum": 50.0,
+    "wald": 50.0,
+    "baulinien": 60.0
+   }
+  },
+  "bestand": {
+   "gefunden": true,
+   "gebaeude": [
+    {
+     "egid": "123952",
+     "adresse": "Hogerwiesstrasse 1",
+     "kategorie_gkat": 1020,
+     "kategorie_text": "Gebaeude mit ausschliesslicher Wohnnutzung",
+     "wohnnutzung": true,
+     "baujahr": 1963,
+     "geschosse": 3,
+     "grundflaeche_gwr_m2": 150.0,
+     "energiebezugsflaeche_m2": null,
+     "gebaeudevolumen_m3": null,
+     "grundriss": [
+      [
+       2675050.3,
+       1252770.3
+      ],
+      [
+       2675071.7,
+       1252768.7
+      ],
+      [
+       2675070.7,
+       1252756.4
+      ],
+      [
+       2675049.4,
+       1252758.0
+      ],
+      [
+       2675050.3,
+       1252770.3
+      ]
+     ],
+     "grundriss_flaeche_m2": 264.1,
+     "ist_hauptgebaeude": true,
+     "hinweise": []
+    }
+   ],
+   "hauptgebaeude": {
+    "egid": "123952",
+    "adresse": "Hogerwiesstrasse 1",
+    "kategorie_gkat": 1020,
+    "kategorie_text": "Gebaeude mit ausschliesslicher Wohnnutzung",
+    "wohnnutzung": true,
+    "baujahr": 1963,
+    "geschosse": 3,
+    "grundflaeche_gwr_m2": 150.0,
+    "energiebezugsflaeche_m2": null,
+    "gebaeudevolumen_m3": null,
+    "grundriss": [
+     [
+      2675050.3,
+      1252770.3
+     ],
+     [
+      2675071.7,
+      1252768.7
+     ],
+     [
+      2675070.7,
+      1252756.4
+     ],
+     [
+      2675049.4,
+      1252758.0
+     ],
+     [
+      2675050.3,
+      1252770.3
+     ]
+    ],
+    "grundriss_flaeche_m2": 264.1,
+    "ist_hauptgebaeude": true,
+    "hinweise": []
+   },
+   "anzahl_gebaeude": 1,
+   "bebaute_flaeche_grundriss_m2": 264.1,
+   "bebaute_flaeche_gwr_m2": 150.0,
+   "ueberbauungsgrad_ist": 0.226,
+   "hinweise": [
+    "Grundrissflaeche (264.1 m2) und GWR-Gebaeudeflaeche (150.0 m2) weichen um mehr als 15 % voneinander ab. Beide Werte sind echt -- VEC25 ist ein generalisierter Kartendatensatz, das GWR ein Register. Sie werden nicht verrechnet."
+   ],
+   "quellen_layer": [
+    "ch.bfs.gebaeude_wohnungs_register",
+    "ch.swisstopo.vec25-gebaeude"
+   ],
+   "abgerufen_am": "2026-10-01"
+  },
+  "gwr": {
+   "found": true,
+   "egid": "123952",
+   "baujahr": 1963,
+   "anzahl_geschosse": 3,
+   "gebaeudekategorie_gkat": 1020,
+   "gebaeudeklasse_gklas": 1110,
+   "grundflaeche_m2": 150,
+   "energiebezugsflaeche_m2": null,
+   "gebaeudevolumen_m3": null,
+   "heizung": {
+    "waermeerzeuger_code": 7430,
+    "energiequelle_code": 7530,
+    "informationsquelle_code": 860,
+    "aktualisiert_am": "29.11.2001"
+   },
+   "heizung_2": null,
+   "warmwasser": {
+    "waermeerzeuger_code": 7650,
+    "energiequelle_code": 7560,
+    "informationsquelle_code": 865,
+    "aktualisiert_am": "23.04.2026"
+   }
+  }
+ },
+ "kantenklassifikation": {
+  "kanten": [
+   {
+    "nr": 0,
+    "laenge_m": 9.4,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1385 (CH167741998644) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH167741998644",
+    "nachbar_nummer": "1385",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675017.86,
+     1252777.08
+    ]
+   },
+   {
+    "nr": 1,
+    "laenge_m": 10.43,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1093 (CH207799864158) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH207799864158",
+    "nachbar_nummer": "1093",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675022.71,
+     1252785.73
+    ]
+   },
+   {
+    "nr": 2,
+    "laenge_m": 26.83,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1783 (CH219986417784) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH219986417784",
+    "nachbar_nummer": "1783",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675039.89,
+     1252785.09
+    ]
+   },
+   {
+    "nr": 3,
+    "laenge_m": 20.39,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1783 (CH219986417784) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH219986417784",
+    "nachbar_nummer": "1783",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675061.38,
+     1252777.57
+    ]
+   },
+   {
+    "nr": 4,
+    "laenge_m": 27.31,
+    "relevant": true,
+    "art": "strasse",
+    "begruendung": "Parzelle 1772 (CH934177998681) liegt hinter der Kante und wird von der Strassenachse 'Hogerwiesstrasse' durchquert -- Strassenparzelle.",
+    "nachbar_egrid": "CH934177998681",
+    "nachbar_nummer": "1772",
+    "strassenname": "Hogerwiesstrasse",
+    "strassen_objektart": 10,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675071.38,
+     1252760.1
+    ]
+   },
+   {
+    "nr": 5,
+    "laenge_m": 4.91,
+    "relevant": true,
+    "art": "strasse",
+    "begruendung": "Parzelle 1497 (CH707799864182) liegt hinter der Kante und wird von der Strassenachse 'Rainstrasse' durchquert -- Strassenparzelle.",
+    "nachbar_egrid": "CH707799864182",
+    "nachbar_nummer": "1497",
+    "strassenname": "Rainstrasse",
+    "strassen_objektart": 16,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675066.75,
+     1252743.78
+    ]
+   },
+   {
+    "nr": 6,
+    "laenge_m": 2.22,
+    "relevant": false,
+    "art": "nicht_relevant",
+    "begruendung": "Kante kuerzer als 3 m -- fuer den Baubereich nicht praegend (abgeschraegte Ecke/Vermessungsstuetzpunkt). Nicht klassifiziert, aber der Vollstaendigkeit halber ausgewiesen.",
+    "nachbar_egrid": null,
+    "nachbar_nummer": null,
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": null
+   },
+   {
+    "nr": 7,
+    "laenge_m": 14.35,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1127 (CH779977864189) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH779977864189",
+    "nachbar_nummer": "1127",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675054.58,
+     1252747.4
+    ]
+   },
+   {
+    "nr": 8,
+    "laenge_m": 9.17,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1126 (CH758641779922) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH758641779922",
+    "nachbar_nummer": "1126",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675045.48,
+     1252754.85
+    ]
+   },
+   {
+    "nr": 9,
+    "laenge_m": 11.49,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1126 (CH758641779922) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH758641779922",
+    "nachbar_nummer": "1126",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675037.16,
+     1252760.06
+    ]
+   },
+   {
+    "nr": 10,
+    "laenge_m": 9.75,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1384 (CH879977864155) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH879977864155",
+    "nachbar_nummer": "1384",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675027.64,
+     1252764.7
+    ]
+   },
+   {
+    "nr": 11,
+    "laenge_m": 7.6,
+    "relevant": true,
+    "art": "nachbarparzelle",
+    "begruendung": "Parzelle 1385 (CH167741998644) liegt hinter der Kante; keine Strassenachse verlaeuft durch dieses Polygon.",
+    "nachbar_egrid": "CH167741998644",
+    "nachbar_nummer": "1385",
+    "strassenname": null,
+    "strassen_objektart": null,
+    "abstand_zur_achse_m": null,
+    "aussenpunkt_lv95": [
+     2675019.81,
+     1252768.51
+    ]
+   }
+  ],
+  "statistik": {
+   "kanten_gesamt": 12,
+   "kanten_relevant": 11,
+   "strasse": 2,
+   "nachbarparzelle": 9,
+   "unbestimmt": 0,
+   "strassenparzellen_im_umfeld": 22,
+   "katasterpolygone_im_umfeld": 93,
+   "strassenachsen_im_umfeld": 29
+  },
+  "vollstaendig": true,
+  "hinweise": [],
+  "quellen_layer": [
+   "ch.kantone.cadastralwebmap-farbe",
+   "ch.swisstopo.swisstlm3d-strassen"
+  ],
+  "abgerufen_am": "2026-10-01"
+ },
+ "zone": {
+  "zonenbezeichnung": "Zweigeschossige Wohnzone W2 30",
+  "ausnuetzungsziffer_az": {
+   "wert": 0.3,
+   "einheit": "Prozent",
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": "Art. 22",
+   "zitat": "Ausnützungsziffer max. 30 %",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "anrechenbare_geschossflaechenziffer_abgf": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": null,
+   "zitat": null,
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "In den Wohnzonen nicht geregelt."
+  },
+  "baumassenziffer_bmz": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": null,
+   "zitat": null,
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "In den Wohnzonen nicht geregelt."
+  },
+  "ueberbauungsziffer_uz": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": "Art. 23 Abs. 3",
+   "zitat": "Für Kleinbauten und Anbauten gemäss Art. 49 gilt eine maximale Überbauungsziffer von 5 %, mindestens aber 40 m².",
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "Keine generelle Überbauungsziffer für Hauptbauten definiert (nur 5% für Kleinbauten/Anbauten)."
+  },
+  "gesamthoehe_m": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": "Art. 22",
+   "zitat": null,
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "Höhenbegrenzung erfolgt über Fassadenhöhe (Grundmass traufseitig max. 7 m)."
+  },
+  "gebaeudehoehe_m": {
+   "wert": 7.0,
+   "einheit": "m",
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": "Art. 22",
+   "zitat": "Fassadenhöhe: Grundmass traufseitig max. 7 m",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "grenzabstand_klein_m": {
+   "wert": 4.0,
+   "einheit": "m",
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": "Art. 22",
+   "zitat": "Grundabstände - klein min. 4 m",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "grenzabstand_gross_m": {
+   "wert": 8.0,
+   "einheit": "m",
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": "Art. 22",
+   "zitat": "Grundabstände - gross min. 8 m",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "strassenabstand_m": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": null,
+   "zitat": null,
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "Kein eigenständiger Strassenabstand im BZO-Text enthalten. Art. 47 regelt nur unterirdische Bauten (3 m)."
+  },
+  "vollgeschosse_max": {
+   "wert": 2,
+   "einheit": "Geschosse",
+   "quelle_dokument": "Bau- und Zonenordnung",
+   "artikel_referenz": "Art. 22",
+   "zitat": "Vollgeschosse max. 2",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  }
+ },
+ "g1_live": {
+  "modus": "bandbreite_grenzabstand_kante_nicht_differenziert",
+  "kantenzuordnung_offen": [
+   "Kante 4: Strassenabstand nicht bestimmbar",
+   "Kante 5: Strassenabstand nicht bestimmbar"
+  ]
+ },
+ "potenzial_live_vorher": {
+  "status": "nicht_abschliessend_bestimmbar",
+  "grund": "Bestandessituation und Abstands-/Geometriefrage muessen getrennt vom theoretischen Neubauwert beurteilt werden.",
+  "offene_punkte": [
+   "Es gibt keine belastbare Ausnuetzungsziffer, also auch keinen theoretischen Zonenwert.",
+   "Die Neubaugeometrie unter den heutigen Abstaenden ist nicht belastbar bestimmbar -- ohne sie ist offen, was von einem theoretischen Wert baulich uebrig bliebe.",
+   "Der Bestand ist mit rund 450 m2 nur GENAEHERT bekannt (Grundflaeche x Geschosszahl). Eine Differenz aus einem theoretischen Zonenwert und einer Naeherung waere keine Potenzialzahl."
+  ]
+ }
+}

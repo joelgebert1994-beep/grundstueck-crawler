@@ -610,23 +610,8 @@ def berechne_g1_fuer_fall(
                     ),
                 }
 
-            az = _kennzahl_wert(zone.get("ausnuetzungsziffer_az"))
-            landflaeche = anordnungen[0]["ergebnis"].get("anrechenbare_landflaeche_m2")
-            if az is not None and landflaeche:
-                # Die Ausnuetzungsziffer haengt NICHT an der Abstandszuordnung --
-                # sie bleibt rechenbar und wird deshalb getrennt genannt.
-                #
-                # Bewusst NICHT "zulaessige Gesamtentwicklung": das waere eine
-                # Aussage darueber, was auf diesem Grundstueck insgesamt
-                # zulaessig ist, und die trifft dieser Wert nicht.
-                antwort["gf_nach_ausnuetzungsziffer_m2"] = round(az * landflaeche, 2)
-                antwort["gf_nach_ausnuetzungsziffer_rechnung"] = (
-                    f"Ausnuetzungsziffer {az:g} x {landflaeche:,.1f} m2 anrechenbare "
-                    f"Landflaeche")
-                antwort["gf_nach_ausnuetzungsziffer_bedeutung"] = (
-                    "Theoretischer Wert der aktuellen Zonengrundlage. Weder eine "
-                    "Aussage ueber den Bestand noch ueber das, was baulich "
-                    "realisierbar ist.")
+            antwort.update(_gf_nach_ausnuetzungsziffer(
+                zone, anordnungen[0]["ergebnis"].get("anrechenbare_landflaeche_m2")))
             return antwort
 
         ergebnis = berechne_potenzial(parzelle_ring, kanten_abstaende, **gemeinsame_kwargs)
@@ -667,7 +652,7 @@ def berechne_g1_fuer_fall(
     if len(ergebnisse) == 1:
         return {"modus": "einheitlicher_grenzabstand", **basis_info, "ergebnis": next(iter(ergebnisse.values()))}
 
-    return {
+    antwort = {
         "modus": "bandbreite_grenzabstand_kante_nicht_differenziert",
         **basis_info,
         "hinweis": (
@@ -679,4 +664,62 @@ def berechne_g1_fuer_fall(
             "liegt dazwischen, abhaengig von der tatsaechlichen Kantenzuordnung."
         ),
         "szenarien": ergebnisse,
+    }
+
+    # Weiningen, Hogerwiesstrasse 1 (02.10.2026): beide Raender ergaben
+    # 350.42 m2 -- in beiden begrenzt durch die Ausnuetzungsziffer 0.30 auf
+    # 1'168.1 m2. Dieser Zweig lieferte aber weder die AZ-Geschossflaeche
+    # noch die Eindeutigkeit (beides gab es nur im Anordnungs-Zweig oben).
+    # Pipeline und Oberflaeche schrieben deshalb "keine belastbare
+    # Ausnuetzungsziffer" und "nicht bestimmbar".
+    #
+    # Eindeutig ist der Wert, wenn BEIDE Raender auf dieselbe Geschossflaeche
+    # fuehren: jede reale Kantenzuordnung liegt mit jeder Kante zwischen
+    # "klein" und "gross", ihr Baubereich also zwischen den beiden -- und die
+    # Geschossflaeche faellt mit groesseren Abstaenden nie. Der Baubereich
+    # selbst bleibt offen; deshalb bleibt der Modus "bandbreite_" und es
+    # gibt kein "ergebnis".
+    antwort.update(_gf_nach_ausnuetzungsziffer(
+        zone, next(iter(ergebnisse.values())).get("anrechenbare_landflaeche_m2")))
+    gf_werte = [e.get("geschossflaeche_m2") for e in ergebnisse.values()]
+    bau_werte = [e.get("baubereich_m2") or 0.0 for e in ergebnisse.values()]
+    if all(w is not None for w in gf_werte) and len({round(w, 2) for w in gf_werte}) == 1:
+        bindend = {e.get("geschossflaeche_limitiert_durch") for e in ergebnisse.values()}
+        antwort["eindeutigkeit"] = {
+            "geschossflaeche_eindeutig": True,
+            "geschossflaeche_m2": round(gf_werte[0], 2),
+            "bindend": bindend.pop() if len(bindend) == 1 else "gemischt",
+            "vertreter_anordnung": None,
+            "baubereich_spanne_m2": [min(bau_werte), max(bau_werte)],
+            "grundlage": "raender_der_kantenzuordnung",
+            "erklaerung": (
+                "Welche Kante den kleinen oder grossen Grenzabstand traegt, ist nicht "
+                "zugeordnet. Beide Raender -- kleiner Abstand an allen Kanten und grosser "
+                f"an allen -- ergeben dieselbe Geschossflaeche ({round(gf_werte[0], 2):g} m2). "
+                "Jede tatsaechliche Zuordnung liegt dazwischen und fuehrt deshalb auf "
+                "denselben Wert. Der Baubereich selbst bleibt offen."
+            ),
+        }
+    return antwort
+
+
+def _gf_nach_ausnuetzungsziffer(zone: dict[str, Any], landflaeche: Optional[float]) -> dict[str, Any]:
+    """Geschossflaeche nach der Ausnuetzungsziffer -- fuer jeden Modus, der
+    keine einzelne Geometrie liefert. Die AZ haengt NICHT an der
+    Abstandszuordnung; sie bleibt rechenbar und wird getrennt genannt.
+
+    Bewusst NICHT "zulaessige Gesamtentwicklung": das waere eine Aussage
+    darueber, was auf diesem Grundstueck insgesamt zulaessig ist, und die
+    trifft dieser Wert nicht. Gerechnet wird mit dem Wert der Kennzahl, so wie
+    G1 ihn auch in der Kaskade verwendet -- keine eigene Umrechnung."""
+    az = _kennzahl_wert(zone.get("ausnuetzungsziffer_az"))
+    if az is None or not landflaeche:
+        return {}
+    return {
+        "gf_nach_ausnuetzungsziffer_m2": round(az * landflaeche, 2),
+        "gf_nach_ausnuetzungsziffer_rechnung": (
+            f"Ausnuetzungsziffer {az:g} x {landflaeche:,.1f} m2 anrechenbare Landflaeche"),
+        "gf_nach_ausnuetzungsziffer_bedeutung": (
+            "Theoretischer Wert der aktuellen Zonengrundlage. Weder eine Aussage ueber "
+            "den Bestand noch ueber das, was baulich realisierbar ist."),
     }
