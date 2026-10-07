@@ -1222,7 +1222,8 @@ class Handler(BaseHTTPRequestHandler):
             melde("potenzial", "laeuft")
             try:
                 ergebnis = _potenzialkette(teil.get("adresse") or job.get("adresse") or "",
-                                           modul1_result, modul2_result)
+                                           modul1_result, modul2_result,
+                                           manuelle_kantenabstaende=job.get("manuelle_kanten"))
             except Exception:  # noqa: BLE001 -- sonst bliebe der Job fuer immer "running"
                 traceback.print_exc()
                 melde("potenzial", "fehler")
@@ -1236,7 +1237,8 @@ class Handler(BaseHTTPRequestHandler):
                                      kontext={"modul1": modul1_result, "modul2": modul2_result},
                                      fehler=None)
             egrid = ((ergebnis.get("modul1_geodaten") or {}).get("kataster") or {}).get("egrid")
-            self._zwischenspeicher_ablegen(egrid, ergebnis)
+            if not job.get("manuelle_kanten"):
+                self._zwischenspeicher_ablegen(egrid, ergebnis)
         finally:
             _ANALYSE_PLAETZE.release()
 
@@ -1978,6 +1980,23 @@ class Handler(BaseHTTPRequestHandler):
                                 status=400)
                 return
 
+        # Zielbild 16: Abstand je Kante, wo die Engine keinen bestimmen kann.
+        # {Kantennummer: m}. Kein Standardwert -- fehlt die Eingabe, bleibt
+        # die Kante offen. Was ungueltig ist, wird abgelehnt, nicht korrigiert.
+        manuelle_kanten = None
+        roh_kanten = daten.get("kantenabstaende_manuell")
+        if roh_kanten:
+            try:
+                manuelle_kanten = {int(k): float(v) for k, v in dict(roh_kanten).items()}
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "fehler": "Die Kantenabstände sind keine Zahlen."},
+                                status=400)
+                return
+            if any(not (0 < v <= 100) or k < 0 for k, v in manuelle_kanten.items()):
+                self._send_json({"ok": False, "fehler": "Ein Kantenabstand muss grösser als 0 "
+                                 "und höchstens 100 m sein."}, status=400)
+                return
+
         _cleanup_alte_jobs()
         job_id = uuid.uuid4().hex
         with _JOBS_LOCK:
@@ -1991,12 +2010,14 @@ class Handler(BaseHTTPRequestHandler):
                 "kontext": None,
                 "adresse": adresse,
                 "reglement": {**reglementstatus(REGLEMENT_PENDING), "laeufe": 0},
+                # Gehoeren zu diesem Auftrag -- auch beim Nachholen des Reglements.
+                "manuelle_kanten": manuelle_kanten,
             }
 
         thread = threading.Thread(
             target=self._job_ausfuehren,
             args=(job_id, adresse, verkaufspreis, verkaufspreis_total,
-                  bool(daten.get("neu_rechnen")), auswahl),
+                  bool(daten.get("neu_rechnen")), auswahl, manuelle_kanten),
             daemon=True,
         )
         thread.start()
@@ -2095,7 +2116,7 @@ class Handler(BaseHTTPRequestHandler):
     def _job_ausfuehren(
         self, job_id: str, adresse: str, verkaufspreis: Optional[float],
         verkaufspreis_total: Optional[float] = None, neu_rechnen: bool = False,
-        auswahl: Optional[dict] = None,
+        auswahl: Optional[dict] = None, manuelle_kanten: Optional[dict] = None,
     ) -> None:
         egrid = None
         try:
@@ -2114,7 +2135,9 @@ class Handler(BaseHTTPRequestHandler):
                         "art": exc.art, "eingabe": exc.eingabe, "kandidaten": exc.kandidaten})
                 return
 
-            if not neu_rechnen:
+            # Mit eigenen Kantenabstaenden wird immer gerechnet: der Speicher
+            # haelt nur Analysen auf amtlicher Grundlage.
+            if not neu_rechnen and not manuelle_kanten:
                 gespeichert, egrid = self._zwischenspeicher_suchen(adresse, geo)
                 if gespeichert is not None:
                     # Der Kontext wird aus dem Ergebnis zurueckgebaut statt
@@ -2166,7 +2189,8 @@ class Handler(BaseHTTPRequestHandler):
                     return r
 
                 analyse = analysiere_grundstueck(
-                    adresse, fortschritt=melde, modul2_lader=lader_mit_herkunft, geo=geo)
+                    adresse, fortschritt=melde, modul2_lader=lader_mit_herkunft, geo=geo,
+                    manuelle_kantenabstaende=manuelle_kanten)
                 analyse.ergebnis["adresswahl"] = {k: geo.get(k) for k in
                                                   ("query", "matched_label", "feature_id",
                                                    "auswahlmethode")}
@@ -2179,7 +2203,11 @@ class Handler(BaseHTTPRequestHandler):
                 if egrid is None:
                     egrid = ((analyse.ergebnis.get("modul1_geodaten") or {})
                              .get("kataster") or {}).get("egrid")
-                self._zwischenspeicher_ablegen(egrid, analyse.ergebnis)
+                # Eine Rechnung mit eigenen Kantenabstaenden kommt NICHT in den
+                # Speicher -- sonst bekaeme die naechste Analyse derselben
+                # Parzelle die Annahme dieses Benutzers als amtliches Ergebnis.
+                if not manuelle_kanten:
+                    self._zwischenspeicher_ablegen(egrid, analyse.ergebnis)
                 # Ein bei /analyze mitgegebener Preis ist optional und aendert die
                 # baurechtliche Analyse nicht -- er wird nur zusaetzlich gerechnet.
                 if verkaufspreis is not None or verkaufspreis_total is not None:

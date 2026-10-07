@@ -246,6 +246,7 @@ def _kantenabstaende_aus_klassifikation(
     klassifikation: dict[str, Any],
     anzahl_kanten: int,
     baulinien_gefunden: int = 0,
+    manuell: Optional[dict[int, float]] = None,
 ) -> tuple[Optional[list[float]], list[dict[str, Any]], list[str]]:
     """Ordnet jeder Kante den Abstand zu, der fuer ihre Art tatsaechlich gilt.
 
@@ -264,7 +265,27 @@ def _kantenabstaende_aus_klassifikation(
                          Fassadenorientierung des noch nicht entworfenen
                          Gebaeudes und ist hier nicht entscheidbar.
       unbestimmt      -> kein Wert
+
+    `manuell` {Kantennummer: Abstand in m} -- Zielbild Abschnitt 16: "wenn
+    nicht eindeutig -> manuelle Auswahl je Kante". Ein manueller Wert greift
+    AUSSCHLIESSLICH an einer Kante, fuer die die Engine keinen Wert hat. Wo
+    ein automatisch bestimmter Wert steht, bleibt er; der manuelle wird nicht
+    uebernommen (`manuell_nicht_uebernommen` im Protokoll). Kein Wert wird auf
+    eine andere Kante uebertragen, und ohne Eingabe bleibt die Kante offen.
     """
+    manuell = manuell or {}
+
+    def manuell_setzen(eintrag: dict[str, Any], grund: str) -> bool:
+        wert = manuell.get(eintrag["nr"])
+        if wert is None:
+            return False
+        eintrag["abstand_m"] = float(wert)
+        eintrag["abstand_feld"] = "manuell"
+        eintrag["herkunft"] = "benutzerannahme"
+        eintrag["unsicherheit"] = (
+            f"{grund} Abstand manuell gesetzt: meine Annahme, kein amtlicher Wert.")
+        return True
+
     strassenabstand_kz = zone.get("strassenabstand_m")
     strassenabstand = _kennzahl_wert(strassenabstand_kz)
     # Vorbehalte am Strassenabstand betreffen JEDE Strassenkante -- z.B. staffelt
@@ -327,7 +348,10 @@ def _kantenabstaende_aus_klassifikation(
                 "rechnerisch mit dem Nachbarabstand belegt."
             )
             if nachbarabstand is None:
-                vollstaendig = False
+                if manuell_setzen(eintrag, "Kurze Kante ohne Grenzabstand in den Zonendaten."):
+                    abstaende.append(eintrag["abstand_m"])
+                else:
+                    vollstaendig = False
             else:
                 abstaende.append(float(nachbarabstand))
             protokoll.append(eintrag)
@@ -335,6 +359,10 @@ def _kantenabstaende_aus_klassifikation(
 
         if kante.get("art") == ART_STRASSE:
             if strassenabstand is None:
+                if manuell_setzen(eintrag, "Strassenkante ohne Strassenabstand im Reglement."):
+                    abstaende.append(eintrag["abstand_m"])
+                    protokoll.append(eintrag)
+                    continue
                 eintrag["unsicherheit"] = (
                     "Strassenkante, aber Modul 2 hat keinen eigenstaendigen Strassenabstand "
                     "gefunden. Kein Ersatzwert eingesetzt -- der Grenzabstand gegenueber "
@@ -364,6 +392,10 @@ def _kantenabstaende_aus_klassifikation(
                 abstaende.append(float(strassenabstand))
         elif kante.get("art") == ART_NACHBARPARZELLE:
             if nachbarabstand is None:
+                if manuell_setzen(eintrag, "Nachbarkante ohne Grenzabstand in den Zonendaten."):
+                    abstaende.append(eintrag["abstand_m"])
+                    protokoll.append(eintrag)
+                    continue
                 eintrag["unsicherheit"] = "Nachbarkante, aber kein Grenzabstand in den Zonendaten."
                 offene.append(f"Kante {kante.get('nr')}: Grenzabstand nicht bestimmbar")
                 vollstaendig = False
@@ -377,6 +409,10 @@ def _kantenabstaende_aus_klassifikation(
                     )
                 abstaende.append(float(nachbarabstand))
         else:
+            if manuell_setzen(eintrag, "Kantenart nicht belastbar bestimmbar."):
+                abstaende.append(eintrag["abstand_m"])
+                protokoll.append(eintrag)
+                continue
             eintrag["unsicherheit"] = (
                 "Kantenart nicht belastbar bestimmbar -- manuelle Pruefung erforderlich."
             )
@@ -384,6 +420,12 @@ def _kantenabstaende_aus_klassifikation(
             vollstaendig = False
 
         protokoll.append(eintrag)
+
+    # Manuelle Werte an Kanten, die einen automatischen Wert haben, werden
+    # nicht uebernommen -- und das wird gesagt, statt sie still zu verwerfen.
+    for eintrag in protokoll:
+        if eintrag.get("abstand_feld") != "manuell" and manuell.get(eintrag["nr"]) is not None:
+            eintrag["manuell_nicht_uebernommen"] = float(manuell[eintrag["nr"]])
 
     return (abstaende if vollstaendig else None), protokoll, offene
 
@@ -394,6 +436,7 @@ def berechne_g1_fuer_fall(
     *,
     kanten_abstaende_override: Optional[list[float]] = None,
     kantenklassifikation: Optional[dict[str, Any]] = None,
+    manuelle_kantenabstaende: Optional[dict[int, float]] = None,
 ) -> dict[str, Any]:
     """Fuehrt die G1-Kaskade mit REALER Parzellengeometrie/Restriktionen aus
     Modul 1 und den Zonenkennzahlen aus Modul 2 (`zone`, ein Eintrag aus
@@ -476,8 +519,22 @@ def berechne_g1_fuer_fall(
             kantenklassifikation,
             anzahl_kanten,
             baulinien_gefunden=len(restriktionen.get("baulinien_gefunden") or []),
+            manuell=manuelle_kantenabstaende,
         )
         basis_info["kantenprotokoll"] = kanten_protokoll
+        if manuelle_kantenabstaende:
+            basis_info["manuelle_kantenabstaende"] = {
+                "angewendet": {k["nr"]: k["abstand_m"] for k in kanten_protokoll
+                               if k.get("abstand_feld") == "manuell"},
+                "nicht_uebernommen": {k["nr"]: k["manuell_nicht_uebernommen"] for k in kanten_protokoll
+                                      if k.get("manuell_nicht_uebernommen") is not None},
+            }
+    elif manuelle_kantenabstaende:
+        # Ohne Kantenklassifikation gibt es keine Kante, an die ein Wert
+        # gehoert -- er wird nicht irgendwo eingesetzt.
+        basis_info["manuelle_kantenabstaende"] = {
+            "angewendet": {}, "nicht_uebernommen": dict(manuelle_kantenabstaende),
+            "grund": "Keine Kantenklassifikation vorhanden."}
         basis_info["kantenklassifikation_statistik"] = kantenklassifikation.get("statistik")
         basis_info["kantenklassifikation_hinweise"] = kantenklassifikation.get("hinweise", [])
 
