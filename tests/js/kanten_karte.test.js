@@ -208,6 +208,11 @@ console.log("\n=== B2 (08.10.2026): Geplant ≠ möglicher Baukörper, Bestand m
   const ersatz = sichtbareKoerper({ machbarkeit: "eingeschraenkt_moeglich",
     baukoerper: [{ name: "Baubereich (moegliche Lage)", art: "ersatzneubau" }] });
   pruefe(ersatz.length === 1 && ersatz[0].art === "ersatzneubau", "Ersatzneubau: nur der neue Körper, kein Bestand");
+  // Weiningen ohne berechnete Szenarien (live 08.10.2026): der eigene Bau
+  // stand in 3D nicht da, weil er nur ueber ein Szenario kommt.
+  const szene = extrahiere("zeichneSzene");
+  pruefe(/if \(g\.eigen && mitSzenario\) return;/.test(szene) && /mitSzenario = !!\(/.test(szene),
+    "ohne Szenario bleibt der eigene Bestand in 3D sichtbar (Ist-Zustand)");
 }
 
 console.log("\n=== C: Hinweis auf laufende Planung ist keine geltende Vorschrift ===");

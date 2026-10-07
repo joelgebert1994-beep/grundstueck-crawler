@@ -10494,10 +10494,16 @@ function secEntwurf(erg) {
         if (l) { l.material.linewidth = 2; u3dGruppen.strassen.add(l); }
       });
 
+      // Der eigene Bestand kommt aus dem Szenario -- gibt es keines (Geometrie
+      // nicht eindeutig, Szenarien nicht berechnet), bleibt er trotzdem
+      // sichtbar: der Ist-Zustand verschwindet nie. Dieselbe Quelle wie der
+      // Bestand der Analyse (amtliche Vermessung, sonst VEC25).
+      var mitSzenario = !!(((erg.szenarien || {}).szenarien || {})[szenarioId]);
       (u.gebaeude || []).forEach(function (g) {
-        if (g.eigen) return;   // eigener Bestand kommt aus dem Szenario
+        if (g.eigen && mitSzenario) return;
         var hoehe = leer(g.hoehe_m) ? 0.4 : g.hoehe_m;
-        var farbe = leer(g.hoehe_m) ? FARBE.ohneHoehe : FARBE.gebaeudeNeu;
+        var farbe = g.eigen ? FARBE.gebaeudeEigen
+                            : (leer(g.hoehe_m) ? FARBE.ohneHoehe : FARBE.gebaeudeNeu);
         var k = koerper(g.ring, mx, my, hoehe, farbe, leer(g.hoehe_m) ? 0.45 : 0.75);
         k.position.y = (g.terrain_hoehe_m || basis) - basis;
         u3dGruppen.gebaeude.add(k);
