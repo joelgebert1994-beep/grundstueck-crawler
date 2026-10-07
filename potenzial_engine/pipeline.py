@@ -1179,7 +1179,11 @@ def _bestand_und_neubaugeometrie(
         },
         "grundriss_kataster": {
             "wert_m2": bestand.get("bebaute_flaeche_grundriss_m2"),
-            "quelle": "amtliche Vermessung (Gebaeudepolygon)",
+            # Bis 07.10.2026 stand hier pauschal "amtliche Vermessung" --
+            # gerechnet wurde aber mit VEC25. Jetzt die tatsaechliche Quelle.
+            "quelle": ((bestand.get("grundriss_quelle") or {}).get("bezeichnung")
+                       or "swisstopo VEC25 Gebäude (vereinfacht, Massstab 1:25'000)"),
+            "quelle_art": (bestand.get("grundriss_quelle") or {}).get("art") or "vec25",
             "hinweis": (
                 "Das Katasterpolygon kann mehr umfassen als dieses eine Gebaeude -- "
                 "bei zusammengebauten Haeusern deckt es die ganze Zeile."),

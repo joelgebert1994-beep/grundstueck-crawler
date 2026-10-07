@@ -40,7 +40,13 @@ from typing import Any, Optional
 
 from shapely.geometry import LineString, MultiLineString, Point, Polygon, shape
 
-from .bestand import LAYER_GEBAEUDE_GRUNDRISS, _ganzzahl, _polygone_aus_treffer, _ring
+from .bestand import (
+    LAYER_GEBAEUDE_GRUNDRISS,
+    _ganzzahl,
+    _polygone_aus_treffer,
+    _ring,
+    hole_gebaeudegrundrisse,
+)
 from .kantenklassifikation import LAYER_STRASSEN
 from .modul1_geodata import LAYER_CADASTRE_GEOM, LAYER_GWR, _identify, session
 
@@ -301,6 +307,8 @@ def hole_umgebung(
     radius_m: float = STANDARD_RADIUS_M,
     raster: int = STANDARD_RASTER,
     geschosshoehe_m: float = STANDARD_GESCHOSSHOEHE_M,
+    kanton: Optional[str] = None,
+    grundriss_wie_bestand: Optional[str] = None,
 ) -> dict[str, Any]:
     """Der vollstaendige raeumliche Kontext fuer die 3D-Ansicht.
 
@@ -313,8 +321,11 @@ def hole_umgebung(
     terrain = hole_terrain(e, n, radius_m, raster)
 
     gwr = _identify(e, n, LAYER_GWR, tolerance=_UMFELD_TOLERANZ_PX, return_geometry=True)
-    grundrisse = _identify(e, n, LAYER_GEBAEUDE_GRUNDRISS, tolerance=_UMFELD_TOLERANZ_PX,
-                           return_geometry=True)
+    # Dieselbe Quelle wie der Bestand: amtliche Vermessung, wo frei, sonst
+    # VEC25 (vereinfacht). Sonst stuende in 3D ein anderer Umriss als auf
+    # der Karte und in der Rechnung.
+    grundrisse, grundriss_quelle = hole_gebaeudegrundrisse(e, n, _UMFELD_TOLERANZ_PX, kanton,
+                                                           wie_bestand=grundriss_wie_bestand)
     gebaeude = werte_gebaeude_aus(gwr, grundrisse, parzelle_ring, geschosshoehe_m)
 
     # Jedes Objekt auf das Terrain setzen.
@@ -346,6 +357,8 @@ def hole_umgebung(
         hinweise.append("Keine Nachbarparzellen im Umfeld gefunden.")
     if not strassen:
         hinweise.append("Keine Strassenachsen im Umfeld gefunden.")
+    if grundriss_quelle.get("hinweis"):
+        hinweise.append(grundriss_quelle["hinweis"])
 
     return {
         "gefunden": True,
@@ -371,7 +384,7 @@ def hole_umgebung(
         "quellen": {
             "terrain": terrain["quelle"],
             "parzellen": LAYER_CADASTRE_GEOM,
-            "gebaeude_grundriss": LAYER_GEBAEUDE_GRUNDRISS,
+            "gebaeude_grundriss": grundriss_quelle.get("bezeichnung") or LAYER_GEBAEUDE_GRUNDRISS,
             "gebaeude_merkmale": LAYER_GWR,
             "strassen": LAYER_STRASSEN,
         },

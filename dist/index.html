@@ -1171,8 +1171,9 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
         <div class="layergroup">
           <h4>Aus der Analyse</h4>
           <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;border-style:dashed;background:rgba(31,122,77,.25)"></span>Bebaubare Fl&auml;che<span class="cnt" id="cnt-baubereich"></span></label>
-          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span><span title="Vereinfachter Umriss (swisstopo VEC25, generalisiert 1:25'000) -- massgebend ist das Gebäude im Katasterplan">Heutige Geb&auml;ude (vereinfacht)</span><span class="cnt" id="cnt-bestand"></span></label>
-          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" disabled><span class="swatch" style="border-color:#0369a1;border-style:dashed;background:rgba(3,105,161,.30)"></span><span title="Errechnet aus dem gewählten Szenario -- kein geplantes oder bewilligtes Gebäude">M&ouml;glicher Baukörper (Szenario)</span><span class="cnt" id="cnt-szenario"></span></label>
+          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span><span id="lbl-bestand">Heutige Geb&auml;ude</span><span class="cnt" id="cnt-bestand"></span></label>
+          <label class="layeropt off" id="opt-geplant"><input type="checkbox" id="lay-geplant" disabled><span class="swatch" style="border-color:#1e3a8a;background:rgba(30,58,138,.30)"></span><span title="Projektierte Gebäude der amtlichen Vermessung -- noch nicht gebaut, nicht Teil des Bestands">Geplant (projektiert)</span><span class="cnt" id="cnt-geplant"></span></label>
+          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" disabled><span class="swatch" style="border-color:#ca8a04;border-style:dashed;background:rgba(202,138,4,.28)"></span><span title="Vom Crawler errechnet aus dem gewählten Szenario -- kein geplantes oder bewilligtes Gebäude">M&ouml;glicher Baukörper (Szenario)</span><span class="cnt" id="cnt-szenario"></span></label>
         </div>
       </div>
     </details>
@@ -1295,6 +1296,7 @@ var gruppen = {
   parzelle: L.layerGroup().addTo(map),
   baubereich: L.layerGroup().addTo(map),
   bestand: L.layerGroup(),
+  geplant: L.layerGroup(),
   szenario: L.layerGroup()
 };
 var STANDARD_SICHTBAR = { parzelle: true, baubereich: true };
@@ -1314,7 +1316,11 @@ var STIL = {
   // 0.7 m² auf der Karte ueberhaupt nicht zu sehen.
   randfallUnten: { color: "#1f7a4d", weight: 2.5, fillColor: "#1f7a4d", fillOpacity: .34, dashArray: "2,3" },
   restrikt:  { color: "#b4661a", weight: 2,   fillColor: "#b4661a", fillOpacity: .22, dashArray: "6,3" },
-  bestand:   { color: "#6b7280", weight: 2,   fillColor: "#6b7280", fillOpacity: .45 }
+  bestand:   { color: "#6b7280", weight: 2,   fillColor: "#6b7280", fillOpacity: .45 },
+  // Amtlich projektiert: echte Geometrie, deshalb durchgezogen -- anders
+  // als alles Errechnete (gestrichelt). Dunkelblau, nicht das Hellblau des
+  // Gewaesserraums und nicht die Farbe eines Szenario-Koerpers.
+  geplant:   { color: "#1e3a8a", weight: 2,   fillColor: "#1e3a8a", fillOpacity: .30 }
 };
 /* Die rechte Spalte des Kartenreiters: derselbe Inhalt, der schon als
    Popup an der Flaeche haengt, landet zusaetzlich hier -- kein zweiter,
@@ -1437,7 +1443,7 @@ Array.prototype.forEach.call(document.querySelectorAll('input[name="base"]'), fu
   r.addEventListener("change", function () { if (r.checked) setzeAnsicht(r.value); });
 });
 ["parzelle", "bauzone", "sondernutzung", "baulinie", "gewaesser", "restrikt",
- "baubereich", "bestand", "szenario"].forEach(function (name) {
+ "baubereich", "bestand", "geplant", "szenario"].forEach(function (name) {
   var feld = document.getElementById("lay-" + name);
   if (!feld) return;
   feld.addEventListener("change", function (ev) {
@@ -1456,6 +1462,19 @@ function benenneBaubereichEbene(randfall) {
     var kn = opt.childNodes[i];
     if (kn.nodeType === 3 && kn.nodeValue.trim()) { kn.nodeValue = text; return; }
   }
+}
+
+/* Woher der Bestandsumriss stammt -- kurz, fuer Ebene und Popup. */
+function grundrissQuelleKurz(m1) {
+  var q = ((m1 || {}).bestand || {}).grundriss_quelle || {};
+  return q.art === "amtliche_vermessung" ? "amtliche Vermessung" : "vereinfacht, swisstopo 1:25'000";
+}
+function benenneBestandEbene(m1) {
+  var el = document.getElementById("lbl-bestand");
+  if (!el) return;
+  var amtlich = ((((m1 || {}).bestand || {}).grundriss_quelle) || {}).art === "amtliche_vermessung";
+  el.textContent = amtlich ? "Heutige Gebäude (amtliche Vermessung)" : "Heutige Gebäude (vereinfacht)";
+  el.title = ((((m1 || {}).bestand || {}).grundriss_quelle) || {}).bezeichnung || "";
 }
 
 function setLayerVerfuegbar(name, anzahl) {
@@ -2447,7 +2466,7 @@ function starteAnalyse(neuRechnen, kantenManuell) {
     if (typeof zeichneProjektleiste === "function") zeichneProjektleiste();
   }
   Object.keys(gruppen).forEach(function (k) { gruppen[k].clearLayers(); });
-  ["parzelle", "zonen", "baubereich", "restrikt", "bestand", "szenario"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
+  ["parzelle", "zonen", "baubereich", "restrikt", "bestand", "geplant", "szenario"].forEach(function (n) { setLayerVerfuegbar(n, 0); });
   renderLoading();
   apiAbruf("/api/analyze", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -3029,12 +3048,29 @@ function zeichneErgebnisAufKarte(erg) {
       satz(g.kategorie_text || "Kategorie unbekannt") + "<br>" +
       (leer(g.baujahr) ? "Baujahr unbekannt" : "Baujahr " + esc(g.baujahr)) + ", " +
       (leer(g.geschosse) ? "Geschosszahl unbekannt" : esc(g.geschosse) + " Geschoss(e)") + "<br>" +
-      "Umriss " + fmt(g.grundriss_flaeche_m2, 1) + " m² (vereinfacht, swisstopo 1:25'000)" +
+      "Umriss " + fmt(g.grundriss_flaeche_m2, 1) + " m² (" + esc(grundrissQuelleKurz(m1)) + ")" +
       (leer(g.grundflaeche_gwr_m2) ? "" : ", laut GWR " + fmt(g.grundflaeche_gwr_m2, 1) + " m²") + "</span>";
     anzBest += zeichnePolygone(gruppen.bestand, [g.grundriss], STIL.bestand, popup,
       "sec-szenarien", "Bestand").length;
   });
   setLayerVerfuegbar("bestand", anzBest);
+  benenneBestandEbene(m1);
+
+  // Geplant: nur, was die amtliche Vermessung als projektiert fuehrt -- nie
+  // ein errechneter Koerper. Gehoert nicht zum Bestand.
+  var anzGeplant = 0;
+  alsListe(((m1.bestand || {}).projektiert || {}).gebaeude).forEach(function (g) {
+    if (!g.ring) return;
+    var popup = "<b>Geplant (projektiert)</b><span class=\"m\">" +
+      "Projektiertes Gebäude der amtlichen Vermessung" +
+      (g.egid ? " · EGID " + esc(g.egid) : "") + "<br>" +
+      fmt(g.flaeche_m2, 1) + " m² Grundfläche" +
+      (g.auf_parzelle ? " · auf dieser Parzelle" : " · in der Umgebung") + "<br>" +
+      "Noch nicht gebaut — nicht Teil des Bestands und nicht in der Rechnung.</span>";
+    anzGeplant += zeichnePolygone(gruppen.geplant, [g.ring], STIL.geplant, popup,
+      "sec-grundstueck", "Geplant").length;
+  });
+  setLayerVerfuegbar("geplant", anzGeplant);
 
   var rg = m1.restriktionsgeometrie || {};
   var anzR = 0, anzG = 0, anzB2 = 0;
@@ -6045,20 +6081,24 @@ var MACHBARKEIT_BADGE = {
 /* Vier Dinge, die auf Karte und 3D nie gleich aussehen duerfen:
      Bestand          grau, durchgezogen       -- steht heute
      bebaubare Flaeche gruen, gestrichelt, flach -- errechneter Bereich (G1)
-     neuer Baukoerper blau/orange/violett, gestrichelt -- errechnet, je Szenario
-     (geplant/bewilligt fuehrt das Werkzeug nicht -- siehe Ebenenname)
+     neuer Baukoerper gold/orange/violett, gestrichelt -- errechnet, je Szenario
+     geplant           dunkelblau, durchgezogen   -- amtlich projektiert
    Der Ersatzneubau trug bis 07.10.2026 das Gruen der bebaubaren Flaeche
    (#1f7a4d): auf der Karte las sich der Szenario-Baukoerper deshalb wie der
    Baubereich selbst, und die Ebene "Geplantes Gebaeude" zeigte gruen,
    obwohl ihre Legende blau ist. Er ist ein neuer Baukoerper wie der Neubau
    bei "Bestand + Neubau" -- unterschieden wird am Bestand: beim
    Ersatzneubau steht keiner mehr. */
+/* Seit 08.10.2026: Blau ist GEPLANT (projektiert, amtliche Vermessung).
+   Ein vom Crawler errechneter Neubau- oder Ersatzneubaukoerper ist nicht
+   geplant -- er traegt deshalb Gold statt Blau, immer gestrichelt. */
+var FARBE_GEPLANT = "#1e3a8a";
 var BAUKOERPER_FARBE = {
   bestand: "#6b7280",
   anbau: "#c2410c",
   aufstockung: "#7c3aed",
-  ersatzneubau: "#0369a1",
-  neubau: "#0369a1"
+  ersatzneubau: "#ca8a04",
+  neubau: "#ca8a04"
 };
 /* Ein Szenario "nicht moeglich" zeigt keinen neuen Baukoerper. Die Engine
    legt die Koerper an, bevor sie die Ausnuetzung prueft (Anbau, Bestand +
@@ -10525,6 +10565,17 @@ function secEntwurf(erg) {
       u3dGruppen.baubereich.add(b);
     });
 
+    // Geplant (projektiert, amtliche Vermessung): flach, weil die Vermessung
+    // keine Hoehe fuehrt -- es wird keine erfunden. Dieselbe Farbe wie auf
+    // der Karte; nie ein errechneter Szenario-Koerper.
+    var geplant = alsListe(((m1.bestand || {}).projektiert || {}).gebaeude)
+      .filter(function (g) { return g.ring && g.ring.length >= 3; });
+    geplant.forEach(function (g) {
+      var pg = koerper(g.ring, mx, my, 0.4, FARBE_GEPLANT, 0.55);
+      pg.position.y = 0.1;
+      u3dGruppen.gebaeude.add(pg);
+    });
+
     // --- Baulinien --------------------------------------------------------
     //
     // Eine Baulinie ist in Plan eine Linie. In der Schraegansicht ist eine
@@ -10716,6 +10767,10 @@ function secEntwurf(erg) {
           '"></i>Baubereich' +
           (leer((e1 || {}).baubereich_m2) ? "" : " " + fmt(e1.baubereich_m2, 0) + " m²") +
           "</span>");
+      }
+      if (geplant.length) {
+        teile.push('<span class="l3d"><i style="background:' + FARBE_GEPLANT + '"></i>' +
+          geplant.length + " geplant (projektiert, amtliche Vermessung) — flach, Höhe nicht bekannt</span>");
       }
       if (baulinien.length) {
         teile.push('<span class="l3d"><i style="background:' + FARBE.baulinie +

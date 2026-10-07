@@ -155,7 +155,10 @@ console.log("\n=== B: Bestand ≠ möglicher Baukörper ≠ bebaubare Fläche ==
   pruefe(/baubereich:\{[^}]*dashArray/.test(stil), "die bebaubare Fläche ist gestrichelt (errechnet)");
   pruefe(quelltext.indexOf(">Geplantes Geb&auml;ude<") < 0 && /M&ouml;glicher Baukörper \(Szenario\)/.test(quelltext),
     "die Ebene heisst 'Möglicher Baukörper (Szenario)', nicht 'Geplantes Gebäude'");
-  pruefe(/Heutige Geb&auml;ude \(vereinfacht\)/.test(quelltext), "der Bestandsumriss ist als vereinfacht bezeichnet");
+  // Seit 08.10.2026 je nach Quelle: amtliche Vermessung oder vereinfacht.
+  const benenne = extrahiere("benenneBestandEbene");
+  pruefe(/Heutige Gebäude \(amtliche Vermessung\)/.test(benenne) && /Heutige Gebäude \(vereinfacht\)/.test(benenne),
+    "die Bestandsebene nennt ihre Quelle (amtliche Vermessung oder vereinfacht)");
 
   const bestandPlusNeubau = { machbarkeit: "nicht_moeglich", baukoerper: [
     { name: "Neubau Osten", art: "neubau" }, { name: "Bestand (bleibt)", art: "bestand" }] };
@@ -179,6 +182,32 @@ console.log("\n=== B: Bestand ≠ möglicher Baukörper ≠ bebaubare Fläche ==
   const zeichnen = extrahiere("zeichneSzenario");
   pruefe(zeichnen.indexOf("sichtbareKoerper(s)") > 0 && /sichtbareKoerper\(sz\)/.test(quelltext),
     "Karte und 3D zeichnen dieselben sichtbaren Körper");
+}
+
+console.log("\n=== B2 (08.10.2026): Geplant ≠ möglicher Baukörper, Bestand mit Quelle ===");
+{
+  eval(extrahiereVar("FARBE_GEPLANT", ";")); // eslint-disable-line no-eval
+  eval(extrahiere("grundrissQuelleKurz")); // eslint-disable-line no-eval
+  const stil = quelltext.slice(quelltext.indexOf("var STIL = {"), quelltext.indexOf("};", quelltext.indexOf("var STIL = {")));
+  const geplantStil = /geplant:\s*\{ color: "(#[0-9a-f]+)"([^}]*)\}/.exec(stil);
+  pruefe(geplantStil && geplantStil[1] === FARBE_GEPLANT, "die Kartenebene 'Geplant' nutzt dieselbe Farbe wie 3D");
+  pruefe(geplantStil && geplantStil[2].indexOf("dashArray") < 0, "Geplant ist echte Geometrie: durchgezogen, nicht gestrichelt");
+  pruefe(Object.keys(BAUKOERPER_FARBE).every((k) => BAUKOERPER_FARBE[k] !== FARBE_GEPLANT),
+    "kein errechneter Szenario-Körper trägt die Farbe von 'Geplant'");
+  pruefe(/>Geplant \(projektiert\)</.test(quelltext) && /id="lay-geplant"/.test(quelltext),
+    "eigene Ebene 'Geplant (projektiert)'");
+  pruefe(/border-color:#1e3a8a;background/.test(quelltext) && /border-color:#ca8a04;border-style:dashed/.test(quelltext),
+    "Legende: Geplant dunkelblau durchgezogen, möglicher Baukörper gold gestrichelt");
+  const geplantZeichnen = quelltext.slice(quelltext.indexOf("var anzGeplant = 0;"), quelltext.indexOf('setLayerVerfuegbar("geplant", anzGeplant)'));
+  pruefe(/\.projektiert \|\| \{\}\)\.gebaeude/.test(geplantZeichnen) && geplantZeichnen.indexOf("szenarien") < 0,
+    "die Ebene 'Geplant' liest nur die projektierten Gebäude der Vermessung, nie Szenarien");
+  pruefe(grundrissQuelleKurz({ bestand: { grundriss_quelle: { art: "amtliche_vermessung" } } }) === "amtliche Vermessung" &&
+         grundrissQuelleKurz({ bestand: { grundriss_quelle: { art: "vec25" } } }) === "vereinfacht, swisstopo 1:25'000",
+    "Bestand: Quelle 'amtliche Vermessung' bzw. 'vereinfacht'");
+  global.ergebnisAktuell = null;
+  const ersatz = sichtbareKoerper({ machbarkeit: "eingeschraenkt_moeglich",
+    baukoerper: [{ name: "Baubereich (moegliche Lage)", art: "ersatzneubau" }] });
+  pruefe(ersatz.length === 1 && ersatz[0].art === "ersatzneubau", "Ersatzneubau: nur der neue Körper, kein Bestand");
 }
 
 console.log("\n=== C: Hinweis auf laufende Planung ist keine geltende Vorschrift ===");
