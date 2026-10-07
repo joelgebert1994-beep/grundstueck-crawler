@@ -43,7 +43,7 @@ from .wirtschaftlichkeit import Marktannahmen, berechne_alle as _berechne_wirtsc
 from .modul1_geodata import Modul1Error, run_modul1
 from .modul2_bzo_analysis import analyze_from_oereb_result
 from .modul3_financial import ermittle_zonenzuordnung, run_from_modul_results
-from .quellen import quellen_aus_modul1_ergebnis
+from .quellen import QUELLE_TYP_MANUELL, Quellenobjekt, quellen_aus_modul1_ergebnis
 from .sia416_flaechen import berechne_sia416_kaskade
 
 # Statisch, unabhaengig von der Adresse -- reine Taxonomie/Dokumentation aus
@@ -1049,6 +1049,7 @@ def _teilergebnis_nach_modul1(adresse: str, modul1_result: dict) -> dict:
         # Dasselbe Feldgeruest wie das Endergebnis: die Oberflaeche liest
         # beide, und ein Feld, das erst spaeter auftaucht, waere eine Falle.
         "bestand_und_neubaugeometrie": None,
+        "kantenabstaende_manuell": None,
     }
 
 
@@ -1058,6 +1059,7 @@ def analysiere_grundstueck(
     fortschritt=None,
     modul2_lader=None,
     geo=None,
+    manuelle_kantenabstaende=None,
 ) -> Analyse:
     """Vollstaendige baurechtliche Potenzialanalyse fuer eine Adresse.
 
@@ -1080,6 +1082,10 @@ def analysiere_grundstueck(
     `modul2_lader(oereb, gemeinde, kanton)` ersetzt den direkten
     Gemini-Aufruf -- so kann der Aufrufer einen Zwischenspeicher davorlegen,
     ohne dass die Engine eine Datenbank kennen muss.
+
+    `manuelle_kantenabstaende` {Kantennummer: m}: vom Benutzer gesetzte
+    Abstaende fuer Kanten, die die Engine nicht bestimmen kann (Zielbild 16).
+    Sie gelten nur dort und sind im Ergebnis als Benutzerannahme ausgewiesen.
 
     Wirft Modul1Error, wenn fuer die Parzelle keine amtlichen Zonendaten
     (OEREB) vorliegen -- dann waere jede Potenzialaussage haltlos.
@@ -1119,7 +1125,8 @@ def analysiere_grundstueck(
     melde("reglement", STAND_FERTIG)
 
     melde("potenzial", STAND_LAEUFT)
-    ergebnis = _potenzialkette(adresse, modul1_result, modul2_result)
+    ergebnis = _potenzialkette(adresse, modul1_result, modul2_result,
+                               manuelle_kantenabstaende=manuelle_kantenabstaende)
     melde("potenzial", STAND_FERTIG, ergebnis)
     return Analyse(ergebnis=ergebnis, kontext={"modul1": modul1_result, "modul2": modul2_result})
 
@@ -1332,7 +1339,8 @@ def _bestand_und_neubaugeometrie(
     }
 
 
-def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict) -> dict:
+def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict,
+                    manuelle_kantenabstaende: Optional[dict] = None) -> dict:
     """Zonenzuordnung, G1, SIA 416, Flaechen, Szenarien, Quellen.
 
     Unveraendert aus der bisherigen `analysiere_grundstueck` herausgeloest --
@@ -1356,7 +1364,8 @@ def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict) -> d
             klassifikation = None
         try:
             g1_ergebnis = berechne_g1_fuer_fall(
-                modul1_result, zonen_zuordnung["zone"], kantenklassifikation=klassifikation
+                modul1_result, zonen_zuordnung["zone"], kantenklassifikation=klassifikation,
+                manuelle_kantenabstaende=manuelle_kantenabstaende,
             )
         except G1VerdrahtungError as exc:
             g1_fehler = str(exc)
@@ -1384,6 +1393,15 @@ def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict) -> d
     kanten_klassifikation = modul1_result.get("kantenklassifikation") or {}
     if kanten_klassifikation.get("kanten"):
         quellen += [asdict(q) for q in quellen_fuer_kanten(kanten_klassifikation)]
+    # Ein manuell gesetzter Abstand ist eine Benutzerannahme und steht als
+    # solche in der Herleitung -- nie als amtlicher Wert.
+    manuell = (g1_ergebnis or {}).get("manuelle_kantenabstaende")
+    for nr, wert in ((manuell or {}).get("angewendet") or {}).items():
+        quellen.append(asdict(Quellenobjekt(
+            feld=f"kante_{nr}.abstand_m", wert=wert, quelle_typ=QUELLE_TYP_MANUELL,
+            quelle_bezeichnung="Benutzerannahme: manuell gesetzter Abstand an Kante "
+                               f"{nr} (kein amtlicher Wert)",
+            confidence="benutzerannahme")))
 
     return {
         "adresse": adresse,
@@ -1402,6 +1420,8 @@ def _potenzialkette(adresse: str, modul1_result: dict, modul2_result: dict) -> d
         # verschiedene Groessen. G1 liefert nur die mittlere.
         "bestand_und_neubaugeometrie": _bestand_und_neubaugeometrie(
             modul1_result, g1_ergebnis),
+        # Was der Benutzer selbst gesetzt hat -- None ohne Eingabe.
+        "kantenabstaende_manuell": manuell,
     }
 
 

@@ -840,6 +840,13 @@ ul.plain li { margin-bottom: 4px; }
    Hintergrunds daneben: weisse Schrift auf weissem Reiter. Dieselben
    Farben wie .navbar button.active, die es hier immer haben sollte. */
 #navbar button.aktiv { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.kmanuell { display: flex; align-items: center; gap: 5px; margin-top: 5px; font-size: 11px;
+  color: var(--ink-3); white-space: nowrap; }
+.kmanuell input { width: 68px; font: inherit; font-size: 12px; padding: 3px 5px; border: 1px solid var(--line-2);
+  border-radius: 5px; background: var(--panel); color: var(--ink); }
+.kmanuellfuss { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 10px 0 4px; }
+.kmanuellfuss .f { flex-basis: 100%; }
+.kmanuellhinweis { margin: 0 0 10px; }
 .navgruppe { display: inline-flex; align-items: center; gap: 4px; flex: none;
   border: 1px dashed var(--line-2); border-radius: 8px; padding: 0 3px 0 8px; }
 .navgruppe-name { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
@@ -1163,9 +1170,9 @@ table.src td.f { font-family: var(--mono); font-size: 11px; color: var(--ink-2);
         </div>
         <div class="layergroup">
           <h4>Aus der Analyse</h4>
-          <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;background:rgba(31,122,77,.25)"></span>Bebaubare Fl&auml;che<span class="cnt" id="cnt-baubereich"></span></label>
-          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span>Heutige Geb&auml;ude<span class="cnt" id="cnt-bestand"></span></label>
-          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" disabled><span class="swatch" style="border-color:#0369a1;background:rgba(3,105,161,.30)"></span>Geplantes Geb&auml;ude<span class="cnt" id="cnt-szenario"></span></label>
+          <label class="layeropt off" id="opt-baubereich"><input type="checkbox" id="lay-baubereich" checked disabled><span class="swatch" style="border-color:#1f7a4d;border-style:dashed;background:rgba(31,122,77,.25)"></span>Bebaubare Fl&auml;che<span class="cnt" id="cnt-baubereich"></span></label>
+          <label class="layeropt off" id="opt-bestand"><input type="checkbox" id="lay-bestand" disabled><span class="swatch" style="border-color:#6b7280;background:rgba(107,114,128,.35)"></span><span title="Vereinfachter Umriss (swisstopo VEC25, generalisiert 1:25'000) -- massgebend ist das Gebäude im Katasterplan">Heutige Geb&auml;ude (vereinfacht)</span><span class="cnt" id="cnt-bestand"></span></label>
+          <label class="layeropt off" id="opt-szenario"><input type="checkbox" id="lay-szenario" disabled><span class="swatch" style="border-color:#0369a1;border-style:dashed;background:rgba(3,105,161,.30)"></span><span title="Errechnet aus dem gewählten Szenario -- kein geplantes oder bewilligtes Gebäude">M&ouml;glicher Baukörper (Szenario)</span><span class="cnt" id="cnt-szenario"></span></label>
         </div>
       </div>
     </details>
@@ -1299,7 +1306,8 @@ var STIL = {
   parzelle:  { color: "#b3324a", weight: 3,   fillColor: "#b3324a", fillOpacity: .07 },
   zone:      { color: "#2a7f8f", weight: 1.5, fillColor: "#2a7f8f", fillOpacity: .13 },
   zoneUeber: { color: "#6a4c93", weight: 2,   fillColor: "#6a4c93", fillOpacity: .15, dashArray: "5,4" },
-  baubereich:{ color: "#1f7a4d", weight: 2,   fillColor: "#1f7a4d", fillOpacity: .30 },
+  // Gestrichelt wie alles Errechnete -- durchgezogen ist nur, was steht.
+  baubereich:{ color: "#1f7a4d", weight: 2,   fillColor: "#1f7a4d", fillOpacity: .30, dashArray: "6,4" },
   // Obergrenze: weite Striche, sehr blass -- der aeussere Rand.
   randfallOben:  { color: "#1f7a4d", weight: 1.5, fillColor: "#1f7a4d", fillOpacity: .09, dashArray: "9,6" },
   // Untergrenze: dichte Punkte, kraeftiger -- sonst ist der Splitter von
@@ -2386,7 +2394,7 @@ goBtn.addEventListener("click", function () { starteAnalyse(false); });
 // nicht wegwerfen -- nur ein echter Adresswechsel tut das.
 var wEingabenAdresse = null;
 
-function starteAnalyse(neuRechnen) {
+function starteAnalyse(neuRechnen, kantenManuell) {
   if (!gewaehlteAdresse) return;
   goBtn.disabled = true;
   goBtn.textContent = "Analyse läuft …";
@@ -2447,8 +2455,11 @@ function starteAnalyse(neuRechnen) {
     // Backend verwendet dann genau diesen Treffer, statt den Text erneut
     // zu suchen. Ohne Auswahl (z.B. nach Neuladen) bleibt es beim Text, den
     // das Backend nur bei genau einer passenden Adresse annimmt.
+    // Eigene Kantenabstaende gehen nur mit, wenn sie in DIESEM Dossier
+    // eingetragen wurden -- ein normaler Analysestart traegt keine mit.
     body: JSON.stringify({ adresse: gewaehlteAdresse, neu_rechnen: !!neuRechnen,
-                           auswahl: gewaehlteAuswahl || undefined })
+                           auswahl: gewaehlteAuswahl || undefined,
+                           kantenabstaende_manuell: kantenManuell || undefined })
   })
   .then(function (a) {
     if (!a.ok) { renderFehler(a.fehler, a.technisch ? "technisch" : "fachlich", a.art); return; }
@@ -3018,7 +3029,7 @@ function zeichneErgebnisAufKarte(erg) {
       satz(g.kategorie_text || "Kategorie unbekannt") + "<br>" +
       (leer(g.baujahr) ? "Baujahr unbekannt" : "Baujahr " + esc(g.baujahr)) + ", " +
       (leer(g.geschosse) ? "Geschosszahl unbekannt" : esc(g.geschosse) + " Geschoss(e)") + "<br>" +
-      "Grundriss " + fmt(g.grundriss_flaeche_m2, 1) + " m²" +
+      "Umriss " + fmt(g.grundriss_flaeche_m2, 1) + " m² (vereinfacht, swisstopo 1:25'000)" +
       (leer(g.grundflaeche_gwr_m2) ? "" : ", laut GWR " + fmt(g.grundflaeche_gwr_m2, 1) + " m²") + "</span>";
     anzBest += zeichnePolygone(gruppen.bestand, [g.grundriss], STIL.bestand, popup,
       "sec-szenarien", "Bestand").length;
@@ -3460,7 +3471,7 @@ function beachtenHinweise(m1, zz) {
     if (gesehen[name]) return;
     gesehen[name] = true;
     befunde.push({ art: "info", titel: name, voll: voll,
-      status: "überlagert die Parzelle · rechtskräftig", quelle: "Nutzungsplanung · " + GEO });
+      status: festlegungStatus(u), quelle: "Nutzungsplanung · " + GEO });
   });
 
   var anzGw = (r.gewaesserraum_flaechen || []).length;
@@ -3836,6 +3847,7 @@ function renderDossier(erg) {
   parkeKarte();
   inner.innerHTML =
     zwischenspeicherHinweis(erg) +
+    kantenManuellHinweis(erg) +
     headHtml(erg, m1, zz) +
     '<nav class="navbar" id="navbar">' + reiterLeiste() + "</nav>" +
     // In der Reihenfolge der Reiter -- dann springt "zum naechsten
@@ -3852,6 +3864,19 @@ function renderDossier(erg) {
     secQuellen(erg);
   var zsNeu = document.getElementById("zs-neu");
   if (zsNeu) zsNeu.onclick = function () { starteAnalyse(true); };
+  var kNeu = document.getElementById("kanten-neu");
+  if (kNeu) kNeu.onclick = function () {
+    var r = kantenManuellLesen();
+    if (r.fehler) { alert(r.fehler); return; }
+    if (!Object.keys(r.werte).length) {
+      alert("Bitte bei mindestens einer offenen Kante einen Abstand eintragen.");
+      return;
+    }
+    starteAnalyse(true, r.werte);
+  };
+  var kWeg = document.getElementById("kanten-weg");
+  // Ohne eigene Werte: die Analyse auf amtlicher Grundlage (aus dem Speicher).
+  if (kWeg) kWeg.onclick = function () { starteAnalyse(false); };
   dossierAnsicht(true);
   verdrahteDossier();
   verdrahteSzenarien();
@@ -4476,9 +4501,23 @@ function kantenprotokoll(erg, m1) {
     var beleg = k.strassenname ? esc(k.strassenname) + (leer(k.strassen_objektart) ? "" : '<div class="f">Objektart ' + esc(k.strassen_objektart) + "</div>")
       : (k.nachbar_nummer ? "Parzelle " + esc(k.nachbar_nummer) + (k.nachbar_egrid ? " · " + esc(k.nachbar_egrid) : "")
       : (k.nachbar_egrid ? esc(k.nachbar_egrid) : "&ndash;"));
-    var abstand = leer(k.abstand_m)
-      ? '<span class="na">' + (ausG1 ? "nicht bestimmbar" : "&ndash;") + "</span>"
-      : esc(k.abstand_m) + " m" + (k.abstand_feld ? '<div class="f">' + begriff(k.abstand_feld) + "</div>" : "");
+    // Zielbild 16: wo die Engine keinen Abstand bestimmen kann, setzt der
+    // Benutzer ihn selbst -- je Kante, als "meine Annahme". Amtlich
+    // bestimmte Abstaende bekommen kein Eingabefeld.
+    var manuell = k.abstand_feld === "manuell";
+    var eingabe = (ausG1 && (leer(k.abstand_m) || manuell))
+      ? '<label class="kmanuell">eigener Wert <input type="number" min="0.1" max="100" step="0.1" ' +
+        'inputmode="decimal" data-kante-manuell="' + esc(k.nr) + '" value="' +
+        (manuell ? esc(k.abstand_m) : "") + '"> m</label>'
+      : "";
+    var abstand = manuell
+      ? esc(k.abstand_m) + " m " + wtyp("benutzerannahme") + eingabe
+      : leer(k.abstand_m)
+        ? '<span class="na">' + (ausG1 ? "nicht bestimmbar" : "&ndash;") + "</span>" + eingabe
+        : esc(k.abstand_m) + " m" + (k.abstand_feld ? '<div class="f">' + begriff(k.abstand_feld) + "</div>" : "") +
+          (leer(k.manuell_nicht_uebernommen) ? ""
+            : '<div class="f">Eigener Wert ' + esc(k.manuell_nicht_uebernommen) +
+              " m nicht übernommen — hier gilt der bestimmte Wert.</div>");
     return "<tr><td>" + esc(k.nr) + "</td>" +
       "<td>" + (leer(k.laenge_m) ? "&ndash;" : esc(k.laenge_m) + " m") + "</td>" +
       '<td><span class="badge ' + art[1] + '">' + esc(art[0]) + "</span></td>" +
@@ -4496,7 +4535,8 @@ function kantenprotokoll(erg, m1) {
       esc(alsListe(kl.quellen_layer).join(", ")) + (kl.abgerufen_am ? " · abgerufen " + esc(kl.abgerufen_am) : "") + "</div>" +
     kopf +
     (offen.length ? '<div class="note warn"><b>Nicht kantenweise gerechnet.</b> Offen: ' + esc(offen.join(" · ")) +
-      ". Es wurde bewusst kein Ersatzwert eingesetzt; stattdessen gilt die Bandbreite im Reiter Potenzial.</div>" : "") +
+      ". Es wurde bewusst kein Ersatzwert eingesetzt; stattdessen gilt die Bandbreite im Reiter Potenzial. " +
+      "Den fehlenden Abstand können Sie unten je Kante als eigene Annahme setzen.</div>" : "") +
     hinweise.map(function (h) { return '<div class="note warn">' + esc(h) + "</div>"; }).join("") +
     '<div class="scroller"><table class="src"><thead><tr><th>Kante</th><th>Länge</th><th>Grenzt an</th><th>Abstand</th><th>Beleg</th><th>Begründung</th></tr></thead><tbody>' +
       rows + "</tbody></table></div>" +
@@ -4505,7 +4545,46 @@ function kantenprotokoll(erg, m1) {
         '<div class="scroller"><table class="src"><thead><tr><th>Kante</th><th>Länge</th><th>Grenzt an</th><th>Abstand</th><th>Beleg</th><th>Begründung</th></tr></thead><tbody>' +
         uebrige.map(zeileHtml).join("") + "</tbody></table></div></details>"
       : "") +
-    (ausG1 ? "" : '<div class="note">Abstände werden erst ausgewiesen, wenn G1 rechnet (eindeutig zugeordnete Zone).</div>');
+    (ausG1 ? "" : '<div class="note">Abstände werden erst ausgewiesen, wenn G1 rechnet (eindeutig zugeordnete Zone).</div>') +
+    kantenManuellSteuerung(zeilen, ausG1);
+}
+/* Die Knoepfe unter dem Kantenprotokoll -- nur, wenn es etwas einzutragen
+   gibt. Gerechnet wird ueber dieselbe Analyse (/api/analyze), mit den
+   eingetragenen Werten; das Reglement kommt aus dem Zwischenspeicher. */
+function kantenManuellSteuerung(zeilen, ausG1) {
+  if (!ausG1) return "";
+  var offen = zeilen.some(function (k) { return leer(k.abstand_m) || k.abstand_feld === "manuell"; });
+  if (!offen) return "";
+  var aktiv = zeilen.some(function (k) { return k.abstand_feld === "manuell"; });
+  return '<div class="kmanuellfuss">' +
+    '<button class="szbtn" id="kanten-neu">Mit meinen Abständen neu rechnen</button>' +
+    (aktiv ? '<button class="szbtn klein" id="kanten-weg">eigene Abstände entfernen</button>' : "") +
+    '<div class="f">Gilt nur für diese Analyse und nur für die Kanten, bei denen Sie einen Wert ' +
+    "eintragen. Der Wert ist Ihre Annahme, kein amtlicher Befund, und wird nicht als " +
+    "amtliche Analyse gespeichert. Leere Felder bleiben „nicht bestimmbar“.</div></div>";
+}
+/* Im Kopf des Dossiers, auf jedem Reiter: gerechnet wurde mit eigenen
+   Abstaenden. Ohne diesen Hinweis saehe ein Potenzial auf eigener Annahme
+   aus wie eines auf amtlicher Grundlage. */
+function kantenManuellHinweis(erg) {
+  var m = ((erg || {}).kantenabstaende_manuell || {}).angewendet || {};
+  var nrn = Object.keys(m);
+  if (!nrn.length) return "";
+  return '<div class="note warn kmanuellhinweis">Gerechnet mit eigenen Abständen ' + wtyp("benutzerannahme") +
+    ": " + esc(nrn.map(function (n) { return "Kante " + n + ": " + fmt(m[n], 1) + " m"; }).join(" · ")) +
+    " — kein amtlicher Wert. Einzusehen und zu ändern im Kantenprotokoll (Baurecht &amp; Planung).</div>";
+}
+// Die eingetragenen Werte -- nur gueltige Zahlen, nur nicht leere Felder.
+function kantenManuellLesen() {
+  var werte = {}, fehler = null;
+  Array.prototype.forEach.call(document.querySelectorAll("[data-kante-manuell]"), function (el) {
+    var t = String(el.value || "").trim().replace(",", ".");
+    if (!t) return;
+    var v = Number(t);
+    if (!(v > 0 && v <= 100)) { fehler = "Kante " + el.dataset.kanteManuell + ": ein Abstand muss grösser als 0 und höchstens 100 m sein."; return; }
+    werte[el.dataset.kanteManuell] = v;
+  });
+  return { werte: werte, fehler: fehler };
 }
 /* --- Zonenhierarchie: was gilt, in welcher Reihenfolge ---------------------
 
@@ -4705,6 +4784,24 @@ function oerebThemaName(schluessel) {
 // nicht gibt: das Modul fuehrt sie unter `festlegungen`. Ergebnis war ein
 // Widerspruch auf demselben Bildschirm -- die Hierarchie zeigte zwei
 // Ueberlagerungen, die Uebersicht darunter schrieb "keine gefunden".
+/* "Hinweis.Zonenanpassung in Erarbeitung" (Rapperswil-Jona) ist im
+   OEREB-Kataster ein rechtskraeftiger EINTRAG -- aber ein Hinweis auf eine
+   laufende Planung, keine geltende Vorschrift. zoneKlarname() schneidet das
+   Praefix "Hinweis." ab; uebrig blieb "Zonenanpassung in Erarbeitung" mit
+   "rechtskraeftig" daneben, als gaelte die Anpassung schon. In die
+   Berechnung ging er nie ein (Zonenwerte kommen aus dem geltenden Reglement). */
+function istHinweisFestlegung(u) {
+  return /^Hinweis\b/i.test(String((u || {}).typ_kommunal_bezeichnung ||
+                                   (u || {}).typ_kantonal_bezeichnung || "").trim());
+}
+var LAUFENDE_PLANUNG = /Erarbeitung|Revision|Mitwirkung|Entwurf|Planungszone|öffentliche Auflage/i;
+function festlegungStatus(u) {
+  if (!istHinweisFestlegung(u)) return "überlagert die Parzelle · rechtskräftig";
+  var name = String(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung || "");
+  return LAUFENDE_PLANUNG.test(name)
+    ? "Hinweis auf laufende Planung — gilt noch nicht, nicht in der Berechnung"
+    : "Hinweis im ÖREB-Kataster — keine Vorschrift";
+}
 function ueberlagerungenVon(nk) {
   return alsListe((nk || {}).festlegungen).filter(function (f) {
     return (f.ebene || "") !== "grundnutzung" && f.ist_rechtskraeftig;
@@ -4775,11 +4872,14 @@ function zonenHierarchie(m1, zz) {
                      ueberlagernd_punkt: "Punkt" };  // kurz, weil daneben der Name steht
   var c = ueber.length
     ? ueber.map(function (u) {
+        var hinweis = istHinweisFestlegung(u);
         return '<div class="zeintrag"><div class="zezeile"><b>' +
           esc(zoneKlarname(u.typ_kommunal_bezeichnung || u.typ_kantonal_bezeichnung) || "Überlagerung") +
-          '</b><span class="badge warn">zu beachten</span></div>' +
+          (hinweis ? '</b><span class="badge mute">Hinweis, keine Vorschrift</span></div>'
+                   : '</b><span class="badge warn">zu beachten</span></div>') +
           '<div class="f">' + esc([EBENE_TEXT[u.ebene] || u.ebene,
-                                   zoneKlarname(u.hauptnutzung_bezeichnung)].filter(Boolean).join(" · ")) +
+                                   zoneKlarname(u.hauptnutzung_bezeichnung),
+                                   hinweis ? festlegungStatus(u) : null].filter(Boolean).join(" · ")) +
           "</div></div>";
       }).join("")
     : '<div class="f">Keine rechtskräftigen Überlagerungen im Abfragebereich gefunden.</div>';
@@ -4941,9 +5041,16 @@ function secBaurecht(erg, m1, zz) {
     // Das Kantenprotokoll ist ein Nachweis, keine Aussage: eine Tabelle
     // mit Kantenlaengen, Katasternummern und EGRIDs. Es bleibt
     // vollstaendig erhalten, steht aber eingeklappt.
-    detailBlock("Kantenprotokoll — wie jede Grundstueckskante zugeordnet wurde",
-                kantenprotokoll(erg, m1),
-                "Keine Kantenklassifikation vorhanden.") +
+    // Fehlt einer Kante der Abstand (oder ist er eigene Annahme), steht das
+    // Protokoll offen -- dort wird er eingetragen.
+    (alsListe((erg.g1_ergebnis || {}).kantenzuordnung_offen).length ||
+     Object.keys(((erg.kantenabstaende_manuell || {}).angewendet) || {}).length
+      ? '<details class="more" open id="kantenprotokoll-block"><summary>' +
+        esc("Kantenprotokoll — wie jede Grundstueckskante zugeordnet wurde") + "</summary><div>" +
+        kantenprotokoll(erg, m1) + "</div></details>"
+      : detailBlock("Kantenprotokoll — wie jede Grundstueckskante zugeordnet wurde",
+                    kantenprotokoll(erg, m1),
+                    "Keine Kantenklassifikation vorhanden.")) +
     (sonder ? '<h4 class="subhead">Sonderregelungen &amp; Boni</h4>' + sonder : "") +
     (zonenListe.length
       ? '<details class="more"><summary>Alle ' + zonenListe.length + ' im Reglement erkannten Zonen</summary><div>' +
@@ -5935,13 +6042,40 @@ var MACHBARKEIT_BADGE = {
   nicht_moeglich: ["nicht möglich", "stop"],
   nicht_bestimmbar: ["nicht bestimmbar", "warn"]
 };
+/* Vier Dinge, die auf Karte und 3D nie gleich aussehen duerfen:
+     Bestand          grau, durchgezogen       -- steht heute
+     bebaubare Flaeche gruen, gestrichelt, flach -- errechneter Bereich (G1)
+     neuer Baukoerper blau/orange/violett, gestrichelt -- errechnet, je Szenario
+     (geplant/bewilligt fuehrt das Werkzeug nicht -- siehe Ebenenname)
+   Der Ersatzneubau trug bis 07.10.2026 das Gruen der bebaubaren Flaeche
+   (#1f7a4d): auf der Karte las sich der Szenario-Baukoerper deshalb wie der
+   Baubereich selbst, und die Ebene "Geplantes Gebaeude" zeigte gruen,
+   obwohl ihre Legende blau ist. Er ist ein neuer Baukoerper wie der Neubau
+   bei "Bestand + Neubau" -- unterschieden wird am Bestand: beim
+   Ersatzneubau steht keiner mehr. */
 var BAUKOERPER_FARBE = {
   bestand: "#6b7280",
   anbau: "#c2410c",
   aufstockung: "#7c3aed",
-  ersatzneubau: "#1f7a4d",
+  ersatzneubau: "#0369a1",
   neubau: "#0369a1"
 };
+/* Ein Szenario "nicht moeglich" zeigt keinen neuen Baukoerper. Die Engine
+   legt die Koerper an, bevor sie die Ausnuetzung prueft (Anbau, Bestand +
+   Neubau) -- gezeichnet wurde deshalb z. B. "Neubau Osten" bei "Bestand +
+   Neubau: nicht moeglich" (Rheineck, Buhofstrasse 54). Der Bestand bleibt. */
+function sichtbareKoerper(s) {
+  var alle = alsListe((s || {}).baukoerper);
+  if ((s || {}).machbarkeit !== "nicht_moeglich") return alle;
+  return alle.filter(function (k) { return k.art === "bestand"; });
+}
+// Der Name eines Koerpers. Der Ersatzneubau heisst in der Engine
+// "Baubereich (moegliche Lage)" -- als Baukoerper gelesen ist das der Name
+// des gruenen Bereichs. Gemeint ist: der neue Bau, irgendwo in diesem Bereich.
+function koerperTitel(k) {
+  if ((k || {}).art === "ersatzneubau") return "Ersatzneubau (mögliche Lage im Baubereich)";
+  return koerperName((k || {}).name);
+}
 var aktivesSzenario = null;
 
 // ---------------------------------------------------------------------------
@@ -6104,14 +6238,15 @@ function zeichneSzenario(id) {
   var s = ((erg && erg.szenarien && erg.szenarien.szenarien) || {})[id];
   if (!s) { setLayerVerfuegbar("szenario", 0); return; }
   var anz = 0;
-  alsListe(s.baukoerper).forEach(function (k) {
+  sichtbareKoerper(s).forEach(function (k) {
     var farbe = BAUKOERPER_FARBE[k.art] || "#0369a1";
     var stil = {
       color: farbe, weight: 2, fillColor: farbe,
       fillOpacity: k.art === "bestand" ? 0.45 : 0.32,
       dashArray: k.art === "bestand" ? null : "6,3"
     };
-    var popup = "<b>" + esc(koerperName(k.name)) + "</b><span class=\"m\">" +
+    var popup = "<b>" + esc(koerperTitel(k)) + "</b><span class=\"m\">" +
+      (k.art === "bestand" ? "" : "errechnet, kein geplantes Gebäude<br>") +
       fmt(k.flaeche_m2, 1) + " m² Grundfläche<br>max. " + esc(k.max_laenge_m) + " × " +
       esc(k.max_breite_m) + " m<br>" +
       (leer(k.geschosse) ? "" : esc(k.geschosse) + " Geschoss(e)") +
@@ -6145,11 +6280,11 @@ function szenarioKarteZeile(s) {
         ')</summary><div><ul class="plain">' +
         alsListe(s.unsicherheiten).map(function (u) { return "<li>" + satz(u) + "</li>"; }).join("") +
         "</ul></div></details>" : "") +
-    (alsListe(s.baukoerper).length
-      ? '<details class="more"><summary>Baukörper (' + alsListe(s.baukoerper).length + ')</summary><div>' +
+    (sichtbareKoerper(s).length
+      ? '<details class="more"><summary>Baukörper (' + sichtbareKoerper(s).length + ')</summary><div>' +
         '<div class="scroller"><table class="src"><thead><tr><th>Name</th><th>Art</th><th>Fläche</th><th>max. L × B</th><th>Geschosse</th><th>Höhe</th><th>Herkunft</th></tr></thead><tbody>' +
-        alsListe(s.baukoerper).map(function (k) {
-          return "<tr><td><b>" + esc(koerperName(k.name)) + "</b></td><td>" + begriff(k.art) + "</td>" +
+        sichtbareKoerper(s).map(function (k) {
+          return "<tr><td><b>" + esc(koerperTitel(k)) + "</b></td><td>" + begriff(k.art) + "</td>" +
             "<td>" + fmt(k.flaeche_m2, 1) + " m²</td>" +
             "<td>" + esc(k.max_laenge_m) + " × " + esc(k.max_breite_m) + " m</td>" +
             "<td>" + esc(k.geschosse) + "</td><td>" + (leer(k.hoehe_m) ? "–" : esc(k.hoehe_m) + " m") + "</td>" +
@@ -7222,14 +7357,23 @@ function secSzenarien(erg) {
   // (a) und (b) sahen frueher beide gleich aus: (a) als fuenf Karten
   // Entwicklungsdokumentation, (b) als Tabelle mit siebzig Gedankenstrichen.
   if (!sz || sz.status !== "berechnet") {
+    // Die Szenariologik ist vorhanden. Hier fehlt ihr eine eindeutige
+    // Geometrie -- vorher stand an dieser Stelle "in Vorbereitung, wird als
+    // naechster fachlicher Block ergaenzt", was nicht stimmte.
+    var offeneKanten = alsListe((erg.g1_ergebnis || {}).kantenzuordnung_offen).length > 0;
     return '<section class="sec" id="sec-szenarien">' + kopf +
       '<div class="antwort wartet"><div class="akopf">' +
       '<span class="gross klein">Noch nicht berechnet</span>' +
-      '<span class="badge mute">in Vorbereitung</span></div>' +
-      '<p class="atext">Die Berechnungslogik f\u00fcr Bestand, Sanierung, Anbau, Aufstockung ' +
-      'und Ersatzneubau wird als n\u00e4chster fachlicher Block erg\u00e4nzt. Es werden bewusst ' +
-      'keine simulierten Ergebnisse angezeigt.</p>' +
+      '<span class="badge mute">Geometrie nicht eindeutig</span></div>' +
+      '<p class="atext">Die Szenarien (Bestand, Sanierung, Anbau, Aufstockung, Ersatzneubau, ' +
+      'Bestand + Neubau) werden gerechnet, sobald die Geometrie des Grundst\u00fccks eindeutig ' +
+      'bestimmt ist. Das ist hier noch nicht der Fall; es werden bewusst keine simulierten ' +
+      'Ergebnisse angezeigt.</p>' +
       (sz && sz.grund ? '<p class="ahinweis">' + satz(sz.grund) + "</p>" : "") +
+      (offeneKanten
+        ? '<p class="ahinweis">Fehlende Kantenabst\u00e4nde k\u00f6nnen Sie im Kantenprotokoll als eigene ' +
+          'Annahme setzen. ' + reiterLink("baurecht", "Zum Kantenprotokoll") + "</p>"
+        : "") +
       "</div></section>";
   }
   if (!szenarienHabenWerte(erg)) {
@@ -10516,12 +10660,12 @@ function secEntwurf(erg) {
     var sz = ((erg.szenarien || {}).szenarien || {})[szenarioId];
     var legende = [];
     if (sz) {
-      alsListe(sz.baukoerper).forEach(function (k) {
+      sichtbareKoerper(sz).forEach(function (k) {
         var h = leer(k.hoehe_m) ? 0 : k.hoehe_m;
         var koerperMesh = koerper(k.ring, mx, my, h, BAUKOERPER_FARBE[k.art] || "#0369a1",
                                   k.art === "bestand" ? 0.9 : 0.62);
         u3dGruppen.projekt.add(koerperMesh);
-        legende.push({ name: koerperName(k.name), art: k.art, hoehe: k.hoehe_m });
+        legende.push({ name: koerperTitel(k), art: k.art, hoehe: k.hoehe_m });
       });
     }
 
