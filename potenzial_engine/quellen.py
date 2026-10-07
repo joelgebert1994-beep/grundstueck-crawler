@@ -329,6 +329,24 @@ def quellen_aus_modul1_ergebnis(result: Dict[str, Any]) -> List[Quellenobjekt]:
                     quelle_bezeichnung=QUELLE_BEZEICHNUNG_GWR, quelle_url=MAPSERVER_IDENTIFY_URL, abgerufen_am=abgerufen_am,
                 ))
 
+    # Die Gebaeudegrundrisse: amtliche Vermessung oder VEC25 (vereinfacht) --
+    # die Herkunft steht beim Wert, nicht nur im Code.
+    bestand = result.get("bestand") or {}
+    grundriss_quelle = bestand.get("grundriss_quelle") or {}
+    if bestand.get("bebaute_flaeche_grundriss_m2") is not None and grundriss_quelle.get("bezeichnung"):
+        quellen.append(aus_amtlichem_wert(
+            "bestand.bebaute_flaeche_grundriss_m2", bestand["bebaute_flaeche_grundriss_m2"],
+            quelle_bezeichnung=grundriss_quelle["bezeichnung"],
+            quelle_url=grundriss_quelle.get("url") or MAPSERVER_IDENTIFY_URL, abgerufen_am=abgerufen_am,
+        ))
+    projektiert = bestand.get("projektiert") or {}
+    if projektiert.get("abgefragt"):
+        quellen.append(aus_amtlichem_wert(
+            "bestand.projektiert", f"{len(projektiert.get('gebaeude') or [])} projektierte(s) Gebaeude im Umfeld",
+            quelle_bezeichnung=projektiert.get("quelle") or "Amtliche Vermessung, projektierte Gebaeude",
+            quelle_url=projektiert.get("url"), abgerufen_am=abgerufen_am,
+        ))
+
     radon = result.get("radon") or {}
     if radon.get("found") and radon.get("wahrscheinlichkeit_prozent") is not None:
         quellen.append(aus_amtlichem_wert(

@@ -17,9 +17,17 @@ Geschosse stehen.
 Dieses Modul liest deshalb ALLE Gebaeude der Parzelle:
 
   * GWR-Eintraege, die geometrisch INNERHALB des Parzellenpolygons liegen
-  * Gebaeudegrundrisse aus `ch.swisstopo.vec25-gebaeude`, geschnitten mit
-    der Parzelle
+  * Gebaeudegrundrisse der AMTLICHEN VERMESSUNG (Bodenbedeckung Gebaeude,
+    geodienste.ch "AV Situationsplan"), wo der Kanton sie frei gibt --
+    sonst `ch.swisstopo.vec25-gebaeude`, ausdruecklich als vereinfacht
   * Zuordnung Grundriss <-> GWR-Eintrag ueber Punkt-in-Polygon
+
+Seit 07.10.2026 die amtliche Vermessung zuerst. VEC25 ist auf 1:25'000
+generalisiert und war an allen geprueften Parzellen deutlich zu gross:
+Weiningen 1784 264.1 m2 gegen 150.0 m2 (Vermessung = GWR 150), Rheineck 103
+133.1 gegen 107.6 (GWR 108), Buchs AG 1145 115.0 gegen 67.7 (GWR 68). Der
+Umriss geht in Rechnungen ein (Ausnuetzungsbudget, freie Flaeche fuer
+Anbau/Neubau, Aufstockung) -- er war dort also nicht nur ungenau gezeichnet.
 
 Zwei Flaechenbegriffe, die NICHT dasselbe sind und deshalb getrennt bleiben:
 `grundflaeche_gwr_m2` ist die im Register gefuehrte Gebaeudeflaeche (GWR-
@@ -39,11 +47,44 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+import re
+
+import requests
 from shapely.geometry import Point, Polygon, shape
 
 from .modul1_geodata import LAYER_GWR, _identify
 
 LAYER_GEBAEUDE_GRUNDRISS = "ch.swisstopo.vec25-gebaeude"
+
+# Amtliche Vermessung, Bodenbedeckung "Gebaeude", ueber geodienste.ch. Frei
+# zugaenglich nur fuer diese Kantone (FILTER_ALLOWED_CANTONS der Antwort,
+# geprueft 07.10.2026); die uebrigen verlangen eine Registrierung. Ausserhalb
+# dieser Liste ist eine leere Antwort KEIN Befund "unbebaut".
+AV_WFS_URL = "https://geodienste.ch/db/av_situationsplan_0/deu"
+AV_TYP_GEBAEUDE = "ms:land_cover_surface_building"
+# Projektierte Gebaeude der amtlichen Vermessung: bewilligt bzw. im Bau, noch
+# nicht als Bodenbedeckung "Gebaeude" erfasst. Sie sind GEPLANT, nicht Bestand
+# -- sie gehen in keine Bestandsrechnung ein und werden nie als realisiert
+# oder bebaubar behandelt.
+AV_TYP_PROJEKTIERT = "ms:land_cover_surface_project_buildings"
+QUELLE_AV_PROJEKTIERT = ("Amtliche Vermessung, projektierte Gebäude "
+                         "(geodienste.ch, AV Situationsplan)")
+AV_KANTONE_FREI = frozenset({
+    "AG", "AI", "AR", "BE", "BL", "BS", "FL", "FR", "GE", "GL", "GR", "SG", "SH", "SO",
+    "SZ", "TG", "TI", "UR", "VS", "ZG", "ZH"})
+GRUNDRISS_AV = "amtliche_vermessung"
+GRUNDRISS_VEC25 = "vec25"
+GRUNDRISS_QUELLE_TEXT = {
+    GRUNDRISS_AV: "Amtliche Vermessung, Bodenbedeckung Gebäude (geodienste.ch, AV Situationsplan)",
+    GRUNDRISS_VEC25: "swisstopo VEC25 Gebäude (vereinfacht, Massstab 1:25'000)",
+}
+_AV_TIMEOUT = 30
+_AV_MEMBER = re.compile(r"<wfs:member>(.*?)</wfs:member>", re.S)
+_AV_ATTR = re.compile(r"<ms:(\w+)>([^<]*)</ms:\1>")
+_AV_POLYGON = re.compile(r"<gml:Polygon\b.*?</gml:Polygon>", re.S)
+_AV_AUSSEN = re.compile(r"<gml:exterior>.*?<gml:posList[^>]*>([^<]+)</gml:posList>", re.S)
+_AV_INNEN = re.compile(r"<gml:interior>.*?<gml:posList[^>]*>([^<]+)</gml:posList>", re.S)
+_AV_WEITER = re.compile(r'next="([^"]+)"')
 
 # Wie weit das Umfeld geholt wird (Pixel; rund 2 m je Pixel bei der in
 # _identify() gesetzten mapExtent). Grosszuegig, weil danach geometrisch
@@ -136,12 +177,18 @@ def werte_bestand_aus(
     gwr_treffer: list[dict[str, Any]],
     grundriss_treffer: list[dict[str, Any]],
     parzelle_ring: list[tuple[float, float]],
+    grundriss_quelle: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Die reine Auswertung -- ohne Netzzugriff, damit offline pruefbar.
 
     `gwr_treffer` und `grundriss_treffer` sind MapServer-Antworten im Format
-    von `_identify(..., return_geometry=True)`.
+    von `_identify(..., return_geometry=True)` (die Vermessung wird beim
+    Abruf in dasselbe Format gebracht). `grundriss_quelle` sagt, woher die
+    Grundrisse stammen; ohne Angabe VEC25 (bisheriges Verhalten).
     """
+    grundriss_quelle = grundriss_quelle or {"art": GRUNDRISS_VEC25,
+                                            "bezeichnung": GRUNDRISS_QUELLE_TEXT[GRUNDRISS_VEC25]}
+    vereinfacht = grundriss_quelle.get("art") != GRUNDRISS_AV
     parzelle = Polygon(parzelle_ring)
     if not parzelle.is_valid:
         parzelle = parzelle.buffer(0)
@@ -222,9 +269,11 @@ def werte_bestand_aus(
 
     for attrs in ohne_grundriss:
         gebaeude.append(baue(attrs, None, [
-            "GWR-Eintrag auf der Parzelle ohne passenden Gebaeudegrundriss in "
-            f"{LAYER_GEBAEUDE_GRUNDRISS} -- der Datensatz ist generalisiert (1:25'000) "
-            "und fuehrt kleine Nebengebaeude teils nicht."
+            ("GWR-Eintrag auf der Parzelle ohne passenden Gebaeudegrundriss in "
+             f"{LAYER_GEBAEUDE_GRUNDRISS} -- der Datensatz ist generalisiert (1:25'000) "
+             "und fuehrt kleine Nebengebaeude teils nicht.") if vereinfacht else
+            ("GWR-Eintrag auf der Parzelle ohne Gebaeudegrundriss in der amtlichen "
+             "Vermessung -- Register und Vermessung sind hier nicht deckungsgleich.")
         ]))
 
     # 4. Hauptgebaeude: groesste Wohnnutzung, sonst groesste Flaeche.
@@ -258,9 +307,13 @@ def werte_bestand_aus(
     if grundriss_summe and gwr_summe and abs(grundriss_summe - gwr_summe) / max(grundriss_summe, gwr_summe) > 0.15:
         hinweise.append(
             f"Grundrissflaeche ({grundriss_summe} m2) und GWR-Gebaeudeflaeche ({gwr_summe} m2) "
-            "weichen um mehr als 15 % voneinander ab. Beide Werte sind echt -- VEC25 ist ein "
-            "generalisierter Kartendatensatz, das GWR ein Register. Sie werden nicht verrechnet."
+            "weichen um mehr als 15 % voneinander ab. Beide Werte sind echt -- "
+            + ("VEC25 ist ein generalisierter Kartendatensatz, " if vereinfacht
+               else "die Vermessung zeigt den Grundriss, ")
+            + "das GWR ist ein Register. Sie werden nicht verrechnet."
         )
+    if grundriss_quelle.get("hinweis"):
+        hinweise.append(grundriss_quelle["hinweis"])
 
     return {
         "gefunden": bool(gebaeude),
@@ -273,13 +326,94 @@ def werte_bestand_aus(
             round(grundriss_summe / parzelle.area, 3) if grundriss_summe and parzelle.area else None
         ),
         "hinweise": hinweise,
-        "quellen_layer": [LAYER_GWR, LAYER_GEBAEUDE_GRUNDRISS],
+        "quellen_layer": [LAYER_GWR, LAYER_GEBAEUDE_GRUNDRISS if vereinfacht else AV_TYP_GEBAEUDE],
+        "grundriss_quelle": grundriss_quelle,
         "abgerufen_am": datetime.now().date().isoformat(),
     }
 
 
+def _av_gebaeude(bbox: tuple[float, float, float, float],
+                 typ: str = AV_TYP_GEBAEUDE) -> list[dict[str, Any]]:
+    """Gebaeude der amtlichen Vermessung im Rechteck, im Trefferformat von
+    `_identify(..., return_geometry=True)` -- damit laeuft die bestehende
+    Auswertung (Polygone, Punkt-in-Grundriss) unveraendert weiter. `typ`:
+    bestehende (Standard) oder projektierte Gebaeude -- derselbe Dienst."""
+    minx, miny, maxx, maxy = bbox
+    url: str = AV_WFS_URL
+    params: Optional[dict[str, str]] = {
+        "SERVICE": "WFS", "VERSION": "2.0.0", "REQUEST": "GetFeature", "TYPENAMES": typ,
+        "BBOX": f"{minx},{miny},{maxx},{maxy},urn:ogc:def:crs:EPSG::2056"}
+    treffer: list[dict[str, Any]] = []
+    for _seite in range(20):  # Der Dienst blaettert nur auf Verlangen; begrenzt, nie endlos.
+        resp = requests.get(url, params=params, timeout=_AV_TIMEOUT)
+        resp.raise_for_status()
+        if "ExceptionReport" in resp.text[:2000]:
+            raise RuntimeError("geodienste.ch meldet einen Fehler (ExceptionReport)")
+        for block in _AV_MEMBER.findall(resp.text):
+            attrs = dict(_AV_ATTR.findall(block))
+            for polygon_gml in _AV_POLYGON.findall(block):
+                aussen = _AV_AUSSEN.search(polygon_gml)
+                if not aussen:
+                    continue
+                ringe = []
+                for pos in [aussen.group(1)] + _AV_INNEN.findall(polygon_gml):
+                    z = [float(v) for v in pos.split()]
+                    ringe.append([[z[i], z[i + 1]] for i in range(0, len(z) - 1, 2)])
+                treffer.append({"geometry": {"type": "Polygon", "coordinates": ringe},
+                                "properties": {"egid": attrs.get("gwr_egid") or None,
+                                               "kanton": attrs.get("kanton"),
+                                               "qualitaet": attrs.get("qualitaet")}})
+        weiter = _AV_WEITER.search(resp.text[:4000])
+        if not weiter:
+            break
+        url, params = weiter.group(1).replace("&amp;", "&"), None
+    return treffer
+
+
+def hole_gebaeudegrundrisse(
+    e: float, n: float, tolerance_px: int, kanton: Optional[str] = None,
+    wie_bestand: Optional[str] = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Gebaeudegrundrisse um den Punkt -- fuer den Bestand UND die 3D-Umgebung.
+
+    Zuerst die amtliche Vermessung. VEC25 nur, wenn der Kanton die
+    Vermessung nicht frei gibt oder der Dienst nicht antwortet -- und dann mit
+    dem ausdruecklichen Vermerk "vereinfacht". Eine leere Antwort der
+    Vermessung in einem freien Kanton heisst: dort steht kein Gebaeude; sie
+    wird NICHT durch VEC25 aufgefuellt.
+
+    Das Rechteck entspricht dem Umkreis der bisherigen Toleranzabfrage
+    (rund 2 m je Pixel, siehe `_identify`).
+
+    `wie_bestand`: die Quelle, die der Bestand DIESER Analyse bekommen hat.
+    Musste er auf VEC25 ausweichen, tut es die 3D-Szene auch -- in einem Fall
+    stehen nie Umrisse zweier Quellen nebeneinander.
+    """
+    k = (kanton or "").strip().upper()
+    radius = tolerance_px * 2.0
+    if wie_bestand == GRUNDRISS_VEC25:
+        treffer = _identify(e, n, LAYER_GEBAEUDE_GRUNDRISS, tolerance=tolerance_px, return_geometry=True)
+        return treffer, {"art": GRUNDRISS_VEC25, "bezeichnung": GRUNDRISS_QUELLE_TEXT[GRUNDRISS_VEC25],
+                         "hinweis": "Wie beim Bestand dieser Analyse: Gebaeudeumriss vereinfacht "
+                                    "aus VEC25 (1:25'000)."}
+    if k in AV_KANTONE_FREI:
+        try:
+            treffer = _av_gebaeude((e - radius, n - radius, e + radius, n + radius))
+            return treffer, {"art": GRUNDRISS_AV, "bezeichnung": GRUNDRISS_QUELLE_TEXT[GRUNDRISS_AV],
+                             "url": AV_WFS_URL}
+        except Exception as exc:  # noqa: BLE001 -- dann vereinfacht, aber gesagt
+            hinweis = (f"Amtliche Vermessung (geodienste.ch) nicht erreichbar ({type(exc).__name__}) -- "
+                       "Gebaeudeumriss vereinfacht aus VEC25 (1:25'000).")
+    else:
+        hinweis = (f"Kanton {k or '?'} gibt die Gebaeudegrundrisse der amtlichen Vermessung ueber "
+                   "geodienste.ch nicht frei -- Gebaeudeumriss vereinfacht aus VEC25 (1:25'000).")
+    treffer = _identify(e, n, LAYER_GEBAEUDE_GRUNDRISS, tolerance=tolerance_px, return_geometry=True)
+    return treffer, {"art": GRUNDRISS_VEC25, "bezeichnung": GRUNDRISS_QUELLE_TEXT[GRUNDRISS_VEC25],
+                     "hinweis": hinweis}
+
+
 def hole_bestand(
-    e: float, n: float, parzelle_ring: list[tuple[float, float]]
+    e: float, n: float, parzelle_ring: list[tuple[float, float]], kanton: Optional[str] = None,
 ) -> dict[str, Any]:
     """Ermittelt alle Gebaeude auf der Parzelle (GWR + Grundrisse)."""
     if not parzelle_ring:
@@ -289,10 +423,49 @@ def hole_bestand(
             "gebaeude": [],
         }
     gwr = _identify(e, n, LAYER_GWR, tolerance=_UMFELD_TOLERANZ_PX, return_geometry=True)
-    grundrisse = _identify(
-        e, n, LAYER_GEBAEUDE_GRUNDRISS, tolerance=_UMFELD_TOLERANZ_PX, return_geometry=True
-    )
-    return werte_bestand_aus(gwr, grundrisse, parzelle_ring)
+    grundrisse, quelle = hole_gebaeudegrundrisse(e, n, _UMFELD_TOLERANZ_PX, kanton)
+    ergebnis = werte_bestand_aus(gwr, grundrisse, parzelle_ring, grundriss_quelle=quelle)
+    # Getrennt vom Bestand angehaengt -- NACH der Auswertung, damit sie in
+    # keine Flaeche, kein Budget und kein Szenario einfliessen koennen.
+    ergebnis["projektiert"] = hole_projektierte_gebaeude(e, n, parzelle_ring, kanton)
+    return ergebnis
+
+
+def hole_projektierte_gebaeude(
+    e: float, n: float, parzelle_ring: list[tuple[float, float]], kanton: Optional[str] = None,
+) -> dict[str, Any]:
+    """Projektierte Gebaeude der amtlichen Vermessung im Umfeld der Parzelle.
+
+    Nur, was die Vermessung als projektiert fuehrt -- nie ein vom Crawler
+    errechneter Koerper. Kein Ersatz aus einer anderen Quelle: gibt der
+    Kanton die Vermessung nicht frei oder antwortet der Dienst nicht, heisst
+    das "nicht bestimmbar", nicht "keine geplanten Gebaeude".
+    """
+    k = (kanton or "").strip().upper()
+    if k not in AV_KANTONE_FREI:
+        return {"abgefragt": False, "gebaeude": [],
+                "grund": f"Kanton {k or '?'} gibt die amtliche Vermessung ueber geodienste.ch nicht frei."}
+    radius = _UMFELD_TOLERANZ_PX * 2.0
+    try:
+        treffer = _av_gebaeude((e - radius, n - radius, e + radius, n + radius), AV_TYP_PROJEKTIERT)
+    except Exception as exc:  # noqa: BLE001
+        return {"abgefragt": False, "gebaeude": [],
+                "grund": f"Amtliche Vermessung (geodienste.ch) nicht erreichbar ({type(exc).__name__})."}
+    parzelle = Polygon(parzelle_ring)
+    if not parzelle.is_valid:
+        parzelle = parzelle.buffer(0)
+    gebaeude = []
+    for t, polygon in zip(treffer, (_polygone_aus_treffer([t]) for t in treffer)):
+        for p in polygon:
+            gebaeude.append({
+                "ring": _ring(p),
+                "flaeche_m2": round(p.area, 1),
+                "egid": (t.get("properties") or {}).get("egid"),
+                "auf_parzelle": p.intersection(parzelle).area >= 1.0,
+                "status": "projektiert",
+            })
+    return {"abgefragt": True, "gebaeude": gebaeude, "quelle": QUELLE_AV_PROJEKTIERT,
+            "url": AV_WFS_URL}
 
 
 def bestandsgeschosse(bestand: dict[str, Any]) -> Optional[int]:

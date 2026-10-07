@@ -1733,7 +1733,8 @@ def run_modul1(address: str, geo: Optional[dict[str, Any]] = None) -> dict[str, 
                 # result["gwr"]), liefert aber die parzellenweite Sicht, die
                 # die Entwicklungsszenarien brauchen.
                 try:
-                    return hole_bestand(e, n, parzellengeometrie)
+                    # Der Kanton entscheidet, ob die amtliche Vermessung frei ist.
+                    return hole_bestand(e, n, parzellengeometrie, kanton=kanton)
                 except (Exception,) as exc:  # noqa: BLE001 -- darf nie stoppen
                     return {"gefunden": False,
                             "reason": f"{type(exc).__name__}: {exc}",

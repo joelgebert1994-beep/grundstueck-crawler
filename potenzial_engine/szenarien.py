@@ -231,9 +231,8 @@ def berechne_ausnuetzungsbudget(
             bestand_gf = round(flaeche * geschosse, 1)
             herkunft = (
                 f"Naeherung: {flaeche:.1f} m2 Grundflaeche der Wohngebaeude x {geschosse} "
-                "Geschoss(e). Der Grundriss stammt aus einem generalisierten Kartendatensatz, "
-                "und nicht jedes Geschoss hat die Erdgeschossflaeche -- eine Planabrechnung "
-                "ersetzt diesen Wert."
+                f"Geschoss(e). Grundriss: {_grundriss_herkunft(bestand)}. Nicht jedes "
+                "Geschoss hat die Erdgeschossflaeche -- eine Planabrechnung ersetzt diesen Wert."
             )
     if bestand_gf is None and gebaeude:
         hinweise.append(
@@ -357,6 +356,18 @@ def _flaechen_fuer(
     )
 
 
+def _grundriss_herkunft(bestand: Optional[dict[str, Any]]) -> str:
+    """Woher der Gebaeudegrundriss stammt -- als Satzteil, nicht als Layer-ID.
+    Seit 07.10.2026 meist die amtliche Vermessung; VEC25 nur noch als
+    ausgewiesener Ersatz (siehe bestand.hole_gebaeudegrundrisse)."""
+    quelle = (bestand or {}).get("grundriss_quelle") or {}
+    return quelle.get("bezeichnung") or "swisstopo VEC25 Gebäude (vereinfacht, Massstab 1:25'000)"
+
+
+def _grundriss_vereinfacht(bestand: Optional[dict[str, Any]]) -> bool:
+    return ((bestand or {}).get("grundriss_quelle") or {}).get("art") != "amtliche_vermessung"
+
+
 def _fehlender_bestand_grund(bestand: Optional[dict[str, Any]], was: str) -> str:
     """Warum ist kein bebaubarer Bestand da -- gar kein Gebaeude, oder eines
     ohne Grundriss?
@@ -374,8 +385,11 @@ def _fehlender_bestand_grund(bestand: Optional[dict[str, Any]], was: str) -> str
         )
     return (
         f"Auf der Parzelle stehen {len(gebaeude)} Gebaeude, aber fuer keines liegt ein "
-        "Gebaeudegrundriss vor (der Kartendatensatz ist generalisiert und fuehrt nicht "
-        f"jedes Gebaeude). Ohne Grundriss laesst sich nicht bestimmen, wo {was} Platz "
+        "Gebaeudegrundriss vor ("
+        + ("der Kartendatensatz ist generalisiert und fuehrt nicht jedes Gebaeude"
+           if _grundriss_vereinfacht(bestand)
+           else "die amtliche Vermessung fuehrt hier keinen Gebaeudegrundriss")
+        + f"). Ohne Grundriss laesst sich nicht bestimmen, wo {was} Platz "
         "haette -- manuelle Pruefung erforderlich."
     )
 
@@ -401,7 +415,7 @@ def szenario_bestand(
             polygon=_polygon(g["grundriss"]),
             geschosse=g.get("geschosse"),
             hoehe_m=_hoehe(g.get("geschosse"), geschosshoehe_m),
-            herkunft=f"Gebaeudegrundriss aus {(bestand or {}).get('quellen_layer', ['?'])[-1]}, "
+            herkunft=f"Gebaeudegrundriss: {_grundriss_herkunft(bestand)}; "
                      "Geschosszahl und Baujahr aus dem GWR; Hoehe als Geschosszahl x "
                      "angenommener Geschosshoehe (der Bestand von 1918 kann davon abweichen)",
             art="bestand",

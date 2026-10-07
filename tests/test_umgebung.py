@@ -197,13 +197,23 @@ def test_szene() -> None:
             "quelle": "Testdouble", "hinweise": [],
         }
 
-    o_identify, o_terrain = um._identify, um.hole_terrain
+    # Seit 08.10.2026 holt die Szene ihre Grundrisse ueber dieselbe Funktion
+    # wie der Bestand (amtliche Vermessung, sonst VEC25). Offline: Attrappe
+    # mit denselben Umrissen -- sonst ginge die Abfrage ins echte Netz.
+    def grundrisse_double(e, n, tolerance_px, kanton=None, wie_bestand=None):
+        from potenzial_engine.bestand import LAYER_GEBAEUDE_GRUNDRISS
+        return identify_double(e, n, LAYER_GEBAEUDE_GRUNDRISS), {
+            "art": "vec25", "bezeichnung": "Testdouble (vereinfacht)"}
+
+    o_identify, o_terrain, o_grundrisse = um._identify, um.hole_terrain, um.hole_gebaeudegrundrisse
     um._identify, um.hole_terrain = identify_double, terrain_double
+    um.hole_gebaeudegrundrisse = grundrisse_double
     try:
         szene = um.hole_umgebung(OX + 10, OY + 10, PARZELLE,
                                  eigenes_egrid="CH000000000001")
     finally:
         um._identify, um.hole_terrain = o_identify, o_terrain
+        um.hole_gebaeudegrundrisse = o_grundrisse
 
     st = szene["statistik"]
     pruefe(st["gebaeude"] == 2, f"2 Gebaeude ({st['gebaeude']})")

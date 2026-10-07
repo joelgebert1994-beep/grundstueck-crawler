@@ -1764,7 +1764,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
-            umgebung = hole_umgebung(float(e), float(n), ring, eigenes_egrid=kataster.get("egrid"))
+            umgebung = hole_umgebung(float(e), float(n), ring, eigenes_egrid=kataster.get("egrid"),
+                                     kanton=(m1.get("gemeinde") or {}).get("kanton"),
+                                     grundriss_wie_bestand=((m1.get("bestand") or {})
+                                                            .get("grundriss_quelle") or {}).get("art"))
         except UmgebungError as exc:
             self._send_json({"ok": False, "fehler": str(exc)}, status=502)
             return
