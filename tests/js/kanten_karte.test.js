@@ -162,6 +162,15 @@ console.log("\n=== B: Bestand ≠ möglicher Baukörper ≠ bebaubare Fläche ==
   const sicht = sichtbareKoerper(bestandPlusNeubau);
   pruefe(sicht.length === 1 && sicht[0].art === "bestand",
     "Bestand + Neubau 'nicht möglich': kein 'Neubau Osten', nur der Bestand");
+  // Anbau "nicht möglich" (Rheineck): die Engine liefert nur "Anbau Osten",
+  // keinen Bestand. Gezeigt wird dann der Ist-Zustand, kein leeres Grundstück.
+  global.ergebnisAktuell = { szenarien: { szenarien: { bestand: { machbarkeit: "besteht",
+    baukoerper: [{ name: "Buhofstrasse 54", art: "bestand" }] } } } };
+  const anbau = sichtbareKoerper({ machbarkeit: "nicht_moeglich", baukoerper: [{ name: "Anbau Osten", art: "anbau" }] });
+  pruefe(anbau.length === 1 && anbau[0].name === "Buhofstrasse 54",
+    "Anbau 'nicht möglich': kein 'Anbau Osten', stattdessen der bestehende Bau");
+  pruefe(sichtbareKoerper({ machbarkeit: "nicht_moeglich", baukoerper: [] }).length === 1,
+    "Aufstockung 'nicht möglich' ohne Körper: der bestehende Bau bleibt sichtbar");
   const moeglich = { machbarkeit: "eingeschraenkt_moeglich", baukoerper: bestandPlusNeubau.baukoerper };
   pruefe(sichtbareKoerper(moeglich).length === 2, "ein mögliches Szenario zeigt weiter beide Körper");
   pruefe(koerperTitel({ name: "Baubereich (moegliche Lage)", art: "ersatzneubau" }) ===

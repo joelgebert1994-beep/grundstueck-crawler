@@ -6067,7 +6067,13 @@ var BAUKOERPER_FARBE = {
 function sichtbareKoerper(s) {
   var alle = alsListe((s || {}).baukoerper);
   if ((s || {}).machbarkeit !== "nicht_moeglich") return alle;
-  return alle.filter(function (k) { return k.art === "bestand"; });
+  var bestand = alle.filter(function (k) { return k.art === "bestand"; });
+  if (bestand.length) return bestand;
+  // Anbau und Aufstockung fuehren den Bestand nicht als eigenen Koerper.
+  // Ist das Szenario nicht moeglich, bleibt es beim Ist-Zustand -- sonst
+  // stuende die Parzelle in 3D leer da.
+  var ist = (((ergebnisAktuell || {}).szenarien || {}).szenarien || {}).bestand;
+  return alsListe((ist || {}).baukoerper).filter(function (k) { return k.art === "bestand"; });
 }
 // Der Name eines Koerpers. Der Ersatzneubau heisst in der Engine
 // "Baubereich (moegliche Lage)" -- als Baukoerper gelesen ist das der Name
