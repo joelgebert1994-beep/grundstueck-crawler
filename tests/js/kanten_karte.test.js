@@ -40,6 +40,8 @@ function extrahiereVar(name, ende) {
   const e = ende || "};";
   return quelltext.slice(start, quelltext.indexOf(e, start) + e.length);
 }
+// Auf der Seite immer deklariert (var ergebnisAktuell = null).
+global.ergebnisAktuell = null;
 // Nur Schreibweise -- fuer diese Pruefungen ohne Bedeutung.
 function begriff(t) { return String(t); }
 function satz(t) { return String(t); }
@@ -208,6 +210,25 @@ console.log("\n=== B2 (08.10.2026): Geplant ≠ möglicher Baukörper, Bestand m
   const ersatz = sichtbareKoerper({ machbarkeit: "eingeschraenkt_moeglich",
     baukoerper: [{ name: "Baubereich (moegliche Lage)", art: "ersatzneubau" }] });
   pruefe(ersatz.length === 1 && ersatz[0].art === "ersatzneubau", "Ersatzneubau: nur der neue Körper, kein Bestand");
+  // Buchs AG (live 08.10.2026): Anbau/Aufstockung moeglich -- der Bestand
+  // muss stehen bleiben, der Zusatzkoerper kommt dazu.
+  global.ergebnisAktuell = { szenarien: { szenarien: { bestand: { machbarkeit: "besteht",
+    baukoerper: [{ name: "Rosenweg 4", art: "bestand", hoehe_m: 6 }] } } } };
+  const anbauMoeglich = sichtbareKoerper({ id: "anbau", machbarkeit: "eingeschraenkt_moeglich",
+    baukoerper: [{ name: "Anbau Sueden", art: "anbau" }] });
+  pruefe(anbauMoeglich.map((k) => k.art).join(",") === "bestand,anbau",
+    "Anbau möglich: Bestand bleibt sichtbar + Anbau");
+  const aufMoeglich = sichtbareKoerper({ id: "aufstockung", machbarkeit: "moeglich",
+    baukoerper: [{ name: "Aufstockung +1", art: "aufstockung", hoehe_m: 3 }] });
+  pruefe(aufMoeglich.map((k) => k.art).join(",") === "bestand,aufstockung",
+    "Aufstockung möglich: Bestand bleibt sichtbar + Zusatzgeschoss");
+  pruefe(/if \(k\.art === "aufstockung"\) koerperMesh\.position\.y \+= sockel;/.test(quelltext),
+    "das Zusatzgeschoss sitzt in 3D auf dem Bestand, nicht am Boden");
+  const ersatzMitIst = sichtbareKoerper({ id: "ersatzneubau", machbarkeit: "moeglich",
+    baukoerper: [{ name: "Baubereich (moegliche Lage)", art: "ersatzneubau" }] });
+  pruefe(ersatzMitIst.length === 1 && ersatzMitIst[0].art === "ersatzneubau",
+    "Ersatzneubau: auch bei vorhandenem Ist-Bestand nur der neue Körper");
+  global.ergebnisAktuell = null;
   // Weiningen ohne berechnete Szenarien (live 08.10.2026): der eigene Bau
   // stand in 3D nicht da, weil er nur ueber ein Szenario kommt.
   const szene = extrahiere("zeichneSzene");

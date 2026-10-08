@@ -6106,14 +6106,18 @@ var BAUKOERPER_FARBE = {
    Neubau: nicht moeglich" (Rheineck, Buhofstrasse 54). Der Bestand bleibt. */
 function sichtbareKoerper(s) {
   var alle = alsListe((s || {}).baukoerper);
-  if ((s || {}).machbarkeit !== "nicht_moeglich") return alle;
-  var bestand = alle.filter(function (k) { return k.art === "bestand"; });
-  if (bestand.length) return bestand;
   // Anbau und Aufstockung fuehren den Bestand nicht als eigenen Koerper.
-  // Ist das Szenario nicht moeglich, bleibt es beim Ist-Zustand -- sonst
-  // stuende die Parzelle in 3D leer da.
-  var ist = (((ergebnisAktuell || {}).szenarien || {}).szenarien || {}).bestand;
-  return alsListe((ist || {}).baukoerper).filter(function (k) { return k.art === "bestand"; });
+  // Er steht aber da -- nur beim Ersatzneubau verschwindet er.
+  var ist = alsListe(((((ergebnisAktuell || {}).szenarien || {}).szenarien || {}).bestand || {}).baukoerper)
+    .filter(function (k) { return k.art === "bestand"; });
+  var hatBestand = alle.some(function (k) { return k.art === "bestand"; });
+  var ohneBestand = (s || {}).id === "ersatzneubau";
+  if ((s || {}).machbarkeit === "nicht_moeglich") {
+    // Kein zusaetzlicher Koerper -- es bleibt beim Ist-Zustand.
+    var bestand = alle.filter(function (k) { return k.art === "bestand"; });
+    return bestand.length ? bestand : ist;
+  }
+  return (hatBestand || ohneBestand) ? alle : ist.concat(alle);
 }
 // Der Name eines Koerpers. Der Ersatzneubau heisst in der Engine
 // "Baubereich (moegliche Lage)" -- als Baukoerper gelesen ist das der Name
@@ -10723,10 +10727,17 @@ function secEntwurf(erg) {
     var sz = ((erg.szenarien || {}).szenarien || {})[szenarioId];
     var legende = [];
     if (sz) {
-      sichtbareKoerper(sz).forEach(function (k) {
+      var sichtbar = sichtbareKoerper(sz);
+      // Das Zusatzgeschoss einer Aufstockung sitzt AUF dem Bestand -- die
+      // Engine liefert nur seine eigene Hoehe. Sockel = hoechster Bestand.
+      var sockel = sichtbar.reduce(function (m, k) {
+        return k.art === "bestand" && !leer(k.hoehe_m) ? Math.max(m, k.hoehe_m) : m;
+      }, 0);
+      sichtbar.forEach(function (k) {
         var h = leer(k.hoehe_m) ? 0 : k.hoehe_m;
         var koerperMesh = koerper(k.ring, mx, my, h, BAUKOERPER_FARBE[k.art] || "#0369a1",
                                   k.art === "bestand" ? 0.9 : 0.62);
+        if (k.art === "aufstockung") koerperMesh.position.y += sockel;
         u3dGruppen.projekt.add(koerperMesh);
         legende.push({ name: koerperTitel(k), art: k.art, hoehe: k.hoehe_m });
       });
