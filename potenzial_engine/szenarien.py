@@ -39,6 +39,7 @@ from typing import Any, Optional
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
 
+from .bestand import bestandsgeschossflaeche
 from .entwicklungsszenarien import Szenariotyp
 from .flaechenmodell import (
     GESCHOSS_ATTIKA,
@@ -214,31 +215,28 @@ def berechne_ausnuetzungsbudget(
     zulaessig = g1_ergebnis.get("geschossflaeche_m2")
     hinweise: list[str] = []
 
-    haupt = (bestand or {}).get("hauptgebaeude") or {}
     gebaeude = (bestand or {}).get("gebaeude") or []
-    geschosse = haupt.get("geschosse")
 
-    bestand_gf = None
+    # Dieselbe Bestands-Geschossflaeche wie in der Potenzial-Ebene -- eine
+    # Definition, eine Rechnung (bestand.bestandsgeschossflaeche).
+    bgf = bestandsgeschossflaeche(bestand)
+    bestand_gf = bgf["wert_m2"]
     herkunft = None
-    if geschosse is not None:
-        # Alle Gebaeude mit Wohnnutzung zaehlen zur Geschossflaeche; reine
-        # Nebengebaeude (Garagen, Schuppen) in der Regel nicht.
-        flaeche = sum(
-            (g.get("grundriss_flaeche_m2") or g.get("grundflaeche_gwr_m2") or 0.0)
-            for g in gebaeude if g.get("wohnnutzung")
+    if bestand_gf is not None:
+        herkunft = (
+            f"Naeherung: {bgf['rechnung']} (Gebaeude mit Wohnnutzung). "
+            f"Grundriss: {_grundriss_herkunft(bestand)}. Nicht jedes Geschoss hat die "
+            "Erdgeschossflaeche -- eine Planabrechnung ersetzt diesen Wert."
         )
-        if flaeche:
-            bestand_gf = round(flaeche * geschosse, 1)
-            herkunft = (
-                f"Naeherung: {flaeche:.1f} m2 Grundflaeche der Wohngebaeude x {geschosse} "
-                f"Geschoss(e). Grundriss: {_grundriss_herkunft(bestand)}. Nicht jedes "
-                "Geschoss hat die Erdgeschossflaeche -- eine Planabrechnung ersetzt diesen Wert."
-            )
+        ohne = [f"{n['flaeche_m2']:,.1f} m2 ({n['grund']})" if n.get("flaeche_m2") is not None
+                else n["grund"] for n in bgf["nicht_eingerechnet"]]
+        if ohne:
+            herkunft += (" Nicht eingerechnet: " + "; ".join(ohne) + " -- ob solche Bauten an "
+                         "die Ausnuetzung angerechnet werden, regelt das kantonale bzw. "
+                         "kommunale Recht und ist hier nicht geprueft.")
     if bestand_gf is None and gebaeude:
         hinweise.append(
-            "Bestands-Geschossflaeche nicht bestimmbar: "
-            + ("im GWR ist keine Geschosszahl gefuehrt." if geschosse is None
-               else "kein Gebaeude mit Wohnnutzung auf der Parzelle.")
+            "Bestands-Geschossflaeche nicht bestimmbar: " + (bgf["grund"] or "")
             + " Ohne sie laesst sich nicht sagen, wie viel Ausnuetzung noch frei ist."
         )
 

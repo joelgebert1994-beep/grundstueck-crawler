@@ -28,6 +28,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
+from .bestand import bestandsgeschossflaeche
 from .entwicklungsszenarien import SZENARIO_ANFORDERUNGEN
 from .g1_verdrahtung import G1VerdrahtungError, berechne_g1_fuer_fall
 from .flaechenmodell import (
@@ -1153,15 +1154,14 @@ def _bestand_und_neubaugeometrie(
     gebaeude = bestand.get("gebaeude") or []
     grundrisse = [g.get("grundriss") for g in gebaeude if g.get("grundriss")]
 
-    # Die Grundflaeche des GWR gehoert zu DIESEM Gebaeude; das Katasterpolygon
-    # kann mehr umfassen. In Rheineck stehen 118 m2 (GWR) gegen 248 m2
-    # (Grundriss) -- das Polygon deckt die ganze Haeuserzeile. Gerechnet wird
-    # deshalb mit dem GWR-Wert, und die Abweichung wird ausgewiesen.
     geschosse = [g.get("geschosse") for g in gebaeude]
-    flaechen = [g.get("grundflaeche_gwr_m2") for g in gebaeude]
-    bestand_gf = None
-    if gebaeude and all(g for g in geschosse) and all(f for f in flaechen):
-        bestand_gf = round(sum(f * g for f, g in zip(flaechen, geschosse)), 1)
+    # Dieselbe Bestands-Geschossflaeche wie im Ausnuetzungsbudget der
+    # Szenarien (bestand.bestandsgeschossflaeche). Bis 09.10.2026 rechnete
+    # diese Ebene eine eigene -- alle Gebaeude, GWR-Flaeche -- und meldete in
+    # Buchs AG "nicht ableitbar" (Garagen ohne Geschosszahl), waehrend die
+    # Szenarien daneben 135.4 m2 belegt nannten.
+    bgf = bestandsgeschossflaeche(bestand)
+    bestand_gf = bgf["wert_m2"]
 
     # Die bestehende Geschossflaeche ist NIE gemessen: das Gebaeude- und
     # Wohnungsregister fuehrt keine Geschossflaeche. Was hier steht, ist
@@ -1176,6 +1176,9 @@ def _bestand_und_neubaugeometrie(
             "wert_m2": bestand.get("bebaute_flaeche_gwr_m2"),
             "quelle": "Gebaeude- und Wohnungsregister (GWR)",
             "status": "gemessen" if bestand.get("bebaute_flaeche_gwr_m2") else "nicht_verfuegbar",
+            # Eine andere Groesse als die Geschossflaeche unten: die
+            # Gebaeudeflaeche ALLER Gebaeude, Nebengebaeude eingeschlossen.
+            "umfang": "alle_gebaeude",
         },
         "grundriss_kataster": {
             "wert_m2": bestand.get("bebaute_flaeche_grundriss_m2"),
@@ -1193,22 +1196,7 @@ def _bestand_und_neubaugeometrie(
             "quelle": "Gebaeude- und Wohnungsregister (GWR)",
             "status": "gemessen" if all(g for g in geschosse) and gebaeude else "unvollstaendig",
         },
-        "geschossflaeche_abgeleitet": {
-            "wert_m2": bestand_gf,
-            "status": "abgeleitet" if bestand_gf is not None else "nicht_bestimmbar",
-            "rechnung": (
-                None if bestand_gf is None else
-                " + ".join(f"{f:,.0f} m2 x {g} Geschosse" for f, g in zip(flaechen, geschosse))),
-            "herleitung": (
-                "Grundflaeche x Geschosszahl. NAEHERUNGSWERT -- das Register fuehrt "
-                "keine Geschossflaeche. Unter- und Dachgeschosse, unterschiedlich "
-                "grosse Geschosse und Anbauten sind darin nicht abgebildet."),
-            "grund": (
-                None if bestand_gf is not None else
-                "Das Gebaeuderegister fuehrt fuer diese Parzelle keine vollstaendige "
-                "Geschosszahl oder Grundflaeche -- auch eine Naeherung ist daraus "
-                "nicht ableitbar."),
-        },
+        "geschossflaeche_abgeleitet": bgf,
     }
 
     # --- Neubau nach heutiger Geometrie ---------------------------------
@@ -1280,7 +1268,7 @@ def _bestand_und_neubaugeometrie(
             "baulich uebrig bliebe.")
     if gebaeude and bestand_gf is None:
         hindernisse.append(
-            "Die bestehende Geschossflaeche ist aus dem Register nicht ableitbar.")
+            "Die bestehende Geschossflaeche ist nicht ableitbar: " + (bgf["grund"] or ""))
     elif gebaeude:
         hindernisse.append(
             "Der Bestand ist mit rund " + f"{bestand_gf:,.0f}" + " m2 nur GENAEHERT "
