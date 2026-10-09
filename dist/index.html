@@ -790,6 +790,14 @@ ul.plain li { margin-bottom: 4px; }
 .wazeile .walab { color: var(--ink-3); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .wazeile .wawert { text-align: right; white-space: nowrap; }
 .wazeile .wawert.na { color: var(--ink-3); }
+/* Marktannahmen direkt im Reiter Wirtschaftlichkeit: eine Zeile je Groesse. */
+.watab { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(170px, 1.2fr) minmax(120px, auto) minmax(170px, 1.6fr);
+  gap: 6px 14px; align-items: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.watab .walab { color: var(--ink-2); font-size: 12px; }
+.watab .walab small { display: block; color: var(--ink-3); font-size: 10px; }
+.watab .winput input { max-width: 120px; }
+.wa-vorschlag { font-size: 11px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 760px) { .watab { grid-template-columns: 1fr 1fr; } }
 .wschalter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); cursor: pointer; }
 .wok { color: #1f7a4d; } .wfehler { color: #b3324a; } .wlaeuft { color: var(--ink-3); }
 .wstatus { min-height: 18px; margin: 8px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -11339,6 +11347,7 @@ function wEingabenStandard() {
 var wEingaben = wEingabenStandard();
 var wErgebnis = null;
 var wLaeuft = false;
+var wNochmal = false;
 var wTimer = null;
 
 function chf(v, k) {
@@ -12667,6 +12676,13 @@ function hbuBlock() {
 function wVergleichBlock() {
   var v = alsListe((wErgebnis || {}).vergleich);
   if (!v.length) return "";
+  // Eine Tabelle, in der jede Zelle ein Strich ist, sagt nichts, was der
+  // Hinweis "Es fehlen Marktannahmen" nicht schon sagt.
+  var irgendeineZahl = v.some(function (z) {
+    return ["verkaufserloes_chf", "jahresmietertrag_chf", "baukosten_chf", "gesamtinvestition_chf",
+            "gewinn_chf", "max_landwert_chf"].some(function (k) { return !leer(z[k]); });
+  });
+  if (!irgendeineZahl) return "";
   return '<h4 class="subhead">Szenarien im Vergleich</h4>' +
     '<div class="scroller"><table class="src"><thead><tr><th>Variante</th><th>Machbarkeit</th>' +
     "<th>Verkauf</th><th>Miete/Jahr</th><th>Kosten</th><th>Investition</th><th>Gewinn</th>" +
@@ -12741,44 +12757,163 @@ function wAktivesSzenario() {
    Wiederholt, nicht neu gerechnet. Die Werte kommen aus demselben
    Ergebnis, das auch der Marktreiter zeigt; es gibt keine zweite Quelle,
    die auseinanderlaufen koennte. */
-function wAnnahmenStreifen() {
-  var e = wErgebnis && wErgebnis.szenarien
+/* Die drei Marktgroessen, die in die Rechnung eingehen. Feldkennungen im
+   Reiter Markt (w-...) und hier (wa-...) zeigen auf DENSELBEN Schluessel in
+   wEingaben -- es gibt keine zweite Ablage, nur eine zweite Eingabestelle. */
+var WA_GROESSEN = [
+  { key: "verkauf_chf_pro_m2", groesse: "verkauf", feld: "wa-verkauf", markt: "w-verkauf",
+    label: "Verkaufspreis", zweck: "für Erlös, Marge und tragbaren Landwert",
+    einheit: "CHF/m²", schritt: "50", pflicht: true },
+  { key: "bodenpreis_chf_pro_m2", groesse: "boden", feld: "wa-boden", markt: "w-boden",
+    label: "Bodenpreis", zweck: "für Investition, Gewinn und Marge",
+    einheit: "CHF/m²", schritt: "50", pflicht: true, nurBenutzer: true },
+  { key: "miete_chf_pro_m2_jahr", groesse: "miete", feld: "wa-miete", markt: "w-miete",
+    label: "Mietzins", zweck: "nur für die Bruttorendite",
+    einheit: "CHF/m²/Jahr", schritt: "5", pflicht: false }
+];
+
+/* Das gerade angezeigte Szenario der letzten Rechnung -- oder {}. */
+function wSzenarioErgebnis() {
+  return wErgebnis && wErgebnis.szenarien
     ? (wErgebnis.szenarien[wAktivesSzenario()] || {}) : {};
-  var zeilen = [];
-  var nimm = function (label, mw, einheit, eigen) {
-    if (mw && !leer(mw.wert)) {
-      zeilen.push([label, chf(mw.wert) + " " + einheit,
-                   HERKUNFT_KURZ[mw.herkunft] || [mw.herkunft, "mute"]]);
-    } else if (!leer(eigen)) {
-      // Es wird gerade nicht gerechnet -- der eingetippte Wert ist aber da
-      // und wird angewendet, sobald es geht. Ihn als "nicht gesetzt" zu
-      // fuehren waere schlicht falsch: gesetzt ist er.
-      zeilen.push([label, chf(eigen) + " " + einheit, ["vorgemerkt", "warn"]]);
-    } else {
-      // Kein Abzeichen: "nicht gesetzt" daneben noch einmal als Marke zu
-      // wiederholen fuellt Platz, ohne etwas dazuzusagen.
-      zeilen.push([label, "nicht gesetzt", null]);
-    }
-  };
-  nimm("Verkaufspreis", (e.verkauf || {}).preis, "CHF/m²", wEingaben.verkauf_chf_pro_m2);
-  nimm("Mietzins", (e.miete || {}).ansatz, "CHF/m²/Jahr", wEingaben.miete_chf_pro_m2_jahr);
-  nimm("Bodenpreis", (e.land || {}).bodenpreis, "CHF/m²", wEingaben.bodenpreis_chf_pro_m2);
-  zeilen.push(["Zielmarge", Math.round((wEingaben.zielmarge || 0) * 100) + " %",
-               HERKUNFT_KURZ.benutzerannahme]);
+}
+
+/* Der Marktwert einer Groesse: aus der letzten Rechnung, sonst aus der
+   Referenzlage (nurReferenz). Erfunden wird nichts. */
+function waMarktwert(g, e) {
+  if (g.groesse === "verkauf") return (e.verkauf || {}).preis || nurReferenz("verkauf", wEingaben[g.key]);
+  if (g.groesse === "miete") return (e.miete || {}).ansatz || nurReferenz("miete", wEingaben[g.key]);
+  return (e.land || {}).bodenpreis || nurReferenz("boden", wEingaben[g.key]);
+}
+
+/* Welcher Wert steht WIRKLICH in der Rechnung? Nur was die Serverantwort
+   ausweist. Beim Bodenpreis zaehlt allein eine Benutzerannahme -- ein
+   Systemvorschlag geht dort erst nach "übernehmen" in den Landwert ein
+   (wirtschaftlichkeit.berechne_fuer_szenario). */
+function waInRechnung(g, e, rechenbar) {
+  if (!rechenbar || !wErgebnis || !wErgebnis.szenarien) return null;
+  if (g.groesse === "boden") {
+    if (wEingaben.land_ansatz === "im_besitz") return { wert: null, herkunft: "nicht_noetig" };
+    var bp = (e.land || {}).bodenpreis;
+    return bp && !leer(bp.benutzerannahme) ? { wert: bp.benutzerannahme, herkunft: "benutzerannahme" } : null;
+  }
+  var mw = g.groesse === "verkauf" ? (e.verkauf || {}).preis : (e.miete || {}).ansatz;
+  return mw && !leer(mw.wert) ? { wert: mw.wert, herkunft: mw.herkunft } : null;
+}
+
+/* Was fuer eine Rechnung noch fehlt -- knapp, mit dem Zweck. Der Mietzins
+   fehlt nie: ohne ihn fehlt nur die Bruttorendite. */
+function wFehlendeEingaben() {
+  var e = wSzenarioErgebnis();
+  return WA_GROESSEN.filter(function (g) {
+    return g.pflicht && !waInRechnung(g, e, true);
+  });
+}
+
+/* Womit wurde gerechnet -- und wo laesst es sich setzen?
+
+   Frueher ein reiner Lesestreifen mit einem Weg in den Reiter Markt. Fuer
+   eine Wirtschaftlichkeitsrechnung musste man deshalb zwischen zwei Reitern
+   hin und her. Jetzt ist hier die Eingabe: dieselben drei Werte, derselbe
+   Schluessel in wEingaben, dieselbe Neuberechnung. Je Zeile steht, was
+   eingegeben ist, ob ein Systemvorschlag existiert und was die letzte
+   Rechnung tatsaechlich verwendet hat. Die Referenzen selbst bleiben im
+   Reiter Markt -- hier werden sie weder gezeigt noch veraendert. */
+function wAnnahmenStreifen() {
+  var e = wSzenarioErgebnis();
+  var rechenbar = rechenstand(ergebnisAktuell).rechenbar;
+  var zeilen = WA_GROESSEN.map(function (g) {
+    var mw = waMarktwert(g, e) || {};
+    var eigen = wEingaben[g.key];
+    var drin = waInRechnung(g, e, rechenbar);
+    var sv = mw.systemvorschlag;
+    var lage = wLage(g.groesse) || {};
+    var n = mw.anzahl_referenzen || lage.anzahl || 0;
+    var noetig = (lage.mindestanforderung || {}).min_objekte || 3;
+
+    var marke;
+    if (drin && drin.herkunft === "nicht_noetig") marke = ["nicht nötig — Grundstück gehört bereits", "mute"];
+    else if (drin && !leer(eigen) && Number(eigen) !== Number(drin.wert)) marke = ["vorgemerkt", "warn"];
+    else if (drin) marke = HERKUNFT_KURZ[drin.herkunft] || [drin.herkunft, "mute"];
+    else if (!leer(eigen)) marke = ["vorgemerkt", "warn"];
+    else if (g.nurBenutzer && !leer(sv)) marke = ["Vorschlag nicht übernommen", "mute"];
+    else marke = g.pflicht ? ["fehlt", "stop"] : ["optional", "mute"];
+
+    var gerechnet = drin && drin.herkunft !== "nicht_noetig"
+      ? "gerechnet mit " + chf(drin.wert) + " " + g.einheit : "";
+    var vorschlag = !leer(sv)
+      ? "Systemvorschlag " + chf(sv) + " " + g.einheit + " (" + n + (n === 1 ? " Referenz" : " Referenzen") + ")"
+      : (n ? "kein Systemvorschlag — " + n + " von " + noetig + " nötigen Referenzen"
+           : "keine Referenzen");
+    var knopf = (!leer(sv) && (g.nurBenutzer || !leer(eigen)) && Number(eigen) !== Number(sv))
+      ? '<button type="button" class="szbtn klein" data-wa-uebernehmen="' + g.feld +
+        '" data-wert="' + esc(sv) + '">übernehmen</button>'
+      : "";
+
+    return '<span class="walab">' + esc(g.label) + "<small>" + esc(g.zweck) + "</small></span>" +
+      '<span class="winput"><input type="number" class="wa-feld" id="' + g.feld + '" data-wa="' + g.key +
+        '" data-markt="' + g.markt + '" step="' + g.schritt + '" min="0" value="' +
+        (leer(eigen) ? "" : esc(eigen)) + '" placeholder="' + (leer(sv) ? "eigener Wert" : esc(sv)) +
+        '"><em>' + esc(g.einheit) + "</em></span>" +
+      '<span><span class="badge ' + marke[1] + '">' + esc(marke[0]) + "</span>" +
+        (gerechnet ? '<div class="wa-vorschlag">' + esc(gerechnet) + "</div>" : "") + "</span>" +
+      '<span class="wa-vorschlag">' + esc(vorschlag) + knopf + "</span>";
+  }).join("");
 
   return '<div class="wannahmen">' +
-    '<div class="wakopf"><b>Gerechnet mit diesen Marktannahmen</b>' +
-      '<span class="right">' + reiterLink("markt", "Im Reiter Markt ändern") + "</span></div>" +
-    '<div class="wagrid">' + zeilen.map(function (z) {
-      return '<div class="wazeile"><span class="walab">' + esc(z[0]) + "</span>" +
-        '<span class="wawert' + (z[2] ? "" : " na") + '">' + esc(z[1]) +
-        (z[2] ? ' <span class="badge ' + z[2][1] + '">' + esc(z[2][0]) + "</span>" : "") +
-        "</span></div>";
-    }).join("") + "</div>" +
-    '<div class="note">Das sind <b>Annahmen</b>, keine amtlichen Werte. Amtlich sind ' +
-    'Zone, Kennzahlen und Geometrie im Reiter <b>Potenzial</b> — an denen ändert hier ' +
-    'nichts etwas, in welche Richtung die Annahmen auch gesetzt werden.</div>' +
+    '<div class="wakopf"><b>Marktannahmen für diese Rechnung</b>' +
+      '<span class="right">' + reiterLink("markt", "Referenzen und weitere Annahmen im Reiter Markt") + "</span></div>" +
+    '<div class="watab">' + zeilen + "</div>" +
+    '<div class="wazeile"><span class="walab">Zielmarge</span><span class="wawert">' +
+      esc(Math.round((wEingaben.zielmarge || 0) * 100) + " %") + ' <span class="badge ' +
+      HERKUNFT_KURZ.benutzerannahme[1] + '">' + esc(HERKUNFT_KURZ.benutzerannahme[0]) + "</span></span></div>" +
+    '<div class="note">Das sind <b>Annahmen</b>, keine amtlichen Werte. Eigene Werte haben Vorrang ' +
+    "vor jedem Systemvorschlag und gelten als Ihre Annahme; die Referenzen dahinter bleiben " +
+    "unverändert. Amtlich sind Zone, Kennzahlen und Geometrie im Reiter <b>Potenzial</b> — " +
+    "an denen ändert hier nichts etwas.</div>" +
   "</div>";
+}
+
+/* Was im Ergebnisbereich steht -- drei Lagen, die sich nicht vermischen:
+
+   B  die Grundlage fehlt (rechenstand): nichts. Das Band oben sagt warum;
+      eine Preiseingabe aendert daran nichts und darf nicht so aussehen.
+   A  es fehlen Marktannahmen: welche, wofuer -- und nur die Kacheln, die
+      trotzdem eine Zahl haben.
+   C  es wird gerechnet: die Kacheln wie bisher. */
+function wErgebnisBereich() {
+  var stand = rechenstand(ergebnisAktuell);
+  if (!stand.rechenbar) return "";
+  var fehlt = wFehlendeEingaben();
+  var e = wSzenarioErgebnis();
+  var g = e.ergebnis || {}, r = e.residualwert || {};
+  var hatZahl = [g.verkaufserloes_chf, g.gesamtinvestition_chf, g.gewinn_chf, g.marge,
+                 r.max_landwert_chf].some(function (v) { return !leer(v); });
+  var fehltBlock = !fehlt.length ? "" :
+    '<div class="antwort wartet"><div class="akopf">' +
+      '<span class="gross klein">Es fehlen Marktannahmen</span>' +
+      '<span class="badge warn">Eingabe nötig</span></div>' +
+      '<p class="atext">' + fehlt.map(function (x) {
+        return "<b>" + esc(x.label) + "</b> — " + esc(x.zweck);
+      }).join(" · ") + ".</p>" +
+      '<p class="ahinweis">Oben direkt eintragen oder einen vorhandenen Systemvorschlag übernehmen.' +
+      (fehlt.some(function (x) { return x.groesse === "boden"; })
+        ? " Gehört das Grundstück bereits, ist kein Bodenpreis nötig (Reiter Markt, „Grundstück“)." : "") +
+      "</p></div>";
+  if (hatZahl) return fehltBlock + ergebnisBlock();
+  if (fehlt.length) return fehltBlock;
+  // Alles gesetzt, aber dieses Szenario ergibt keine Kennzahl (z. B. "Bestand
+  // erhalten": keine neue Flaeche). Ein Satz statt fuenf leerer Kacheln.
+  var szName = e.bezeichnung || "dieses Szenario";
+  return '<div class="note">Für „' + esc(szName) + "“ ergibt die Rechnung keine Kennzahl — " +
+    "es entsteht keine neue Fläche, auf die ein Preis angewendet werden könnte. " +
+    "Ein anderes Szenario im Vergleich unten wählen.</div>" +
+    (alsListe(e.offene_punkte).length
+      ? '<details class="more"><summary>Offene Punkte (' + alsListe(e.offene_punkte).length +
+        ")</summary><div><ul class=\"plain\">" +
+        alsListe(e.offene_punkte).map(function (o) { return "<li>" + satz(o) + "</li>"; }).join("") +
+        "</ul></div></details>"
+      : "");
 }
 
 function secWirtschaft(erg) {
@@ -12810,7 +12945,7 @@ function secWirtschaft(erg) {
   return '<section class="sec" id="sec-wirtschaft">' + kopf +
     rechenstandBand(stand, "Noch nicht berechenbar") +
     '<div id="w-annahmen">' + wAnnahmenStreifen() + "</div>" +
-    '<div id="w-ergebnis">' + ergebnisBlock() + "</div>" +
+    '<div id="w-ergebnis">' + wErgebnisBereich() + "</div>" +
     '<div id="w-status" class="wstatus"></div>' +
     (stand.rechenbar
       ? '<div class="note">Jede Änderung an einer Annahme rechnet Flächen, Wohnungen, ' +
@@ -13035,7 +13170,10 @@ function wRechne() {
       Math.round(summe * 100) + " % — er muss 100 % ergeben. Bis dahin wird nicht gerechnet.</span>";
     return;
   }
-  if (wLaeuft) return;
+  // Kommt waehrend einer laufenden Rechnung eine Aenderung, wird sie nicht
+  // verworfen, sondern danach gerechnet -- sonst stuende im Feld ein Wert,
+  // mit dem nie gerechnet wurde.
+  if (wLaeuft) { wNochmal = true; return; }
   wLaeuft = true;
   if (status) status.innerHTML = '<span class="wlaeuft">rechnet …</span>';
   var t0 = performance.now();
@@ -13088,6 +13226,7 @@ function wRechne() {
         Math.round(performance.now() - t0) + " ms — ohne neue Baurechtsanalyse</span>";
     }
     wZeichneNeu();
+    if (wNochmal) { wNochmal = false; wRechne(); }
   }).catch(function (e) {
     wLaeuft = false;
     if (status) status.innerHTML = '<span class="wfehler">' + esc(String(e)) + "</span>";
@@ -13100,9 +13239,14 @@ function wZeichneNeu() {
     if (el) el.innerHTML = html;
   };
   // Zuerst die Annahmen, dann das Ergebnis -- in dieser Reihenfolge steht
-  // nie eine neue Zahl ueber einer alten Grundlage.
+  // nie eine neue Zahl ueber einer alten Grundlage. Wird gerade in einem
+  // Annahmenfeld getippt, behaelt es den Fokus: die Antwort kommt nach
+  // 350 ms Pause, und ein verlorener Cursor mitten in einer Zahl ist ein
+  // Bedienfehler, den der Benutzer nicht gemacht hat.
+  var aktivFeld = document.activeElement && document.activeElement.classList &&
+    document.activeElement.classList.contains("wa-feld") ? document.activeElement.id : null;
   setze("w-annahmen", wAnnahmenStreifen());
-  setze("w-ergebnis", ergebnisBlock());
+  setze("w-ergebnis", wErgebnisBereich());
   setze("w-vergleich", wVergleichBlock());
   setze("w-hbu", hbuBlock());
   setze("w-kombination", kombBlock());
@@ -13114,6 +13258,10 @@ function wZeichneNeu() {
   if (typeof mktZeichne === "function") mktZeichne();
   setze("w-mix", mixBlock());
   verdrahteWirtschaft();
+  if (aktivFeld) {
+    var f = document.getElementById(aktivFeld);
+    if (f) { f.focus(); var v = f.value; f.value = ""; f.value = v; }
+  }
   if (typeof scrVerdrahten === "function") scrVerdrahten();
   // Die Szenarien haben sich mitgeaendert -- Karte und 3D nachziehen.
   if (typeof zeichneSzenario === "function" && aktivesSzenario) zeichneSzenario(aktivesSzenario);
@@ -13153,7 +13301,7 @@ function verdrahteWirtschaft() {
   // sie ordnen das Ergebnis nur ein (siehe marktdaten.py). Wer sie mit
   // verdrahtet, rechnet bei jedem Tastendruck in einem Erfassungsformular
   // die ganze Wirtschaftlichkeit neu.
-  document.querySelectorAll("#sec-wirtschaft input, #sec-wirtschaft select, " +
+  document.querySelectorAll("#sec-wirtschaft input:not(.wa-feld), #sec-wirtschaft select, " +
                             "#w-markt input, #w-markt select").forEach(function (el) {
     if (el.dataset.verdrahtet) return;
     el.dataset.verdrahtet = "1";
@@ -13191,7 +13339,46 @@ function verdrahteWirtschaft() {
       if (schluessel) { wEingaben[schluessel] = wert; wBeruehrt[schluessel] = true; }
       var markt = document.getElementById("w-markt");
       if (markt) { markt.innerHTML = marktBlock(ergebnisAktuell || {}); verdrahteWirtschaft(); }
+      // Der Streifen im Reiter Wirtschaftlichkeit zeigt denselben Wert.
+      var ann = document.getElementById("w-annahmen");
+      if (ann) { ann.innerHTML = wAnnahmenStreifen(); verdrahteWirtschaft(); }
       wAngestossen();
+    });
+  });
+  // Die Annahmenfelder im Reiter Wirtschaftlichkeit. Sie schreiben in
+  // DENSELBEN Schluessel wie das Feld im Reiter Markt und gleichen dieses
+  // Feld mit ab -- wSammleEingaben liest sonst dort den alten Wert und
+  // ueberschriebe die Eingabe von hier.
+  var waSetze = function (feld, roh) {
+    var schluessel = feld.dataset.wa;
+    wEingaben[schluessel] = roh === "" ? null : Number(roh);
+    wBeruehrt[schluessel] = true;
+    var gegen = document.getElementById(feld.dataset.markt);
+    if (gegen) gegen.value = roh;
+    wAngestossen();
+  };
+  document.querySelectorAll(".wa-feld").forEach(function (el) {
+    if (el.dataset.verdrahtet) return;
+    el.dataset.verdrahtet = "1";
+    el.addEventListener("input", function () { waSetze(el, el.value); });
+    el.addEventListener("change", function () { waSetze(el, el.value); });
+  });
+  // "übernehmen": exakt der angezeigte Systemvorschlag wird eigene Annahme.
+  // Streifen und Marktkarte sofort neu -- ist gerade nicht rechenbar, kaeme
+  // die Neuzeichnung sonst nie.
+  document.querySelectorAll("[data-wa-uebernehmen]").forEach(function (b) {
+    if (b.dataset.verdrahtet) return;
+    b.dataset.verdrahtet = "1";
+    b.addEventListener("click", function () {
+      var feld = document.getElementById(b.dataset.waUebernehmen);
+      if (!feld) return;
+      feld.value = b.dataset.wert;
+      waSetze(feld, b.dataset.wert);
+      var ann = document.getElementById("w-annahmen");
+      if (ann) ann.innerHTML = wAnnahmenStreifen();
+      var markt = document.getElementById("w-markt");
+      if (markt) markt.innerHTML = marktBlock(ergebnisAktuell || {});
+      verdrahteWirtschaft();
     });
   });
   document.querySelectorAll(".wmix-weg").forEach(function (b) {

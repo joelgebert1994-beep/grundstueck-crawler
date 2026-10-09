@@ -50,6 +50,7 @@ SUITEN: list[tuple[str, bool]] = [
     ("tests.test_bestand_av", False),
     ("tests.test_reglement_plausibilitaet", False),
     ("tests.test_bestand_konsistenz", False),
+    ("tests.test_wirtschaft_eingaben", False),
     ("tests.test_oberflaeche", False),
     ("tests.test_klassifikation", True),
 ]
