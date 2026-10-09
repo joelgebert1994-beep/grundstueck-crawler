@@ -42,7 +42,7 @@ function pruefe(b, was) {
 
 const bestand = { gebaeude: [{ egid: "263070701" }, { egid: "524242" }, { egid: "263024777" }] };
 let h = gebaeudeAnDerAdresseHinweis({ found: true, zuordnung: "egid_der_adresse" }, bestand);
-pruefe(h.indexOf("Auf der Parzelle stehen 3 Gebäude") >= 0 && h.indexOf("nur das Gebäude der Adresse") >= 0,
+pruefe(h.indexOf("Eines von 3 Gebäuden auf der Parzelle") >= 0 && h.indexOf("das Gebäude der Adresse") >= 0,
        "Grundstück & Bestand: sagt, dass es eines von drei Gebäuden ist");
 pruefe(h.indexOf("Nicht über die Adresse zugeordnet") < 0, "über die Adresse zugeordnet: keine Warnung");
 h = gebaeudeAnDerAdresseHinweis({ found: true, zuordnung: "erster_treffer_im_umkreis" }, { gebaeude: [{}] });

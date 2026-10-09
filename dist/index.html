@@ -3809,17 +3809,11 @@ function secUebersicht(erg, m1, zz) {
             ["Geschosse", bestandGeschosse(b), bestandGeschosseTyp(b)],
             ["Geschossfläche (Wohngebäude)", leer(ab.wert_m2) ? "nicht ableitbar"
               : "ca. " + fmt(ab.wert_m2, 0) + " m² (Näherung)",
-              leer(ab.wert_m2) ? "nicht_bestimmbar" : "abgeleitet"],
-            // Der Abstand des bestehenden Gebaeudes zur Grenze wird nicht
-            // gemessen. Das steht hier, damit die BZO-Zahl oben nicht fuer
-            // ihn gehalten wird.
-            ["Grenzabstand Bestand", "–", "nicht_bestimmbar"]
+              leer(ab.wert_m2) ? "nicht_bestimmbar" : "abgeleitet"]
           ]) +
-          (leer(ab.wert_m2)
-            ? '<p class="ahinweis">' + esc(lesbar(ab.grund ||
-                "Das Register führt keine vollständige Geschosszahl — auch eine Näherung wäre daraus nicht ableitbar.")) + "</p>"
-            : '<p class="ahinweis">Angenähert, nicht gemessen (' + esc(lesbar(ab.rechnung)) + ').</p>') +
-          nichtEingerechnetHinweis(ab))) +
+          // Rechnung, ausgeschlossene Gebaeude und Quellen stehen im Reiter
+          // Potenzial -- einmal, nicht auf jedem Reiter.
+          '<div class="afuss">' + reiterLink("potenzial", "Herleitung im Reiter Potenzial") + "</div>")) +
   "</div>";
 
   /* --- Was ist zu beachten? ------------------------------------------
@@ -4268,9 +4262,11 @@ function secGrundstueck(m1) {
         ["Energiebezugsfläche", leer(gw.energiebezugsflaeche_m2) ? null
           : fmt(gw.energiebezugsflaeche_m2) + " m²"]
       ]) +
-      '<div class="note">Die Energiebezugsfläche stammt aus dem GWR und ist eine ' +
-      'SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>' +
-      heizungBlock(gw) + solarBlock(m1.energie)
+      // Der Hinweis gilt nur, wenn es eine Energiebezugsflaeche gibt.
+      (leer(gw.energiebezugsflaeche_m2) ? "" :
+        '<div class="note">Die Energiebezugsfläche stammt aus dem GWR und ist eine ' +
+        'SIA-380/1-Grösse — sie darf nicht als SIA-416-Geschossfläche verwendet werden.</div>') +
+      energieDetail(gw, m1)
     : '<div class="eleit ruhig">kein Gebäude im Register</div>' +
       '<div class="eleitlab">an dieser Adresse ist im GWR kein Gebäude verzeichnet</div>' +
       '<div class="egrund">Das Grundstück ist entweder unbebaut, oder das Gebäude ist ' +
@@ -4295,22 +4291,22 @@ function secGrundstueck(m1) {
     // vor dem Gebaeude.
     '<h4 class="subhead">Gebäude an der Adresse ' + wtyp("gwr") + "</h4>" +
     gebaeudeAnDerAdresseHinweis(gw, m1.bestand) + bestand +
-    '<h4 class="subhead">Amtliche Kennungen</h4>' +
-    '<div class="kennungen">' +
-      kennung("EGRID", pz.egrid, "eidgenössischer Grundstücksidentifikator") +
-      kennung("EGID", gw.found ? gw.egid : null, "eidgenössischer Gebäudeidentifikator") +
-      kennung("BFS-Nummer", gm.bfs_nummer, "Gemeindenummer des Bundesamts für Statistik") +
-      kennung("Koordinaten LV95", leer(gc.lv95_e) ? null
-        : fmt(gc.lv95_e, 1) + " / " + fmt(gc.lv95_n, 1), "Landeskoordinaten, Ost / Nord") +
-    "</div>" +
-    kvRows([
-      ["Amtlich gefundene Adresse", gc.matched_label],
-      ["Herkunft der Fläche", pz.flaeche_quelle === "geometrie_berechnet"
-        ? "aus amtlicher Katastergeometrie berechnet" : begriffOderNull(pz.flaeche_quelle)],
-      ["Parzellenauswahl", pz.parzellenauswahl === "punkt_in_parzelle"
-        ? "Adresspunkt liegt geprüft in dieser Parzelle"
-        : begriffOderNull(pz.parzellenauswahl)]
-    ]) +
+    detailBlock("Amtliche Kennungen und Herkunft",
+      '<div class="kennungen">' +
+        kennung("EGRID", pz.egrid, "eidgenössischer Grundstücksidentifikator") +
+        kennung("EGID", gw.found ? gw.egid : null, "eidgenössischer Gebäudeidentifikator") +
+        kennung("BFS-Nummer", gm.bfs_nummer, "Gemeindenummer des Bundesamts für Statistik") +
+        kennung("Koordinaten LV95", leer(gc.lv95_e) ? null
+          : fmt(gc.lv95_e, 1) + " / " + fmt(gc.lv95_n, 1), "Landeskoordinaten, Ost / Nord") +
+      "</div>" +
+      kvRows([
+        ["Amtlich gefundene Adresse", gc.matched_label],
+        ["Herkunft der Fläche", pz.flaeche_quelle === "geometrie_berechnet"
+          ? "aus amtlicher Katastergeometrie berechnet" : begriffOderNull(pz.flaeche_quelle)],
+        ["Parzellenauswahl", pz.parzellenauswahl === "punkt_in_parzelle"
+          ? "Adresspunkt liegt geprüft in dieser Parzelle"
+          : begriffOderNull(pz.parzellenauswahl)]
+      ])) +
   "</section>";
 }
 
@@ -4319,6 +4315,13 @@ function secGrundstueck(m1) {
    Wohnnutzung" wie der ganze Bestand (Buchs AG, Rosenweg 4). Und wurde das
    Gebaeude nicht ueber die Adresse gefunden, sondern nur als erster
    Registereintrag im Umkreis, steht auch das dabei. */
+/* Heizung, Warmwasser und Solar: Angaben zum Gebaeude, aber nicht das, was
+   man beim Oeffnen des Reiters sucht -- eine Zeile auf Abruf. */
+function energieDetail(gw, m1) {
+  var inhalt = heizungBlock(gw) + solarBlock((m1 || {}).energie);
+  return inhalt.replace(/\s+/g, "") ? detailBlock("Heizung, Warmwasser und Solar", inhalt) : "";
+}
+
 function gebaeudeAnDerAdresseHinweis(gw, bestand) {
   gw = gw || {};
   var n = ((bestand || {}).gebaeude || []).length;
@@ -4328,9 +4331,8 @@ function gebaeudeAnDerAdresseHinweis(gw, bestand) {
       "Registereintrag im Umkreis des Adresspunkts. Es kann ein Nachbar- oder Nebengebäude sein.</div>");
   }
   if (n > 1) {
-    teile.push('<div class="note">Auf der Parzelle stehen ' + n + " Gebäude. Hier steht nur das " +
-      "Gebäude der Adresse; alle Gebäude mit Grundfläche und Geschossfläche im Reiter Potenzial " +
-      "unter „Bestand“.</div>");
+    teile.push('<div class="note">Eines von ' + n + " Gebäuden auf der Parzelle — das Gebäude der " +
+      "Adresse. Alle Gebäude: Reiter Potenzial, „Bestand“.</div>");
   }
   return teile.join("");
 }
@@ -5366,37 +5368,43 @@ function ebeneBestand(b) {
       'Gebäude verzeichnet.</div>';
   } else {
     var gf = b.grundflaeche || {}, gs = b.geschosse || {}, ab = b.geschossflaeche_abgeleitet || {};
+    var gk = b.grundriss_kataster || {};
     var geschosse = alsListe(gs.wert);
     // Die abgeleitete Geschossflaeche ist NIE gemessen -- das Register
-    // fuehrt keine. Sie darf deshalb nie ohne das Wort "Näherung" und nie
-    // ohne ihre Rechnung erscheinen.
+    // fuehrt keine. Sie steht deshalb nie ohne das Wort "Näherung".
     var abgeleitet = leer(ab.wert_m2) ? null : "ca. " + fmt(ab.wert_m2, 0) + " m²";
+    var nein = alsListe(ab.nicht_eingerechnet);
+    // Sichtbar bleibt, WAS gezaehlt ist (Grundflaeche aller Gebaeude gegen
+    // Geschossflaeche der Wohngebaeude). Wie gerechnet wurde und welche
+    // Gebaeude fehlen, steht auf Abruf darunter.
+    var kurzNotiz = b.gebaeude > 1
+      ? '<div class="enote">Grundfläche: alle ' + b.gebaeude + " Gebäude. Geschossfläche: nur Wohngebäude" +
+        (nein.length ? " (" + nein.length + " nicht eingerechnet)" : "") + ".</div>"
+      : "";
+    var herleitung =
+      '<p class="atext"><b>Grundfläche:</b> Gebäude- und Wohnungsregister (GWR)' +
+        (b.gebaeude > 1 ? ", Summe aller Gebäude" : "") +
+        (gk.quelle ? ". Gebäudeumriss für Karte und Szenarien: " + esc(lesbar(gk.quelle)) : "") + ".</p>" +
+      (leer(ab.wert_m2)
+        ? (ab.grund ? '<p class="atext"><b>Geschossfläche nicht ableitbar:</b> ' + esc(lesbar(ab.grund)) + "</p>" : "")
+        : '<p class="atext"><b>Geschossfläche (Näherung):</b> ' + esc(lesbar(ab.rechnung)) + ". " +
+          "Nicht gemessen: das Register führt keine Geschossfläche. Unter- und Dachgeschosse, " +
+          "unterschiedlich grosse Geschosse und Anbauten sind darin nicht abgebildet.</p>") +
+      nichtEingerechnetHinweis(ab) +
+      '<p class="atext">Der Abstand des bestehenden Gebäudes zur Grenze wird nicht gemessen; ' +
+      "die Abstände der Bau- und Nutzungsordnung gelten für Neubauten.</p>";
     inhalt =
       ebeneLeit(leer(gf.wert_m2) ? null : fmt(gf.wert_m2, 0), "m²",
         leer(gf.wert_m2) ? "Grundfläche nicht verfügbar"
-          : (b.gebaeude > 1 ? "Grundfläche aller " + b.gebaeude + " Gebäude" : "Bestandsgrundfläche")) +
+          : (b.gebaeude > 1 ? "Grundfläche aller " + b.gebaeude + " Gebäude" : "Bestandsgrundfläche") +
+            (gf.status === "gemessen" ? " · laut GWR" : "")) +
       '<div class="ezeilen">' +
-        // Die Engine nennt einen vollstaendigen Registereintrag "gemessen".
-        // Gemessen ist daran nichts -- es ist ein amtlicher Registerwert.
-        // Angezeigt wird deshalb "laut GWR"; die Kennung der Engine bleibt.
-        ebeneZeile("Quelle", "GWR",
-          gf.status === "gemessen" ? ["laut GWR", "ok"] : ["unvollständig", "warn"]) +
         ebeneZeile("Geschosse", geschosse.length ? geschosse.join(" · ") : null,
           gs.status === "gemessen" ? ["laut GWR", "ok"] : ["unvollständig", "warn"]) +
-        ebeneZeile("Abgeleitete GF (Wohngebäude)", abgeleitet, ["Näherung", "warn"], lesbar(ab.rechnung)) +
+        ebeneZeile("Geschossfläche (Wohngebäude)", abgeleitet, ["Näherung", "warn"]) +
       "</div>" +
-      (leer(ab.wert_m2)
-        ? (ab.grund ? '<div class="enote">' + esc(lesbar(ab.grund)) + "</div>" : "")
-        : '<div class="enote">Nicht gemessen: das Register führt keine Geschossfläche. ' +
-          'Unter- und Dachgeschosse, unterschiedlich grosse Geschosse und Anbauten sind ' +
-          'darin nicht abgebildet.</div>') +
-      // Zwei verschiedene Groessen: die Grundflaeche summiert ALLE Gebaeude,
-      // die Geschossflaeche nur die mit Wohnnutzung -- das muss dastehen.
-      (b.gebaeude > 1
-        ? '<div class="enote">' + b.gebaeude + " Gebäude auf der Parzelle — die Grundfläche ist ihre " +
-          "Summe; die Geschossfläche zählt nur Gebäude mit Wohnnutzung.</div>"
-        : "") +
-      nichtEingerechnetHinweis(ab);
+      kurzNotiz +
+      detailBlock("Herleitung und Quellen", herleitung);
   }
   return '<div class="ebene">' + ebeneKopf(1, "Bestand", "Was steht heute?") + inhalt + "</div>";
 }
@@ -5457,26 +5465,31 @@ function ebeneRechtsrahmen(erg, m1, zz, rr) {
     kopf = ebeneLeit(leer(azGf) ? null : fmt(azGf, 1), "m²",
         leer(azGf) ? "keine Ausnützungsziffer in dieser Zone" : "GF nach aktueller Ausnützungsziffer") +
       (leer(azGf) ? "" :
-        '<div class="enote">Theoretischer Wert der Zonengrundlage — ohne Abstände, ohne Bestand. ' +
-        'Keine Aussage darüber, was hier insgesamt zulässig oder baulich realisierbar ist.</div>');
+        '<div class="enote">Theoretischer Wert — ohne Abstände und Bestand.</div>');
   }
   var inhalt = kopf +
     '<div class="ezeilen">' +
       ebeneZeile("Grundnutzung", zoneKlarname(basis.typ_kommunal_bezeichnung
         || basis.typ_kantonal_bezeichnung), null) +
-      (snp ? "" : ebeneZeile("Ausnützungsziffer", leer(az) ? null : az, null, lesbar((rr || {}).rechnung))) +
+      (snp ? "" : ebeneZeile("Ausnützungsziffer", leer(az) ? null : az, null)) +
       (snp ? "" : ebeneZeile("Vollgeschosse", leer(w(zone.vollgeschosse_max)) ? null : w(zone.vollgeschosse_max))) +
       (snp ? "" : ebeneZeile("Gebäudehöhe", leer(w(zone.gebaeudehoehe_m || zone.gesamthoehe_m)) ? null
         : fmt(w(zone.gebaeudehoehe_m || zone.gesamthoehe_m), 1) + " m")) +
       ebeneZeile("Abstandsgeometrie", geoText, geoMarke) +
       zusatz.map(function (p) { return ebeneZeile(p[0], p[1], null); }).join("") +
     "</div>";
+  var rechtsHerleitung = (snp || leer(azGf)) ? "" :
+    ((rr || {}).rechnung
+      ? '<p class="atext"><b>Rechnung:</b> ' + esc(lesbar(rr.rechnung)) + ".</p>" : "") +
+    '<p class="atext">Theoretischer Wert der Zonengrundlage: Ausnützungsziffer mal anrechenbare ' +
+    "Landfläche. Er kennt weder Abstände noch Sonderregelungen noch den Bestand und sagt nicht, " +
+    "was hier insgesamt zulässig oder baulich realisierbar ist.</p>";
   return '<div class="ebene">' + ebeneKopf(2, "Heutiger Rechtsrahmen", "Was gilt heute baurechtlich?") +
-    inhalt + "</div>";
+    inhalt + (rechtsHerleitung ? detailBlock("Herleitung", rechtsHerleitung) : "") + "</div>";
 }
 
 /* Ebene 3 -- was zusaetzlich moeglich ist. Eine Aussage, kein Rechenweg. */
-function ebeneZusatz(z) {
+function ebeneZusatz(z, kurz) {
   var inhalt;
   if (!z) {
     inhalt = '<div class="eleit offen">wird ermittelt …</div>';
@@ -5487,7 +5500,7 @@ function ebeneZusatz(z) {
     // Grund und offene Punkte stehen im Urteil ganz oben. Sie hier ein
     // zweites Mal auszurollen machte aus der Ebene eine Textwand.
     inhalt = '<div class="eleit offen">Nicht abschliessend bestimmbar</div>' +
-      '<div class="enote">Die Einordnung steht oben im Urteil.</div>';
+      detailBlock("Warum nicht abschliessend bestimmbar?", zusatzBegruendung(z, kurz));
   }
   return '<div class="ebene' + (z && z.status === "bestimmbar" ? " gut" : " offen") + '">' +
     ebeneKopf(3, "Zusätzliches Potenzial", "Was ist zusätzlich möglich?") + inhalt + "</div>";
@@ -5612,10 +5625,18 @@ function anordnungsTabelle(g1) {
       "</div></div>";
   }).join("");
 
-  return '<h4 class="subhead">' + ueberschrift + "</h4>" + einleitung +
+  // Die Balken sind der Beleg und bleiben sichtbar. Die Erklaerung dazu
+  // (Regel, Einleitung, Begruendung) steht auf Abruf darunter.
+  var warum = einleitung +
     ((g1 || {}).regel ? '<div class="note">' + esc(lesbar(g1.regel)) + "</div>" : "") +
-    '<div class="anordnungen">' + balken + "</div>" +
+    (istSpanne
+      ? '<p class="atext">Diese Spanne ist das Ergebnis; ein Einzelwert daraus wäre eine ' +
+        'Annahme über einen Entwurf, den es noch nicht gibt.</p>'
+      : "") +
     (ein && ein.erklaerung ? '<div class="note ok">' + esc(lesbar(ein.erklaerung)) + "</div>" : "");
+  return '<h4 class="subhead">' + ueberschrift + "</h4>" +
+    '<div class="anordnungen">' + balken + "</div>" +
+    (warum ? detailBlock(istSpanne ? "Warum eine Spanne?" : "Wie das Ergebnis entsteht", warum) : "");
 }
 
 /* Die Herleitung: G1-Kaskade, Sensitivitaetsbandbreite, Bestandessituation.
@@ -5798,29 +5819,13 @@ function potenzialUrteil(erg) {
   if (kurz.art === "zusatz") {
     return '<div class="urteil gut"><h4>' + fmt(zp.zusaetzliche_geschossflaeche_m2, 1) +
       ' <span class="unit">m\u00b2</span></h4>' +
-      '<div class="ulab">zus\u00e4tzliche Geschossfl\u00e4che</div>' +
-      (zp.rechnung ? '<div class="uwarum">Rechnung</div><p class="atext">' +
-        esc(lesbar(zp.rechnung)) + "</p>" : "") + "</div>";
+      '<div class="ulab">zusätzliche Geschossfläche</div></div>';
   }
 
   var offen = alsListe((zp || {}).offene_punkte);
-  // Oben steht eine Zahl oder eine Spanne fuer den Neubau, hier darunter
-  // "nicht belastbar bestimmbar". Gemeint ist der VERGLEICH mit dem
-  // Bestand, nicht der Neubauwert -- aber ohne diesen Satz liest sich der
-  // Block wie ein Widerspruch zur eigenen Ueberschrift.
-  var bruecke = (kurz.art === "spanne" || kurz.art === "eindeutig")
-    ? '<p class="atext">Die Angabe oben betrifft den Neubau nach heutigem ' +
-      'Rechtsrahmen. Hier geht es um eine andere Frage: wie viel davon ' +
-      'gegen\u00fcber dem heute stehenden Geb\u00e4ude <b>zus\u00e4tzlich</b> w\u00e4re.</p>'
-    : "";
-  var grundBlock =
-    '<div class="uwarum">Zum zus\u00e4tzlichen Potenzial gegen\u00fcber dem Bestand</div>' +
-    bruecke +
-    '<p class="atext">' + esc(lesbar((zp || {}).grund ||
-      "Der Vergleich mit dem Bestand ist offen.")) + "</p>" +
-    (offen.length ? '<ul class="plain">' + offen.map(function (x) {
-      return "<li>" + esc(lesbar(x)) + "</li>";
-    }).join("") + "</ul>" : "");
+  // Die Begruendung zum ZUSAETZLICHEN Potenzial (Vergleich mit dem Bestand)
+  // steht in Ebene 3 -- dort, wo die Frage gestellt wird -- und nicht noch
+  // einmal unter dem Neubauwert (siehe zusatzBegruendung).
 
   // Eindeutig: alle zulaessigen Abstandsanordnungen fuehren auf denselben
   // Wert. Dann gibt es hier nichts zu verschweigen -- die Frage nach der
@@ -5830,8 +5835,7 @@ function potenzialUrteil(erg) {
       ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
       '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 ' +
       '<b>eindeutig bestimmbar</b></div>' +
-      '<p class="atext">' + esc(eindeutigSatz(kurz)) + "</p>" +
-      grundBlock + "</div>";
+      '<p class="atext">' + esc(eindeutigSatz(kurz)) + "</p></div>";
   }
 
   // Echte Spanne -- aber ausschliesslich ueber zulaessige Anordnungen.
@@ -5849,23 +5853,42 @@ function potenzialUrteil(erg) {
       ' <span class="unit">m\u00b2 Geschossfl\u00e4che</span></h4>' +
       '<div class="ulab">Neubau nach heutigem Rechtsrahmen \u2014 je nach Ausrichtung ' +
       'des Geb\u00e4udes</div>' +
-      '<p class="atext">Beide R\u00e4nder sind baurechtlich zul\u00e4ssig. Welcher gilt, ' +
-      'entscheidet, welche Seite den grossen Grenzabstand tr\u00e4gt \u2014 also die ' +
-      'Fassadenorientierung des noch nicht entworfenen Geb\u00e4udes. Diese Spanne ist ' +
-      'das Ergebnis; ein Einzelwert daraus w\u00e4re eine Annahme \u00fcber einen Entwurf, ' +
-      'den es noch nicht gibt.</p>' +
-      leerText + grundBlock + "</div>";
+      '<p class="atext">Beide Ränder sind baurechtlich zulässig; welcher gilt, ' +
+      'hängt von der Fassadenorientierung des noch nicht entworfenen Gebäudes ab.</p>' +
+      leerText + "</div>";
   }
 
   return '<div class="urteil"><h4>Nicht abschliessend bestimmbar</h4>' +
     '<div class="ulab">kein belastbarer Einzelwert f\u00fcr das zus\u00e4tzliche Potenzial</div>' +
     '<div class="uwarum">Warum?</div>' +
     '<p class="atext">' + esc(lesbar((zp || {}).grund ||
-      "Die Abstandsgeometrie bzw. die Bestandessituation l\u00e4sst keinen belastbaren " +
+      "Die Abstandsgeometrie bzw. die Bestandessituation lässt keinen belastbaren " +
       "Einzelwert zu.")) + "</p>" +
-    (offen.length ? '<ul class="plain">' + offen.map(function (x) {
-      return "<li>" + esc(lesbar(x)) + "</li>";
-    }).join("") + "</ul>" : "") + "</div>";
+    (offen.length ? detailBlock("Warum im Einzelnen (" + offen.length + ")",
+      '<ul class="plain">' + offen.map(function (x) {
+        return "<li>" + esc(lesbar(x)) + "</li>";
+      }).join("") + "</ul>") : "") + "</div>";
+}
+
+/* Warum das ZUSAETZLICHE Potenzial (gegenueber dem Bestand) nicht abschliessend
+   bestimmbar ist. Steht in Ebene 3 hinter "Warum nicht abschliessend
+   bestimmbar?" -- einmal, nicht unter jedem Wert. Ist das Urteil selbst
+   "nicht abschliessend bestimmbar" (art "offen"), steht der Grundsatz schon
+   dort; hier bleiben dann nur die einzelnen Punkte. */
+function zusatzBegruendung(z, kurz) {
+  z = z || {};
+  var art = (kurz || {}).art;
+  var offen = alsListe(z.offene_punkte);
+  var bruecke = (art === "spanne" || art === "eindeutig")
+    ? '<p class="atext">Die Angabe oben betrifft den Neubau nach heutigem Rechtsrahmen. ' +
+      'Hier geht es um eine andere Frage: wie viel davon gegenüber dem heute stehenden ' +
+      'Gebäude <b>zusätzlich</b> wäre.</p>'
+    : "";
+  var grund = art === "offen" ? "" :
+    '<p class="atext">' + esc(lesbar(z.grund || "Der Vergleich mit dem Bestand ist offen.")) + "</p>";
+  return bruecke + grund + (offen.length ? '<ul class="plain">' + offen.map(function (x) {
+    return "<li>" + esc(lesbar(x)) + "</li>";
+  }).join("") + "</ul>" : "");
 }
 
 function secPotenzial(erg) {
@@ -5895,7 +5918,7 @@ function secPotenzial(erg) {
     '<div class="ebenen">' +
       ebeneBestand(bnb.bestand) +
       ebeneRechtsrahmen(erg, m1, zz, bnb.heutiger_rechtsrahmen) +
-      ebeneZusatz(bnb.zusaetzliches_potenzial) +
+      ebeneZusatz(bnb.zusaetzliches_potenzial, potenzialKurz(erg)) +
     "</div>" +
     '<h4 class="subhead">Herleitung und Details</h4>' +
     detailBlock("Herleitung", g1Herleitung(erg)) +
@@ -7514,15 +7537,19 @@ function secSzenarien(erg) {
       ["baurechtlich zulässige Geschossfläche", leer(b.zulaessig_gf_m2) ? null : fmt(b.zulaessig_gf_m2, 1) + " m² GF"],
       ["Bestand, Wohngebäude (Näherung)", leer(b.bestand_gf_m2) ? null : "ca. " + fmt(b.bestand_gf_m2, 1) + " m² GF"],
       ["rechnerische Reserve (Näherung)", leer(b.verbleibend_gf_m2) ? null : "ca. " + fmt(b.verbleibend_gf_m2, 1) + " m² GF"],
-      ["limitierende Grösse", b.limitierend]
+      ["begrenzt durch", leer(b.limitierend) ? null : bindendText(b.limitierend)]
     ]) +
     (leer(b.verbleibend_gf_m2) ? "" :
-      '<div class="note warn">Keine geprüfte Ausnützungsreserve: zulässige Geschossfläche ' +
-      fmt(b.zulaessig_gf_m2, 1) + " m² minus angenäherte Bestands-Geschossfläche " +
-      fmt(b.bestand_gf_m2, 1) + " m². Die Bestandsfläche ist aus Grundfläche × Geschosszahl genähert; " +
-      "nicht anrechenbare Flächen, Unter- und Dachgeschosse sowie Boni oder Abzüge sind nicht " +
-      "berücksichtigt. Massgebend ist eine Flächenberechnung nach kantonalem Recht.</div>") +
-    (b.bestand_herkunft ? '<div class="note">' + esc(b.bestand_herkunft) + "</div>" : "") +
+      '<div class="note warn">Keine geprüfte Ausnützungsreserve — Differenz aus zulässiger Fläche ' +
+      "und genähertem Bestand.</div>") +
+    ((leer(b.verbleibend_gf_m2) && !b.bestand_herkunft) ? "" : detailBlock("Herleitung der Reserve",
+      (leer(b.verbleibend_gf_m2) ? "" :
+        '<p class="atext">Zulässige Geschossfläche ' + fmt(b.zulaessig_gf_m2, 1) +
+        " m² minus angenäherte Bestands-Geschossfläche " + fmt(b.bestand_gf_m2, 1) +
+        " m². Die Bestandsfläche ist aus Grundfläche × Geschosszahl genähert; nicht anrechenbare " +
+        "Flächen, Unter- und Dachgeschosse sowie Boni oder Abzüge sind nicht berücksichtigt. " +
+        "Massgebend ist eine Flächenberechnung nach kantonalem Recht.</p>") +
+      (b.bestand_herkunft ? '<div class="note">' + esc(lesbar(b.bestand_herkunft)) + "</div>" : ""))) +
     alsListe(b.hinweise).map(function (h) {
       return '<div class="note ' + (h.indexOf("UEBERBAUT") >= 0 ? "stop" : "warn") + '">' + esc(h) + "</div>";
     }).join("");
