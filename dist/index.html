@@ -4464,9 +4464,12 @@ function kennzahlBlock(label, kz, einheit) {
         (einheit ? ' <span class="unit">' + esc(einheit) + "</span>" : "") + "</div>" +
         '<div class="kzgrund">' + wtyp("vorgabe", artikel) + "</div>"
       : '<div class="bigval na">–</div><div class="kzgrund">' +
-        (conf === "nicht_bestimmbar"
+        (kz.plausibilitaet
+          ? "prüfbedürftig – nicht in der Rechnung"
+          : conf === "nicht_bestimmbar"
           ? "aus der Bau- und Nutzungsordnung nicht ableitbar"
           : "nicht bestimmbar") + "</div>") +
+    plausibilitaetHinweis(kz) +
     (kz.unklarheit ? '<div class="note warn" style="margin-top:8px">' + satz(kz.unklarheit) + "</div>" : "") +
     ((kz.artikel_referenz || kz.zitat || bed.length)
       ? '<details class="more"><summary>Rechtsgrundlage &amp; Bedingungen</summary><div>' +
@@ -4484,6 +4487,17 @@ function kennzahlBlock(label, kz, einheit) {
         "</div></details>"
       : "") +
   "</div>";
+}
+// Ein ausgelesener Wert, der seinem eigenen Beleg widerspricht (Einheit,
+// Originaltext), wird nicht gerechnet -- und nicht korrigiert. Er bleibt
+// sichtbar, mit dem Grund.
+function plausibilitaetHinweis(kz) {
+  var p = (kz || {}).plausibilitaet;
+  if (!p) return "";
+  var befunde = alsListe(p.befunde).map(function (b) { return satz(b.hinweis || ""); }).join(" ");
+  return '<div class="note warn" style="margin-top:8px"><b>Prüfbedürftig.</b> Ausgelesen: ' +
+    esc(kz.wert_extrahiert) + (kz.einheit ? " (Einheit „" + esc(kz.einheit) + "“)" : "") + ". " +
+    befunde + " Der Wert wird nicht korrigiert und nicht gerechnet – bitte im Reglement prüfen.</div>";
 }
 function zoneKennzahlen(zone) {
   if (!zone) return "";
@@ -6997,6 +7011,11 @@ function dossierBauen(bilder) {
   var zone = zz.zone || {};
   var kennzahlZeilen = KENNZAHLEN.map(function (k) {
     var kz = zone[k[0]];
+    if (kz && kz.plausibilitaet) {
+      return [esc(k[1]), esc(kz.wert_extrahiert) + (kz.einheit ? " " + esc(kz.einheit) : "") +
+              ' <span class="dq">prüfbedürftig, nicht gerechnet</span>',
+              esc(kz.artikel_referenz || "–"), dherk("llm_extraktion")];
+    }
     if (!kz || typeof kz !== "object" || leer(kz.wert)) return null;
     return [esc(k[1]), esc(kz.wert) + (k[2] ? " " + esc(k[2]) : ""),
             esc(kz.artikel_referenz || "–"),
