@@ -26,7 +26,7 @@ from __future__ import annotations
 import sys
 
 from potenzial_engine import szenarien as sz
-from potenzial_engine.bestand import werte_bestand_aus
+from potenzial_engine.bestand import GRUNDRISS_AV, GRUNDRISS_QUELLE_TEXT, werte_bestand_aus
 from potenzial_engine.flaechenmodell import WohnungstypVorgabe
 
 FEHLER: list[str] = []
@@ -84,8 +84,11 @@ def grundriss_treffer(ring):
     return {"geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {}}
 
 
-def bestand_double(geschosse=2, mit_garage=True):
-    """Wohnhaus plus Garage -- die Konstellation, an der results[0] scheiterte."""
+def bestand_double(geschosse=2, mit_garage=True, quelle=GRUNDRISS_AV):
+    """Wohnhaus plus Garage -- die Konstellation, an der results[0] scheiterte.
+
+    Grundriss standardmaessig aus der amtlichen Vermessung (wie seit
+    07.10.2026 in den frei gegebenen Kantonen); quelle=None = VEC25."""
     gwr = [
         gwr_punkt(11, 13, egid="524242", strname_deinr="Musterweg 4", gkat=1020,
                   gastw=geschosse, garea=110, gbauj=1918),
@@ -95,7 +98,8 @@ def bestand_double(geschosse=2, mit_garage=True):
         gwr.insert(0, gwr_punkt(20, 5, egid="263024777", strname_deinr="Musterweg 4.1",
                                 gkat=1060, garea=9))
     grundrisse = [grundriss_treffer(BESTAND_GRUNDRISS)]
-    return werte_bestand_aus(gwr, grundrisse, PARZELLE)
+    herkunft = ({"art": quelle, "bezeichnung": GRUNDRISS_QUELLE_TEXT[quelle]} if quelle else None)
+    return werte_bestand_aus(gwr, grundrisse, PARZELLE, grundriss_quelle=herkunft)
 
 
 MIX = [
@@ -155,6 +159,12 @@ def test_budget() -> None:
     knapp = sz.berechne_ausnuetzungsbudget(g1(geschossflaeche_m2=200.0), bestand_double())
     pruefe(knapp.verbleibend_gf_m2 == -40.0, f"negatives Budget wird ausgewiesen ({knapp.verbleibend_gf_m2})")
     pruefe(any("ausgeschoepft" in h for h in knapp.hinweise), "und als ausgeschoepft benannt")
+
+    # Eine Definition fuer alle Reiter (bestand.bestandsgeschossflaeche):
+    # beim vereinfachten Umriss (VEC25, 120 m2) zaehlt die GWR-Flaeche (110 m2),
+    # beim amtlichen Grundriss der Grundriss.
+    vec = sz.berechne_ausnuetzungsbudget(g1(), bestand_double(quelle=None))
+    pruefe(vec.bestand_gf_m2 == 220.0, f"VEC25: GWR 110 m2 x 2 = 220 m2, nicht der Umriss 120 ({vec.bestand_gf_m2})")
 
     ohne = sz.berechne_ausnuetzungsbudget(g1(), bestand_double(geschosse=None))
     pruefe(ohne.bestand_gf_m2 is None, "ohne Geschosszahl keine Bestands-GF")

@@ -3444,6 +3444,19 @@ function wtyp(art, zusatz) {
 }
 // Geschosse des Bestands laut GWR: je Gebaeude ein Wert. Fehlt einer, ist
 // die Angabe unvollstaendig -- sie wird nicht ergaenzt.
+/* Gebaeude, die nicht in die Bestands-Geschossflaeche eingehen (Garage,
+   Schuppen, Nutzung unbekannt) -- einzeln genannt, nicht still weggelassen.
+   Ob sie an die Ausnuetzung angerechnet werden, regelt das kantonale bzw.
+   kommunale Recht; geprueft ist das nicht. */
+function nichtEingerechnetHinweis(ab) {
+  var liste = alsListe((ab || {}).nicht_eingerechnet);
+  if (!liste.length) return "";
+  return '<div class="enote">Nicht in der Geschossfläche: ' + liste.map(function (x) {
+    return (x.egid ? "EGID " + esc(x.egid) : "Gebäude ohne Registereintrag") +
+      (leer(x.flaeche_m2) ? "" : ", " + fmt(x.flaeche_m2, 1) + " m²") + " (" + esc(lesbar(x.grund)) + ")";
+  }).join("; ") + ". Ob solche Bauten an die Ausnützung angerechnet werden, regelt das kantonale " +
+    "bzw. kommunale Recht — hier nicht geprüft.</div>";
+}
 function bestandGeschosse(b) {
   var gs = (b || {}).geschosse || {};
   var werte = alsListe(gs.wert).filter(function (w) { return !leer(w); });
@@ -3664,7 +3677,7 @@ function secUebersicht(erg, m1, zz) {
   var bErsatz = !b ? "wird ermittelt" : "unbebaut";
   var bFuss = !b ? ""
     : (!b.gebaeude ? "kein Eintrag im Gebäuderegister"
-      : [b.gebaeude + " Gebäude",
+      : [b.gebaeude > 1 ? "Grundfläche aller " + b.gebaeude + " Gebäude" : "1 Gebäude, Grundfläche",
          bGeschosse.length ? bGeschosse.join(" · ") + " Geschosse" : null, "laut GWR"]
         .filter(Boolean).join(" · "));
 
@@ -3789,12 +3802,12 @@ function secUebersicht(erg, m1, zz) {
         ? '<p class="atext">Im Gebäude- und Wohnungsregister ist auf dieser Parzelle kein ' +
           'Gebäude verzeichnet.</p>'
         : uZeilen([
-            ["Grundfläche", leer(bGf) ? null : fmt(bGf, 0) + " m²", "gwr"],
+            ["Grundfläche (alle Gebäude)", leer(bGf) ? null : fmt(bGf, 0) + " m²", "gwr"],
             ["Gebäude", b.gebaeude ? String(b.gebaeude) : null, "gwr"],
             // Die Geschosszahl des BESTANDS aus dem Register -- getrennt von
             // der Geschosszahl, die die BZO fuer einen Neubau zulaesst.
             ["Geschosse", bestandGeschosse(b), bestandGeschosseTyp(b)],
-            ["Geschossfläche", leer(ab.wert_m2) ? "nicht ableitbar"
+            ["Geschossfläche (Wohngebäude)", leer(ab.wert_m2) ? "nicht ableitbar"
               : "ca. " + fmt(ab.wert_m2, 0) + " m² (Näherung)",
               leer(ab.wert_m2) ? "nicht_bestimmbar" : "abgeleitet"],
             // Der Abstand des bestehenden Gebaeudes zur Grenze wird nicht
@@ -3803,9 +3816,10 @@ function secUebersicht(erg, m1, zz) {
             ["Grenzabstand Bestand", "–", "nicht_bestimmbar"]
           ]) +
           (leer(ab.wert_m2)
-            ? '<p class="ahinweis">Das Register führt keine vollständige Geschosszahl — ' +
-              'auch eine Näherung wäre daraus nicht ableitbar.</p>'
-            : '<p class="ahinweis">Angenähert, nicht gemessen (' + esc(lesbar(ab.rechnung)) + ').</p>'))) +
+            ? '<p class="ahinweis">' + esc(lesbar(ab.grund ||
+                "Das Register führt keine vollständige Geschosszahl — auch eine Näherung wäre daraus nicht ableitbar.")) + "</p>"
+            : '<p class="ahinweis">Angenähert, nicht gemessen (' + esc(lesbar(ab.rechnung)) + ').</p>') +
+          nichtEingerechnetHinweis(ab))) +
   "</div>";
 
   /* --- Was ist zu beachten? ------------------------------------------
@@ -4279,7 +4293,8 @@ function secGrundstueck(m1) {
       : "") +
     // Zuerst, was hier steht; die Kennungen danach -- sichtbar, aber nicht
     // vor dem Gebaeude.
-    '<h4 class="subhead">Gebäude ' + wtyp("gwr") + "</h4>" + bestand +
+    '<h4 class="subhead">Gebäude an der Adresse ' + wtyp("gwr") + "</h4>" +
+    gebaeudeAnDerAdresseHinweis(gw, m1.bestand) + bestand +
     '<h4 class="subhead">Amtliche Kennungen</h4>' +
     '<div class="kennungen">' +
       kennung("EGRID", pz.egrid, "eidgenössischer Grundstücksidentifikator") +
@@ -4297,6 +4312,27 @@ function secGrundstueck(m1) {
         : begriffOderNull(pz.parzellenauswahl)]
     ]) +
   "</section>";
+}
+
+/* Dieser Abschnitt zeigt EIN Gebaeude: das der Adresse. Stehen auf der
+   Parzelle mehrere, steht das dabei -- sonst liest sich "9 m², ohne
+   Wohnnutzung" wie der ganze Bestand (Buchs AG, Rosenweg 4). Und wurde das
+   Gebaeude nicht ueber die Adresse gefunden, sondern nur als erster
+   Registereintrag im Umkreis, steht auch das dabei. */
+function gebaeudeAnDerAdresseHinweis(gw, bestand) {
+  gw = gw || {};
+  var n = ((bestand || {}).gebaeude || []).length;
+  var teile = [];
+  if (gw.found && gw.zuordnung === "erster_treffer_im_umkreis") {
+    teile.push('<div class="note warn">Nicht über die Adresse zugeordnet: gezeigt wird der erste ' +
+      "Registereintrag im Umkreis des Adresspunkts. Es kann ein Nachbar- oder Nebengebäude sein.</div>");
+  }
+  if (n > 1) {
+    teile.push('<div class="note">Auf der Parzelle stehen ' + n + " Gebäude. Hier steht nur das " +
+      "Gebäude der Adresse; alle Gebäude mit Grundfläche und Geschossfläche im Reiter Potenzial " +
+      "unter „Bestand“.</div>");
+  }
+  return teile.join("");
 }
 
 // begriff() liefert auch fuer null/"" einen escapten Leerstring -- kvRows
@@ -5337,7 +5373,8 @@ function ebeneBestand(b) {
     var abgeleitet = leer(ab.wert_m2) ? null : "ca. " + fmt(ab.wert_m2, 0) + " m²";
     inhalt =
       ebeneLeit(leer(gf.wert_m2) ? null : fmt(gf.wert_m2, 0), "m²",
-        leer(gf.wert_m2) ? "Grundfläche nicht verfügbar" : "Bestandsgrundfläche") +
+        leer(gf.wert_m2) ? "Grundfläche nicht verfügbar"
+          : (b.gebaeude > 1 ? "Grundfläche aller " + b.gebaeude + " Gebäude" : "Bestandsgrundfläche")) +
       '<div class="ezeilen">' +
         // Die Engine nennt einen vollstaendigen Registereintrag "gemessen".
         // Gemessen ist daran nichts -- es ist ein amtlicher Registerwert.
@@ -5346,16 +5383,20 @@ function ebeneBestand(b) {
           gf.status === "gemessen" ? ["laut GWR", "ok"] : ["unvollständig", "warn"]) +
         ebeneZeile("Geschosse", geschosse.length ? geschosse.join(" · ") : null,
           gs.status === "gemessen" ? ["laut GWR", "ok"] : ["unvollständig", "warn"]) +
-        ebeneZeile("Abgeleitete GF", abgeleitet, ["Näherung", "warn"], lesbar(ab.rechnung)) +
+        ebeneZeile("Abgeleitete GF (Wohngebäude)", abgeleitet, ["Näherung", "warn"], lesbar(ab.rechnung)) +
       "</div>" +
       (leer(ab.wert_m2)
         ? (ab.grund ? '<div class="enote">' + esc(lesbar(ab.grund)) + "</div>" : "")
         : '<div class="enote">Nicht gemessen: das Register führt keine Geschossfläche. ' +
           'Unter- und Dachgeschosse, unterschiedlich grosse Geschosse und Anbauten sind ' +
           'darin nicht abgebildet.</div>') +
+      // Zwei verschiedene Groessen: die Grundflaeche summiert ALLE Gebaeude,
+      // die Geschossflaeche nur die mit Wohnnutzung -- das muss dastehen.
       (b.gebaeude > 1
-        ? '<div class="enote">' + b.gebaeude + " Gebäude auf der Parzelle — die Werte sind ihre Summe.</div>"
-        : "");
+        ? '<div class="enote">' + b.gebaeude + " Gebäude auf der Parzelle — die Grundfläche ist ihre " +
+          "Summe; die Geschossfläche zählt nur Gebäude mit Wohnnutzung.</div>"
+        : "") +
+      nichtEingerechnetHinweis(ab);
   }
   return '<div class="ebene">' + ebeneKopf(1, "Bestand", "Was steht heute?") + inhalt + "</div>";
 }
@@ -7465,13 +7506,22 @@ function secSzenarien(erg) {
   var vergleich = alsListe(sz.vergleich);
   var szenarien = sz.szenarien || {};
 
+  // Die Reserve ist eine Differenz aus einem Wert des heutigen
+  // Rechtsrahmens und einer NAEHERUNG des Bestands -- sie heisst deshalb
+  // nie einfach "verbleibend", sondern sagt, was sie ist.
   var budgetBlock = '<h4 class="subhead">Ausnützungsbudget</h4>' +
     kvRows([
-      ["baurechtlich zulässig", leer(b.zulaessig_gf_m2) ? null : fmt(b.zulaessig_gf_m2, 1) + " m² GF"],
-      ["durch den Bestand belegt", leer(b.bestand_gf_m2) ? null : fmt(b.bestand_gf_m2, 1) + " m² GF"],
-      ["verbleibend", leer(b.verbleibend_gf_m2) ? null : fmt(b.verbleibend_gf_m2, 1) + " m² GF"],
+      ["baurechtlich zulässige Geschossfläche", leer(b.zulaessig_gf_m2) ? null : fmt(b.zulaessig_gf_m2, 1) + " m² GF"],
+      ["Bestand, Wohngebäude (Näherung)", leer(b.bestand_gf_m2) ? null : "ca. " + fmt(b.bestand_gf_m2, 1) + " m² GF"],
+      ["rechnerische Reserve (Näherung)", leer(b.verbleibend_gf_m2) ? null : "ca. " + fmt(b.verbleibend_gf_m2, 1) + " m² GF"],
       ["limitierende Grösse", b.limitierend]
     ]) +
+    (leer(b.verbleibend_gf_m2) ? "" :
+      '<div class="note warn">Keine geprüfte Ausnützungsreserve: zulässige Geschossfläche ' +
+      fmt(b.zulaessig_gf_m2, 1) + " m² minus angenäherte Bestands-Geschossfläche " +
+      fmt(b.bestand_gf_m2, 1) + " m². Die Bestandsfläche ist aus Grundfläche × Geschosszahl genähert; " +
+      "nicht anrechenbare Flächen, Unter- und Dachgeschosse sowie Boni oder Abzüge sind nicht " +
+      "berücksichtigt. Massgebend ist eine Flächenberechnung nach kantonalem Recht.</div>") +
     (b.bestand_herkunft ? '<div class="note">' + esc(b.bestand_herkunft) + "</div>" : "") +
     alsListe(b.hinweise).map(function (h) {
       return '<div class="note ' + (h.indexOf("UEBERBAUT") >= 0 ? "stop" : "warn") + '">' + esc(h) + "</div>";

@@ -474,6 +474,90 @@ def bestandsgeschosse(bestand: dict[str, Any]) -> Optional[int]:
     return haupt.get("geschosse")
 
 
+def bestandsgeschossflaeche(bestand: Optional[dict[str, Any]]) -> dict[str, Any]:
+    """Die bestehende Geschossflaeche -- EINE Definition fuer alle Reiter.
+
+    Bis 09.10.2026 gab es zwei: die Potenzial-Ebene rechnete GWR-Flaeche x
+    Geschosse ueber ALLE Gebaeude und scheiterte an jeder Garage ohne
+    Geschosszahl ("nicht ableitbar"); das Ausnuetzungsbudget der Szenarien
+    rechnete Grundriss der Wohngebaeude x Geschosse des HAUPTgebaeudes
+    (Buchs AG: 135.4 m2). Dieselbe Groesse, zwei Antworten im selben Bericht.
+
+    Die Definition:
+      * gezaehlt werden Gebaeude mit Wohnnutzung, jedes mit SEINER
+        Geschosszahl -- nie die eines anderen Gebaeudes
+      * Grundflaeche je Gebaeude: Grundriss der amtlichen Vermessung, sonst
+        GWR-Gebaeudeflaeche, sonst der vereinfachte Umriss (VEC25)
+      * Gebaeude ohne Wohnnutzung (Garage, Schuppen) und solche mit
+        unbekannter Nutzung werden NICHT eingerechnet -- aber einzeln
+        aufgefuehrt, nicht stillschweigend weggelassen. Ob sie an die
+        Ausnuetzung angerechnet werden, regelt das kantonale bzw. kommunale
+        Recht; das ist hier nicht geprueft.
+      * fehlt einem Wohngebaeude die Geschosszahl oder jede Flaeche: keine
+        Zahl ("nicht bestimmbar"), mit Grund
+
+    Es bleibt eine NAEHERUNG: das Register fuehrt keine Geschossflaeche, und
+    Unter-/Dachgeschosse oder unterschiedlich grosse Geschosse sind darin
+    nicht abgebildet.
+    """
+    gebaeude = (bestand or {}).get("gebaeude") or []
+    amtlich = ((bestand or {}).get("grundriss_quelle") or {}).get("art") == GRUNDRISS_AV
+    eingerechnet: list[dict[str, Any]] = []
+    nicht_eingerechnet: list[dict[str, Any]] = []
+    fehlend: list[str] = []
+    for g in gebaeude:
+        kennung = f"EGID {g['egid']}" if g.get("egid") else "Gebaeude ohne GWR-Eintrag"
+        grundriss = g.get("grundriss_flaeche_m2")
+        gwr = g.get("grundflaeche_gwr_m2")
+        if amtlich and grundriss:
+            flaeche, flaechenquelle = grundriss, "Grundriss amtliche Vermessung"
+        elif gwr:
+            flaeche, flaechenquelle = gwr, "Gebaeudeflaeche GWR"
+        elif grundriss:
+            flaeche, flaechenquelle = grundriss, "Umriss vereinfacht (VEC25)"
+        else:
+            flaeche, flaechenquelle = None, None
+        if not g.get("wohnnutzung"):
+            nicht_eingerechnet.append({
+                "egid": g.get("egid"), "flaeche_m2": flaeche,
+                "kategorie": g.get("kategorie_text"),
+                "grund": ("ohne Wohnnutzung" if g.get("wohnnutzung") is False
+                          else "Nutzung unbekannt (kein GWR-Eintrag)"),
+            })
+            continue
+        if flaeche is None or not g.get("geschosse"):
+            fehlend.append(f"{kennung}: " + ("keine Grundflaeche" if flaeche is None
+                                              else "im GWR keine Geschosszahl"))
+            continue
+        eingerechnet.append({
+            "egid": g.get("egid"), "flaeche_m2": flaeche, "flaechenquelle": flaechenquelle,
+            "geschosse": g["geschosse"], "gf_m2": round(flaeche * g["geschosse"], 1),
+        })
+
+    herleitung = ("Grundflaeche x Geschosszahl je Wohngebaeude. NAEHERUNG -- das Register "
+                  "fuehrt keine Geschossflaeche; Unter- und Dachgeschosse und unterschiedlich "
+                  "grosse Geschosse sind nicht abgebildet.")
+    ergebnis: dict[str, Any] = {
+        "wert_m2": None, "status": "nicht_bestimmbar", "rechnung": None,
+        "herleitung": herleitung, "eingerechnet": eingerechnet,
+        "nicht_eingerechnet": nicht_eingerechnet, "grund": None,
+    }
+    if not gebaeude:
+        ergebnis["grund"] = "Kein Gebaeude auf der Parzelle."
+    elif fehlend:
+        ergebnis["grund"] = ("Fuer ein Wohngebaeude fehlt eine Angabe -- auch eine Naeherung "
+                             "ist nicht ableitbar: " + "; ".join(fehlend) + ".")
+    elif not eingerechnet:
+        ergebnis["grund"] = ("Kein Gebaeude mit Wohnnutzung auf der Parzelle; Gebaeude ohne "
+                             "Wohnnutzung werden nicht als Geschossflaeche gezaehlt.")
+    else:
+        ergebnis["wert_m2"] = round(sum(e["gf_m2"] for e in eingerechnet), 1)
+        ergebnis["status"] = "abgeleitet"
+        ergebnis["rechnung"] = " + ".join(
+            f"{e['flaeche_m2']:,.1f} m2 x {e['geschosse']} Geschosse" for e in eingerechnet)
+    return ergebnis
+
+
 def bestandsgrundriss(bestand: dict[str, Any]) -> list[list[float]]:
     """Alle Gebaeudegrundrisse der Parzelle als Ringe -- die Flaeche, die
     ein Anbau oder ein zusaetzlicher Baukoerper NICHT belegen kann."""

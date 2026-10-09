@@ -729,20 +729,40 @@ def get_municipality_data(e: float, n: float) -> dict[str, Any]:
 # 4. GWR (Gebaeude- und Wohnungsregister)
 # ---------------------------------------------------------------------------
 
-def get_gwr_data(e: float, n: float) -> dict[str, Any]:
+def egid_aus_feature_id(feature_id: Any) -> Optional[str]:
+    """Die EGID einer Adresse aus ihrer Kennung EGID_EDID ("524242_0")."""
+    teil = str(feature_id or "").split("_")[0].strip()
+    return teil if teil.isdigit() else None
+
+
+def get_gwr_data(e: float, n: float, egid: Optional[str] = None) -> dict[str, Any]:
     """Ermittelt Gebaeudebestandsdaten (EGID, Baujahr, Geschosse, Kategorie, Flaeche).
 
     Hinweis: Liegt der Adresspunkt nicht exakt auf dem Gebaeude-Polygon/Punkt
     (z.B. bei Neubauprojekten auf unbebauter Parzelle), liefert dieser Layer
     keinen Treffer -- das ist erwartetes Verhalten, kein Fehler.
+
+    `egid`: das Gebaeude der gewaehlten Adresse. Die Toleranzabfrage liefert
+    oft mehrere Gebaeude; ohne Kennung war es der ERSTE Treffer -- in Buchs AG
+    (Rosenweg 4) die Garage 263024777 (9 m2, ohne Wohnnutzung) statt des
+    Wohnhauses 524242, und mit ihr Heizung und Solardach des falschen Baus.
     """
     results = _identify(e, n, LAYER_GWR, tolerance=10)
     if not results:
         return {"found": False, "reason": "Kein GWR-Gebaeudeeintrag an diesem Punkt (evtl. unbebaute Parzelle)."}
 
-    attrs = results[0].get("attributes", {})
+    treffer = None
+    if egid:
+        treffer = next((r for r in results
+                        if str((r.get("attributes") or {}).get("egid")) == str(egid)), None)
+    zuordnung = "egid_der_adresse" if treffer is not None else "erster_treffer_im_umkreis"
+    attrs = (treffer if treffer is not None else results[0]).get("attributes", {})
     return {
         "found": True,
+        # Woher die Zuordnung kommt: ueber die Adresse, oder (Kartenklick,
+        # Adresse ohne Kennung) nur der erste Registereintrag im Umkreis.
+        "zuordnung": zuordnung,
+        "gebaeude_im_umkreis": len(results),
         "egid": _first_key(attrs, ["egid"]),
         "baujahr": _first_key(attrs, ["gbauj", "baujahr"]),
         "anzahl_geschosse": _first_key(attrs, ["gastw", "geschosse"]),
@@ -1679,7 +1699,8 @@ def run_modul1(address: str, geo: Optional[dict[str, Any]] = None) -> dict[str, 
         # --- Welle 1: alles, was nur die Koordinate braucht ---------------
         f_kataster = _nebenlaeufig(pool, lambda: get_parcel_data(e, n))
         f_gemeinde = _nebenlaeufig(pool, lambda: get_municipality_data(e, n))
-        f_gwr = _nebenlaeufig(pool, lambda: get_gwr_data(e, n))
+        f_gwr = _nebenlaeufig(
+            pool, lambda: get_gwr_data(e, n, egid=egid_aus_feature_id(geo.get("feature_id"))))
         f_radon = _nebenlaeufig(pool, lambda: get_radon_data(e, n))
         f_topo = _nebenlaeufig(pool, lambda: get_topography(e, n).model_dump())
         f_umgebung = _nebenlaeufig(
