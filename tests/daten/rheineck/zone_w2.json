@@ -1,0 +1,117 @@
+{
+ "_herkunft": "Gespeicherte Reglementauswertung Rheineck SG (Zwischenspeicher Backend, gelesen 09.10.2026), Zone W2 unveraendert ausgeschnitten",
+ "zone": {
+  "zonenbezeichnung": "W2 (Wohnzone 2 Vollgeschosse)",
+  "ausnuetzungsziffer_az": {
+   "wert": 0.45,
+   "einheit": null,
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": "Art. 8 BauR",
+   "zitat": "W2 Ausnützungsziffer 0.45",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "anrechenbare_geschossflaechenziffer_abgf": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": null,
+   "zitat": null,
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "Die BZO Rheineck verwendet die Ausnützungsziffer (AZ) anstelle der aBGF."
+  },
+  "baumassenziffer_bmz": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": null,
+   "zitat": null,
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "Keine Baumassenziffer für Wohnzonen festgelegt."
+  },
+  "ueberbauungsziffer_uz": {
+   "wert": null,
+   "einheit": null,
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": null,
+   "zitat": null,
+   "confidence": "nicht_bestimmbar",
+   "bedingungen": [],
+   "unklarheit": "Keine Überbauungsziffer im Reglement definiert."
+  },
+  "gesamthoehe_m": {
+   "wert": 10.5,
+   "einheit": "m",
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": "Art. 8 BauR",
+   "zitat": "Firsthöhe max. 10.5 m",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": "In der BZO Rheineck als max. Firsthöhe bezeichnet."
+  },
+  "gebaeudehoehe_m": {
+   "wert": 7,
+   "einheit": "m",
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": "Art. 8 BauR",
+   "zitat": "Gebäudehöhe max. 7 m",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "grenzabstand_klein_m": {
+   "wert": 4,
+   "einheit": "m",
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": "Art. 8 BauR",
+   "zitat": "Kleiner Grenzabstand min. 4 m",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "grenzabstand_gross_m": {
+   "wert": 8,
+   "einheit": "m",
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": "Art. 8 BauR",
+   "zitat": "Grosser Grenzabstand min. 8 m",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  },
+  "strassenabstand_m": {
+   "wert": 3,
+   "einheit": "m",
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": "Art. 20 BauR",
+   "zitat": "an Gemeindestrassen 3 m",
+   "confidence": "hoch",
+   "bedingungen": [
+    {
+     "bedingung_text": "An Staatsstrassen",
+     "wert_unter_bedingung": 4,
+     "artikel_referenz": "Art. 20 BauR"
+    },
+    {
+     "bedingung_text": "An Wegen",
+     "wert_unter_bedingung": 2,
+     "artikel_referenz": "Art. 20 BauR"
+    }
+   ],
+   "unklarheit": "Gilt, sofern nicht durch Baulinien bestimmt."
+  },
+  "vollgeschosse_max": {
+   "wert": 2,
+   "einheit": null,
+   "quelle_dokument": "Baureglement Stadt Rheineck",
+   "artikel_referenz": "Art. 8 BauR",
+   "zitat": "Vollgeschosszahl max. 2",
+   "confidence": "hoch",
+   "bedingungen": [],
+   "unklarheit": null
+  }
+ }
+}

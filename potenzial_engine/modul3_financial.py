@@ -46,6 +46,8 @@ import re
 import sys
 from typing import Any, Optional
 
+from .reglement_plausibilitaet import plausibilitaetsbefunde, pruefe_zone
+
 
 class Modul3Error(Exception):
     """Fehler innerhalb der Financial-Engine (z.B. fehlende Pflichtdaten)."""
@@ -253,6 +255,12 @@ def match_zone(
         return {"status": "keine_amtliche_zone", "zone": None, "aehnlichkeit": None}
     if not erkannte_zonen:
         return {"status": "keine_bzo_zonen", "zone": None, "aehnlichkeit": None}
+
+    # Jede Zone kommt hier geprueft heraus: ein Wert, der seinem eigenen
+    # Beleg widerspricht (Einheit, Originaltext), wird zurueckgehalten statt
+    # gerechnet -- siehe reglement_plausibilitaet.py. Hier, weil Analyse,
+    # Screening und Vertiefung ihre Zone alle ueber match_zone() holen.
+    erkannte_zonen = [pruefe_zone(z) for z in erkannte_zonen]
 
     basiszone = next(
         (z for z in amtliche_zonenbezeichnungen if z.get("ist_wahrscheinlich_basiszone")),
@@ -913,6 +921,9 @@ def ermittle_zonenzuordnung(modul1_result: dict[str, Any], modul2_result: dict[s
     amtliche_zonenbezeichnungen, basiszone_quelle = _ermittle_basiszone_bezeichnung(modul1_result)
     zone_match = match_zone(amtliche_zonenbezeichnungen, modul2_result.get("erkannte_zonen", []))
     zone_match["basiszone_quelle"] = basiszone_quelle
+    befunde = plausibilitaetsbefunde(zone_match.get("zone"))
+    if befunde:
+        zone_match["plausibilitaet"] = befunde
     return zone_match
 
 

@@ -60,6 +60,11 @@ def _kennzahl_hinweis(feldname: str, v: Any) -> Optional[str]:
     if not isinstance(v, dict):
         return None
     teile = []
+    plausibilitaet = v.get("plausibilitaet")
+    if plausibilitaet:
+        teile.append(
+            f"pruefbeduerftig, ausgelesen {v.get('wert_extrahiert')!r} -- nicht in der Rechnung: "
+            + "; ".join(b.get("hinweis", "") for b in plausibilitaet.get("befunde") or []))
     confidence = v.get("confidence")
     if confidence and confidence != "hoch":
         teile.append(f"Confidence={confidence}")
