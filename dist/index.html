@@ -189,6 +189,15 @@ img { max-width: 100%; }
 .wf-panel .accordion > summary::after { content: "\25B8"; margin-left: auto; color: var(--ink-3); }
 .wf-panel .accordion[open] > summary::after { content: "\25BE"; }
 .wf-panel .accordion > .accbody { padding: 2px 12px 12px; border-top: 1px solid var(--line-2); }
+/* Dieselben Texte hingen frueher als Popup an der Flaeche; dort macht
+   ".leaflet-popup-content b" den Titel zur eigenen Zeile. Im Panel fehlte das:
+   <b>Titel</b><span class="m">Detail</span> sind beides Inline-Elemente und
+   standen ohne Trennung nebeneinander ("Parzelle 1145598.9 m²"). Nur der
+   Titel auf oberster Ebene wird zum Block -- ein <b> mitten im Detailtext
+   bleibt Hervorhebung. Die frueheren Notbehelfe -- ein <br> direkt hinter dem
+   Titel -- stehen deshalb nicht mehr in den Texten (sie ergaeben sonst eine
+   Leerzeile). */
+#karte-inspektor > b { display: block; margin-bottom: 3px; }
 .wf-inspektor-leer { font-size: 12px; color: var(--ink-3); padding: 9px 11px;
   border: 1px dashed var(--line); border-radius: 8px; }
 .wf-inspektor-kopf { font-size: 11px; font-weight: 700; text-transform: uppercase;
@@ -1556,7 +1565,7 @@ map.on("click", function (ev) {
       }
       // <br> zwischen Titel und erster Zeile -- dieselbe Luecke wie bei
       // "Bebaubare Fläche" oben, hier vor der Uebernahme ins Panel behoben.
-      zeigeKarteninfo("<b>An dieser Stelle</b><br>" + zeilen.join("<br>"));
+      zeigeKarteninfo("<b>An dieser Stelle</b>" + zeilen.join("<br>"));
     })
     .catch(function () {
       zeigeKarteninfo("<b>Abfrage fehlgeschlagen.</b>");
@@ -2984,11 +2993,9 @@ function zeichneErgebnisAufKarte(erg) {
       var bezeichnung = anordnungsName(name);
       var popupB;
       if (randfall) {
-        // <b>-Titel und die <span class="m">-Details sind beides Inline-
-        // Elemente -- ohne eigenes <br> dazwischen stehen Titel und
-        // Bezeichnung ohne Trennung in einer Zeile ("... Anordnunghauptseite
-        // ..."). Live beobachtet.
-        popupB = "<b>Zulässige Abstandsanordnung</b><span class=\"m\"><br>" +
+        // Titel und Details trennt die Panel-Regel "#karte-inspektor > b"
+        // (Block); ein eigenes <br> dazwischen ergaebe eine Leerzeile.
+        popupB = "<b>Zulässige Abstandsanordnung</b><span class=\"m\">" +
           esc(bezeichnung) + "<br><br>" +
           "Eine von " + einzel.length + " Anordnungen, die die Bau- und Nutzungsordnung " +
           "zulässt. Welche davon gilt, entscheidet die Fassadenorientierung des noch " +
@@ -3000,10 +3007,9 @@ function zeichneErgebnisAufKarte(erg) {
             ? "<br>begrenzt durch " + esc(klartext(e.geschossflaeche_limitiert_durch)) : "") +
           "<br><br>Die Einordnung steht im Reiter Potenzial unter „Herleitung“.</span>";
       } else {
-        // Derselbe fehlende Zeilenumbruch wie oben: ohne <br> stand
-        // "Bebaubare Flächehauptseite_an_strasse" in einer Zeile.
+        // Wie oben: der Titel ist im Panel ein Block, ein <br> davor entfaellt.
         popupB = "<b>Bebaubare Fläche</b><span class=\"m\">" +
-          (name ? "<br>" + esc(bezeichnung) + "<br>" : "") +
+          (name ? esc(bezeichnung) + "<br>" : "") +
           "Baubereich " + fmt(e.baubereich_m2, 1) + " m²<br>" +
           "Fussabdruck " + fmt(e.fussabdruck_m2, 1) + " m²" +
           (e.fussabdruck_limitiert_durch
@@ -6365,6 +6371,59 @@ function szenarioKarte(id) {
   if (window.zeichne3D) window.zeichne3D(id);
   verdrahte3DSteuerung();
   if (document.getElementById("projektleiste") && !projektAktuell) zeichneProjektleiste();
+}
+
+// "Auf Karte und in 3D zeigen" in der Szenariokarte. szenarioKarte() allein
+// setzte nur das Szenario: man blieb im Potenzial-Reiter, die Ebene
+// "Moeglicher Baukoerper" blieb ausgeschaltet, nichts meldete sich. Hier
+// kommen die vorhandenen Bausteine in der Reihenfolge zusammen, in der der
+// Benutzer sie braucht: Szenario aktivieren (Karte und 3D zeichnen dasselbe),
+// Ebene einschalten, Karte oeffnen, auf den Baukoerper einpassen, und im
+// Panel sagen, was passiert ist -- mit dem Weg in die 3D-Ansicht.
+function szenarioAufKarteZeigen(id) {
+  szenarioKarte(id);
+  var s = (((ergebnisAktuell || {}).szenarien || {}).szenarien || {})[id] || {};
+  var name = s.bezeichnung || id;
+  var feld = document.getElementById("lay-szenario");
+  var vorhanden = !!(feld && !feld.disabled && gruppen.szenario &&
+                     gruppen.szenario.getLayers().length);
+  if (vorhanden) {
+    feld.checked = true;
+    if (!map.hasLayer(gruppen.szenario)) gruppen.szenario.addTo(map);
+  }
+  zeigeReiter("karte");
+  var html;
+  if (vorhanden) {
+    html = "<b>Szenario „" + esc(name) + "“ auf der Karte</b>" +
+      "Die Ebene „Möglicher Baukörper (Szenario)“ ist eingeschaltet. " +
+      "Der Körper ist errechnet — kein geplantes Gebäude. " +
+      "Die 3D-Ansicht zeigt dasselbe Szenario." +
+      '<div style="margin-top:8px"><button type="button" class="szbtn klein" id="sz-zu-3d">' +
+      "In 3D ansehen</button></div>";
+  } else {
+    html = "<b>Szenario „" + esc(name) + "“ gewählt</b>" +
+      "Für dieses Szenario gibt es keinen Baukörper, den die Karte zeichnen könnte. " +
+      "Die 3D-Ansicht verwendet trotzdem dieses Szenario." +
+      '<div style="margin-top:8px"><button type="button" class="szbtn klein" id="sz-zu-3d">' +
+      "In 3D ansehen</button></div>";
+  }
+  zeigeKarteninfo(html);
+  var zu3d = document.getElementById("sz-zu-3d");
+  if (zu3d) zu3d.addEventListener("click", function () { zeigeReiter("entwurf"); });
+  if (vorhanden) {
+    var bounds = null;
+    gruppen.szenario.getLayers().forEach(function (l) {
+      var bb = l.getBounds ? l.getBounds() : null;
+      if (bb) bounds = bounds ? bounds.extend(bb) : bb;
+    });
+    // Erst nach invalidateSize kennt Leaflet die neue Groesse (siehe .maplink).
+    setTimeout(function () {
+      if (bounds) {
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 19 });
+        kartenRahmenGesetzt = true;
+      }
+    }, 120);
+  }
 }
 
 function zeichneSzenario(id) {
@@ -13432,7 +13491,13 @@ function verdrahteSzenarien() {
   var knoepfe = document.querySelectorAll("[data-szenario]");
   knoepfe.forEach(function (b) {
     if (b.tagName !== "BUTTON" && b.tagName !== "TR") return;
-    b.addEventListener("click", function () { szenarioKarte(b.getAttribute("data-szenario")); });
+    b.addEventListener("click", function () {
+      var id = b.getAttribute("data-szenario");
+      // Nur der Knopf der Szenariokarte verspricht "Auf Karte und in 3D
+      // zeigen"; die Szenarienwahl anderswo bleibt, was sie war.
+      if (b.closest && b.closest(".szaktion")) szenarioAufKarteZeigen(id);
+      else szenarioKarte(id);
+    });
   });
   var erstes = (((ergebnisAktuell || {}).szenarien || {}).vergleich || [])[0];
   if (erstes) szenarioKarte(erstes.id);
