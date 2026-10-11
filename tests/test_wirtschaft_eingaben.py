@@ -155,12 +155,64 @@ def test_ohne_szenario() -> None:
     pruefe(alle["grund"] == "Keine eindeutige Geometrie.", "der fachliche Grund bleibt der Grund")
 
 
+def ersatzneubau_buchs() -> dict:
+    """Ersatzneubau mit dem Geschossaufbau wie gespeichert (Buchs AG, 09.10.2026):
+    3 Geschosse zu 142.45 m2 Fussabdruck -- daran haengt der Aushub."""
+    s = szenario()
+    s["flaechen"]["geschossaufbau"] = {"geschosse": [{"flaeche_m2": 142.45}] * 3}
+    return s
+
+
+def rechne_buchs(body: dict) -> dict:
+    mk = markt_aus_body(body)
+    return w.berechne_alle({"szenarien": {"ersatzneubau": ersatzneubau_buchs()}}, LAND_M2,
+                           mk["markt"], mk["positionen"])["szenarien"]["ersatzneubau"]
+
+
+def positionen(e: dict) -> dict:
+    return {p["schluessel"]: p for p in e["kosten"]["positionen"]}
+
+
+def test_bkp_nur_bewusst() -> None:
+    print("\n=== 6. BKP: ohne eigene Eingabe greift der Systemansatz samt Aushub ===")
+    preise = {"verkauf_chf_pro_m2": 9000, "miete_chf_pro_m2_jahr": 280, "bodenpreis_chf_pro_m2": 800}
+    ohne = rechne_buchs(dict(preise, bkp={}))
+    p = positionen(ohne)
+    pruefe(p["bkp1_aushub"]["betrag_chf"] == 14957 and p["bkp1_aushub"]["herkunft"] == "systemannahme",
+           "Aushub 142.45 m² × 3.5 m × 30 CHF/m³ = 14'957 CHF, Systemannahme")
+    pruefe(all(x["herkunft"] != "benutzerannahme" for x in p.values()),
+           "ohne Eingabe ist keine BKP-Position 'meine Annahme'")
+
+    # So sah der fehlerhafte Request aus: die angezeigten Werte von "Bestand
+    # erhalten" als Annahmen -- darunter Aushub 0.
+    falsch = rechne_buchs(dict(preise, bkp={
+        "bkp1_aushub": 0, "bkp2_gebaeude": 2400, "bkp3_betriebseinrichtungen": 0,
+        "bkp4_umgebung": 0.05, "bkp5_baunebenkosten": 0.11, "bkp6_reserve": 0.1,
+        "finanzierung": 0.025, "vermarktung": 0.025}))
+    differenz = ohne["kosten"]["baukosten_chf"] - falsch["kosten"]["baukosten_chf"]
+    pruefe(positionen(falsch)["bkp1_aushub"]["betrag_chf"] == 0 and round(differenz) == 18719,
+           f"Gegenprobe alter Fehler: Aushub 0, Baukosten um 18'719 CHF zu tief ({differenz:,.0f})")
+
+    bewusst = rechne_buchs(dict(preise, bkp={"bkp2_gebaeude": 2600}))
+    pb = positionen(bewusst)
+    pruefe(pb["bkp2_gebaeude"]["herkunft"] == "benutzerannahme" and pb["bkp2_gebaeude"]["ansatz"] == 2600,
+           "bewusst geändert: Gebäude 2600 CHF/m² als eigene Annahme")
+    pruefe(pb["bkp1_aushub"]["betrag_chf"] == 14957 and pb["bkp1_aushub"]["herkunft"] == "systemannahme",
+           "der Aushub bleibt dabei Systemansatz (14'957)")
+    pruefe(bewusst["kosten"]["baukosten_chf"] > ohne["kosten"]["baukosten_chf"],
+           "die geänderte Position wirkt auf die Baukosten")
+    pruefe(ohne["ergebnis"]["verkaufserloes_chf"] == bewusst["ergebnis"]["verkaufserloes_chf"]
+           and ohne["land"]["wert_chf"] == round(800 * LAND_M2, 0),
+           "Marktannahmen und Erlös bleiben unverändert")
+
+
 def main() -> None:
     test_fehlende_annahmen()
     test_systemvorschlag_uebernehmen()
     test_manuell_angepasst()
     test_uebergabe_an_rechnung()
     test_ohne_szenario()
+    test_bkp_nur_bewusst()
     print()
     if _fehler:
         print(f"WIRTSCHAFT-EINGABEN: {len(_fehler)} Abweichung(en)")

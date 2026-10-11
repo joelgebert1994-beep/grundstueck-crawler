@@ -13139,10 +13139,20 @@ function wSammleEingaben() {
   document.querySelectorAll(".wmix-anteil").forEach(function (el) {
     wEingaben.wohnungsmix[Number(el.dataset.i)].anteil = (Number(el.value) || 0) / 100;
   });
-  document.querySelectorAll(".w-bkp").forEach(function (el) {
-    if (el.value === "") { delete wEingaben.bkp[el.dataset.k]; return; }
-    wEingaben.bkp[el.dataset.k] = el.dataset.prozent ? Number(el.value) / 100 : Number(el.value);
-  });
+  // Die BKP-Felder werden hier bewusst NICHT ausgelesen. Sie zeigen die
+  // Ansaetze des gerade angezeigten Szenarios -- als Werte uebernommen,
+  // wurden daraus "eigene Annahmen" fuer ALLE Szenarien. Buchs AG: der
+  // Aushub 0 von "Bestand erhalten" nahm dem Ersatzneubau seine Baugrube
+  // (Landwert 169'363 statt 150'644 CHF). In wEingaben.bkp steht nur, was
+  // der Benutzer an einem BKP-Feld selbst geaendert hat -- erfasst beim
+  // Eingabeereignis dieses Felds (bkpFeldUebernehmen, verdrahteWirtschaft).
+}
+
+/* Eine BKP-Eingabe, die der Benutzer selbst gemacht hat -- genau dieses Feld,
+   kein anderes. Leer heisst: zurueck zum Systemansatz. */
+function bkpFeldUebernehmen(el) {
+  if (el.value === "") { delete wEingaben.bkp[el.dataset.k]; return; }
+  wEingaben.bkp[el.dataset.k] = el.dataset.prozent ? Number(el.value) / 100 : Number(el.value);
 }
 
 function wRechne() {
@@ -13310,6 +13320,8 @@ function verdrahteWirtschaft() {
       if (schluessel) wBeruehrt[schluessel] = true;
       if (el.className && el.className.indexOf("wmix") === 0) wBeruehrt.wohnungsmix = true;
       if (el.className && el.className.indexOf("bkp-") === 0) wBeruehrt.bkp = true;
+      // Nur das BKP-Feld, an dem gerade getippt wird, wird eigene Annahme.
+      if (el.classList && el.classList.contains("w-bkp")) bkpFeldUebernehmen(el);
       wAngestossen();
     };
     el.addEventListener("input", merken);
